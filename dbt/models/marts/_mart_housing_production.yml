@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: mart_housing_production
+    description: "Monthly housing permit activity by neighborhood and supervisor district, ready for BI consumption."
+    columns:
+      - name: filed_month
+        tests:
+          - not_null
+      - name: neighborhood
+        description: "Normalized neighborhood name (see normalize_neighborhood macro)."
+        tests:
+          - not_null
+      - name: permits_filed
+        tests:
+          - not_null
+      - name: net_units_added
+        description: "Proposed minus existing units. Negative values indicate demolitions."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - filed_month
+            - neighborhood
+            - supervisor_district

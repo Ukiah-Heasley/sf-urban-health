@@ -1,0 +1,27 @@
+name: sf_urban_health
+version: 1.0.0
+config-version: 2
+
+profile: sf_urban_health
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  sf_urban_health:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table

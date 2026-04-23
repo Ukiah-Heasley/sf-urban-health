@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: stg_permits
+    description: "One row per SF building permit, typed and renamed from the raw JSON payload."
+    columns:
+      - name: permit_number
+        description: "DBI-issued permit identifier. Grain of this model."
+        tests:
+          - not_null
+          - unique
+      - name: filed_at
+        description: "Timestamp the permit application was filed."
+        tests:
+          - not_null
+      - name: current_status
+        tests:
+          - not_null
+      - name: estimated_cost
+        description: "Applicant-reported estimated cost at filing."
+      - name: revised_cost
+        description: "Updated project cost if revised after filing."
+      - name: existing_units
+        description: "Number of residential units in existing structure."
+      - name: proposed_units
+        description: "Number of residential units in proposed structure."
+      - name: supervisor_district
+        description: "SF Supervisor district where project is located."
+      - name: neighborhood
+        description: "Neighborhood name from DataSF analysis boundaries."

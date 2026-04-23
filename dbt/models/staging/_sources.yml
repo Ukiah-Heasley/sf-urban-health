@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+  - name: raw
+    database: SF_URBAN_HEALTH
+    schema: RAW
+    description: "Raw JSON loaded from S3 by Airflow ingestion DAGs."
+    tables:
+      - name: permits
+        description: "SF Department of Building Inspection permit records (DataSF i98e-djp9)."
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after: { count: 36, period: hour }
+          error_after: { count: 72, period: hour }
+      - name: transcript_chunks
+        description: "Agenda-item chunks from SF Board of Supervisors meeting minutes PDFs."
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after: { count: 8, period: day }
+          error_after: { count: 14, period: day }

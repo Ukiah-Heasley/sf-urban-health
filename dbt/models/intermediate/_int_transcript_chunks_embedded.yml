@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: int_transcript_chunks_embedded
+    description: "Transcript chunks plus a 768-dim Cortex embedding. Incremental — embeds new chunks only."
+    columns:
+      - name: chunk_id
+        tests:
+          - not_null
+          - unique
+      - name: embedding
+        description: "VECTOR(FLOAT, 768) from SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', text)."
