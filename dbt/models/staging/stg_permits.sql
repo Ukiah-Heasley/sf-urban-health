@@ -5,6 +5,19 @@ with source as (
     from {{ source('raw', 'permits') }}
 ),
 
+deduped as (
+    select *,
+        row_number() over (
+            partition by payload:permit_number::string
+            order by _loaded_at desc
+        ) as rn
+    from source
+),
+
+latest as (
+    select * from deduped where rn = 1
+),
+
 unpacked as (
     select
         payload:permit_number::string                          as permit_number,
@@ -30,7 +43,7 @@ unpacked as (
         payload:existing_use::string                           as existing_use,
         payload:proposed_use::string                           as proposed_use,
         _loaded_at
-    from source
+    from latest
 )
 
 select *
