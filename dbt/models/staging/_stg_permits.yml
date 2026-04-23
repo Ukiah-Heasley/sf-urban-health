@@ -14,8 +14,25 @@ models:
         tests:
           - not_null
       - name: current_status
+        description: "Latest DBI lifecycle status (lowercased)."
         tests:
           - not_null
+          - accepted_values:
+              values:
+                - approved
+                - appeal
+                - cancelled
+                - complete
+                - disapproved
+                - expired
+                - filed
+                - incomplete
+                - issued
+                - plancheck
+                - reinstated
+                - revoked
+                - suspend
+                - withdrawn
       - name: estimated_cost
         description: "Applicant-reported estimated cost at filing."
       - name: revised_cost

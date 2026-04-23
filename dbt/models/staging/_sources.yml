@@ -12,9 +12,3 @@ sources:
         freshness:
           warn_after: { count: 36, period: hour }
           error_after: { count: 72, period: hour }
-      - name: transcript_chunks
-        description: "Agenda-item chunks from SF Board of Supervisors meeting minutes PDFs."
-        loaded_at_field: _loaded_at
-        freshness:
-          warn_after: { count: 8, period: day }
-          error_after: { count: 14, period: day }

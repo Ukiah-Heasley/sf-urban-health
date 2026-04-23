@@ -10,7 +10,7 @@ unpacked as (
         payload:permit_number::string                          as permit_number,
         payload:permit_type::string                            as permit_type_code,
         payload:permit_type_definition::string                 as permit_type,
-        payload:current_status::string                         as current_status,
+        lower(payload:current_status::string)                  as current_status,
         payload:filed_date::timestamp_ntz                      as filed_at,
         payload:issued_date::timestamp_ntz                     as issued_at,
         payload:completed_date::timestamp_ntz                  as completed_at,
