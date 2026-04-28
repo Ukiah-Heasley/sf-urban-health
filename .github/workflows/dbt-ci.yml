@@ -1,0 +1,51 @@
+# dbt CI — validates the dbt project compiles against Snowflake on every PR
+# that touches dbt code. Connects to the warehouse but does NOT run models or
+# write any data; it only renders SQL templates and resolves source metadata.
+#
+# Required GitHub repository secrets:
+#   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD,
+#   SNOWFLAKE_ROLE, SNOWFLAKE_DATABASE, SNOWFLAKE_WAREHOUSE
+# Add them under Settings -> Secrets and variables -> Actions.
+
+name: dbt-ci
+
+on:
+  pull_request:
+    paths:
+      - 'dbt/**'
+      - '.github/workflows/dbt-ci.yml'
+
+jobs:
+  dbt-compile:
+    runs-on: ubuntu-latest
+    env:
+      SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      DBT_TARGET: dev
+      DBT_DEV_SCHEMA: dbt_ci  # compile/parse don't write — placeholder only
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python to project version
+        run: uv python install 3.11
+
+      - name: dbt deps
+        working-directory: dbt
+        run: uv run --group dbt dbt deps --profiles-dir .
+
+      - name: dbt parse (Jinja + ref/source resolution, no warehouse)
+        working-directory: dbt
+        run: uv run --group dbt dbt parse --profiles-dir .
+
+      - name: dbt compile (renders SQL against live source schemas)
+        working-directory: dbt
+        run: uv run --group dbt dbt compile --profiles-dir .
