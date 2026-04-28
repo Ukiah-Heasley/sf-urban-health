@@ -1,16 +1,13 @@
 """Extract SF building permits from the DataSF SODA API and land them as raw JSON.
 
-Writes to s3://$AWS_S3_BUCKET/raw/permits/YYYY/MM/DD/permits.json when AWS
-credentials are present, otherwise writes to ./data/raw/permits/YYYY/MM/DD/
-for local development.
+Writes to s3://$AWS_S3_BUCKET/raw/permits/YYYY/MM/DD/permits.json.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
-from datetime import date, timedelta
-from pathlib import Path
+from datetime import date
 from typing import Iterator
 
 import requests
@@ -86,34 +83,6 @@ def _s3_key(run_date: date, start_offset: int = 0) -> str:
     return f"raw/permits/{run_date:%Y/%m/%d}/permits_{start_offset}.json"
 
 
-def _write_local(records: list[dict], run_date: date, root: Path | None = None, start_offset: int = 0) -> Path:
-    if root is None:
-        root = Path(os.environ.get("LOCAL_DATA_DIR", "./data"))
-    path = root / _s3_key(run_date, start_offset)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
-    return path
-
-
-def _load_duckdb(data_root: Path) -> Path:
-    import duckdb
-
-    db_path = data_root / "permits.db"
-    con = duckdb.connect(str(db_path))
-    glob = str(data_root / "raw/permits/**/*.json")
-    con.execute(f"""
-        CREATE OR REPLACE TABLE permits AS
-        SELECT * FROM read_ndjson_auto('{glob}', filename=true)
-    """)
-    row = con.execute("SELECT COUNT(*) FROM permits").fetchone()
-    count = row[0] if row else 0
-    con.close()
-    logger.info("duckdb: loaded %d rows into %s", count, db_path)
-    return db_path
-
-
 def _write_s3(records: list[dict], run_date: date, start_offset: int = 0) -> str:
     import boto3
 
@@ -180,36 +149,30 @@ def _write_run_manifest(run_date: date, since: date, record_count: int, complete
     client.put_object(Bucket=bucket, Key=_MANIFEST_KEY, Body=body)
 
 
-def run(run_date: date | None = None, lookback_days: int = 7) -> str:
+def run(run_date: date | None = None) -> str:
     run_date = run_date or date.today()
-    if os.environ.get("AWS_S3_BUCKET"):
-        checkpoint = _read_checkpoint()
-        since, resume_offset = checkpoint if checkpoint else (_EPOCH, 0)
-        if resume_offset:
-            logger.info("resuming from offset %d (since %s)", resume_offset, since)
-        expected = count_permits(since)
-        logger.info("API reports %d permit records since %s", expected, since)
-        records = list(fetch_permits(since, resume_offset=resume_offset))
-        logger.info("fetched %d records", len(records))
-        dest = _write_s3(records, run_date, start_offset=resume_offset)
-        total_fetched = resume_offset + len(records)
-        if total_fetched < expected:
-            logger.warning(
-                "incomplete fetch: %d of %d records total — "
-                "saving offset %d, next run resumes from there",
-                total_fetched, expected, total_fetched,
-            )
-            _write_checkpoint(since, resume_offset=total_fetched)
-        else:
-            _write_checkpoint(run_date)
-        _write_run_manifest(run_date, since, total_fetched, complete=total_fetched >= expected)
+    if not os.environ.get("AWS_S3_BUCKET"):
+        raise RuntimeError("AWS_S3_BUCKET must be set")
+    checkpoint = _read_checkpoint()
+    since, resume_offset = checkpoint if checkpoint else (_EPOCH, 0)
+    if resume_offset:
+        logger.info("resuming from offset %d (since %s)", resume_offset, since)
+    expected = count_permits(since)
+    logger.info("API reports %d permit records since %s", expected, since)
+    records = list(fetch_permits(since, resume_offset=resume_offset))
+    logger.info("fetched %d records", len(records))
+    dest = _write_s3(records, run_date, start_offset=resume_offset)
+    total_fetched = resume_offset + len(records)
+    if total_fetched < expected:
+        logger.warning(
+            "incomplete fetch: %d of %d records total — "
+            "saving offset %d, next run resumes from there",
+            total_fetched, expected, total_fetched,
+        )
+        _write_checkpoint(since, resume_offset=total_fetched)
     else:
-        since = run_date - timedelta(days=lookback_days)
-        records = list(fetch_permits(since))
-        logger.info("fetched %d permit records since %s", len(records), since)
-        root = Path(os.environ.get("LOCAL_DATA_DIR", "./data"))
-        dest = str(_write_local(records, run_date, root))
-        _load_duckdb(root)
+        _write_checkpoint(run_date)
+    _write_run_manifest(run_date, since, total_fetched, complete=total_fetched >= expected)
     logger.info("wrote permits to %s", dest)
     return dest
 
@@ -220,11 +183,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch SF building permits from DataSF.")
     parser.add_argument("--run-date", type=date.fromisoformat, default=None,
                         help="Date to run for (YYYY-MM-DD). Defaults to today.")
-    parser.add_argument("--lookback-days", type=int, default=7,
-                        help="How many days back to fetch permits for (default: 7).")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
     load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run(run_date=args.run_date, lookback_days=args.lookback_days)
+    run(run_date=args.run_date)

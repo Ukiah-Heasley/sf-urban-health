@@ -4,62 +4,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+All workflows go through the root `Makefile`, which auto-loads `airflow/.env`.
+
 ```bash
-# Run ingestion locally (no AWS/Snowflake needed — falls back to ./data/)
-uv run python -m ingestion.permits --lookback-days 7
-
-# Lint
-uv run ruff check .
-
-# Tests
-uv run pytest
-
-# dbt (requires Snowflake credentials in ~/.dbt/profiles.yml)
-cd dbt && dbt deps && dbt build
-cd dbt && dbt run --select stg_permits
-cd dbt && dbt test
-
-# Local Airflow stack
-docker compose up airflow-init
-docker compose up -d scheduler webserver
-# UI: http://localhost:8080 (admin / admin)
+make ingest         # DataSF -> S3 (uv run airflow/scripts/permits.py)
+make dbt-deps       # one-time: install dbt packages
+make dbt-build      # dbt run + test against Snowflake
+make dbt-test
+make airflow-up     # astro dev start (UI at http://localhost:8080, admin/admin)
+make airflow-down
+make airflow-logs   # tail scheduler
+make lint           # uv run ruff check .
+make test           # uv run pytest
 ```
+
+For ad-hoc dbt selectors not covered by a target, run from `airflow/include/dbt/` after sourcing `airflow/.env`:
+`uv run --group dbt dbt run --select stg_permits --profiles-dir .`
 
 ## Architecture
 
 ```
-DataSF SODA API → ingestion/permits.py → S3 raw/permits/YYYY/MM/DD/permits.json
-                                       → ./data/ (local fallback when AWS_S3_BUCKET unset)
+DataSF SODA API → airflow/scripts/permits.py → S3 raw/permits/YYYY/MM/DD/permits.json
 S3 → Snowflake RAW.PERMITS (COPY INTO via Airflow SnowflakeOperator)
 Snowflake → dbt staging → intermediate → marts
-Airflow DAG (dags/ingest_permits.py) orchestrates all five steps daily at 06:00 UTC
+Airflow DAG (airflow/dags/ingest_permits.py) orchestrates all five steps daily at 06:00 UTC
 ```
 
 ## Key design decisions
 
 **S3 is the durable raw layer.** Raw JSON lives in S3 permanently. Snowflake RAW is a loading target. To reprocess, replay from S3 — never re-hit the DataSF API.
 
-**7-day lookback, not 1-day.** DataSF backfills records late. Snowflake COPY INTO is idempotent on the stage, so overlapping loads are safe.
+**Checkpoint-driven incremental loads.** `run()` reads `s3://$AWS_S3_BUCKET/checkpoints/permits.json` for the last successful `since` date (epoch fallback: 2013-01-01) and resumes from `resume_offset` if a prior run was incomplete. Snowflake COPY INTO is idempotent on the stage, so overlapping loads are safe.
 
-**Newline-delimited JSON.** `_write_local` / `_write_s3` emit one JSON object per line. The COPY uses `STRIP_OUTER_ARRAY = FALSE` — do not change this to array format.
+**Newline-delimited JSON.** `_write_s3` emits one JSON object per line. The COPY uses `STRIP_OUTER_ARRAY = FALSE` — do not change this to array format.
 
-**dbt materialization policy.** Staging and intermediate are views (always fresh, cheap). Marts are tables (fast for BI). Defined in `dbt/dbt_project.yml`.
+**dbt materialization policy.** Staging and intermediate are views (always fresh, cheap). Marts are tables (fast for BI). Defined in `airflow/include/dbt/dbt_project.yml`.
 
 **Residential filter sits in the mart, not staging.** `stg_permits` is source-of-truth for all permits. The residential lens (`existing_units IS NOT NULL OR proposed_units IS NOT NULL`) is a reporting concern owned by `mart_housing_production`.
 
 **`normalize_neighborhood` macro.** Collapses DataSF's null/empty/"unknown" neighborhood spellings into `'Unknown'` and `initcap`s the rest. Any future mart that groups by neighborhood must use this macro.
 
-## Local vs cloud execution
+## Airflow → scripts import path
 
-`ingestion/permits.py::run()` branches on `AWS_S3_BUCKET`:
-- **Set** → writes to S3, does not write locally or touch DuckDB
-- **Unset** → writes to `./data/raw/permits/YYYY/MM/DD/`, then rebuilds `./data/permits.db` via `_load_duckdb()`
-
-DuckDB (`data/permits.db`) is only used for local development exploration — it is not part of the production pipeline.
-
-## Airflow → ingestion import path
-
-`docker-compose.yml` mounts `./ingestion` into `/opt/airflow/dags/ingestion`. The DAG does `from ingestion import permits`. If you rename or restructure the `ingestion/` package, update this mount and the DAG import.
+`airflow/Dockerfile` copies `scripts/` to `/opt/airflow/dags/scripts/` at image build time. The DAG does `from scripts import permits`. If you rename or restructure the `scripts/` package, update the `COPY` line in `Dockerfile` and the DAG import.
 
 ## dbt grain and tests
 

@@ -13,12 +13,12 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
-from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
-from ingestion import permits
+from scripts import permits
 
-DBT_PROJECT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt")
-DBT_PROFILES_DIR = os.environ.get("DBT_PROFILES_DIR", "/opt/airflow/dbt")
+DBT_PROJECT_DIR = os.environ.get("DBT_PROJECT_DIR", "/usr/local/airflow/include/dbt")
+DBT_PROFILES_DIR = os.environ.get("DBT_PROFILES_DIR", "/usr/local/airflow/include/dbt")
 
 
 def _extract_with_date_parsing(**context):
@@ -54,18 +54,26 @@ with DAG(
         python_callable=_extract_with_date_parsing,
     )
 
-    load_s3_to_snowflake = SnowflakeOperator(
+    load_s3_to_snowflake = SQLExecuteQueryOperator(
         task_id="load_s3_to_snowflake",
-        snowflake_conn_id="snowflake_default",
+        conn_id="snowflake_default",
         sql=COPY_INTO_RAW,
         params={"database": "SF_URBAN_HEALTH"},
+    )
+
+    dbt_deps = BashOperator(
+        task_id="dbt_deps",
+        bash_command=(
+            f"cd {DBT_PROJECT_DIR} && "
+            f"dbt deps --profiles-dir {DBT_PROFILES_DIR} --target prod"
+        ),
     )
 
     run_dbt_staging = BashOperator(
         task_id="run_dbt_staging",
         bash_command=(
             f"cd {DBT_PROJECT_DIR} && "
-            f"dbt run --select stg_permits --profiles-dir {DBT_PROFILES_DIR}"
+            f"dbt run --select stg_permits --profiles-dir {DBT_PROFILES_DIR} --target prod"
         ),
     )
 
@@ -74,7 +82,7 @@ with DAG(
         bash_command=(
             f"cd {DBT_PROJECT_DIR} && "
             f"dbt run --select int_permit_timelines mart_housing_production "
-            f"--profiles-dir {DBT_PROFILES_DIR}"
+            f"--profiles-dir {DBT_PROFILES_DIR} --target prod"
         ),
     )
 
@@ -82,13 +90,14 @@ with DAG(
         task_id="run_dbt_tests",
         bash_command=(
             f"cd {DBT_PROJECT_DIR} && "
-            f"dbt test --profiles-dir {DBT_PROFILES_DIR}"
+            f"dbt test --profiles-dir {DBT_PROFILES_DIR} --target prod"
         ),
     )
 
     (
         extract_permits_to_s3
         >> load_s3_to_snowflake
+        >> dbt_deps
         >> run_dbt_staging
         >> run_dbt_marts
         >> run_dbt_tests
