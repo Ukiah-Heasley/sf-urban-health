@@ -74,7 +74,7 @@ cp airflow/.env.example airflow/.env
 #    See `Snowflake bootstrap` section below.
 
 # 3. dbt profile is rendered from airflow/.env via env_var() in
-#    airflow/include/dbt/profiles.yml — no separate profile file needed.
+#    dbt/profiles.yml — no separate profile file needed.
 ```
 
 ### Snowflake bootstrap
