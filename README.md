@@ -171,6 +171,18 @@ ORDER BY filed_month DESC;
 - [pyproject.toml](pyproject.toml) — Python deps for **local** work (`uv run` invokes the extractor, dbt, ruff, pytest).
 - [airflow/requirements.txt](airflow/requirements.txt) — Python deps installed **inside the Airflow image** by `astro dev start`. Astro Runtime ships Airflow itself, so this file only adds providers and project-specific libs.
 
+## CI
+
+Two GitHub Actions workflows gate every PR:
+
+| Workflow | Triggers on | What it does |
+|---|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | every PR + pushes to `main` | `ruff check` + `pytest` (mocks the SODA API) |
+| [`dbt-ci.yml`](.github/workflows/dbt-ci.yml) | PRs touching `dbt/**` | `dbt parse` + `dbt compile` against Snowflake — validates SQL renders with live source metadata; no models run, no data written |
+
+`dbt-ci.yml` requires these GitHub repository secrets (Settings → Secrets and variables → Actions):
+`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_WAREHOUSE`.
+
 ## What's next (Phase 2+)
 
 Phase 1 is a vertical slice: one data source, wired all the way through. Subsequent phases will add additional civic datasets (311 service requests, Muni transit performance), a cross-domain mart joining them by neighborhood-month, a BI dashboard, and a RAG layer over Board of Supervisors meeting minutes.

@@ -20,6 +20,8 @@ help:
 	@echo "  make airflow-up     Start local Airflow stack (Astro CLI), syncing dbt/ first"
 	@echo "  make airflow-down   Stop local Airflow stack"
 	@echo "  make airflow-logs   Tail Airflow scheduler logs"
+	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
+	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
 	@echo "  make test           Run pytest"
 
@@ -65,6 +67,14 @@ airflow-down:
 .PHONY: airflow-logs
 airflow-logs:
 	cd airflow && astro dev logs --scheduler
+
+.PHONY: dashboard-dev
+dashboard-dev: check-env
+	uv run --group dashboard python -m dashboard.app
+
+.PHONY: dashboard-docker
+dashboard-docker:
+	docker build -f dashboard/Dockerfile -t sf-urban-health-dashboard .
 
 .PHONY: lint
 lint:
