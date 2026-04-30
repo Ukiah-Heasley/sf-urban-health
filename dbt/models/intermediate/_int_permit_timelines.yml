@@ -19,3 +19,7 @@ models:
         description: "Proposed units minus existing units. Negative indicates demolition."
       - name: lifecycle_stage
         description: "Latest stage: filed, issued, or completed."
+      - name: use_transition
+        description: "Type of structural change: new_residential, demolition, unit_addition, commercial_to_residential, sfr_to_multifamily, renovation_same_use, or other."
+      - name: cost_per_unit
+        description: "Project cost divided by net units added. Null when no units are being added."

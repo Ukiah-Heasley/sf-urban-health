@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import dash_bootstrap_components as dbc
+import polars as pl
 from dash import Dash, Input, Output, dcc, html
 
 from dashboard.components import figures as fig
 from dashboard.components.kpi import build_kpi_card
-from dashboard.data.cache import MART
+from dashboard.data.cache import MART, PIPELINE
 from dashboard.data.transforms import (
     apply_filters,
     kpi_summary,
@@ -124,6 +125,30 @@ app.layout = dbc.Container(
                     md=6,
                 ),
             ],
+            className="g-3 mb-4",
+        ),
+        # Section 4: housing mix over time
+        dbc.Card(
+            dbc.CardBody(dcc.Graph(id="fig-use-transition")), className="mb-4 shadow-sm"
+        ),
+        # Section 5: cost efficiency + pipeline backlog
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(dcc.Graph(id="fig-cost-per-unit")),
+                        className="shadow-sm h-100",
+                    ),
+                    md=6,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(dcc.Graph(id="fig-pipeline")),
+                        className="shadow-sm h-100",
+                    ),
+                    md=6,
+                ),
+            ],
             className="g-3 mb-5",
         ),
     ],
@@ -163,6 +188,9 @@ def _fmt_days(v: float | None) -> str:
     Output("fig-districts", "figure"),
     Output("fig-days-to-issue", "figure"),
     Output("fig-completion-rate", "figure"),
+    Output("fig-use-transition", "figure"),
+    Output("fig-cost-per-unit", "figure"),
+    Output("fig-pipeline", "figure"),
     Input("date-range", "start_date"),
     Input("date-range", "end_date"),
     Input("neighborhoods", "value"),
@@ -183,6 +211,25 @@ def refresh(start_date, end_date, neighborhoods):
 
     kpis = kpi_summary(cur_window, prior_window)
 
+    # Pipeline snapshot — filter by neighborhood but not date (it's a current snapshot).
+    # Guard against empty DataFrame (fetch_arrow_all returns None for 0-row results).
+    _pipeline_has_data = "age_bucket" in PIPELINE.columns
+    pipeline_filtered = (
+        PIPELINE.filter(pl.col("neighborhood").is_in(neighborhoods))
+        if (_pipeline_has_data and neighborhoods)
+        else PIPELINE
+    )
+    stalled = (
+        int(
+            pipeline_filtered.filter(
+                pl.col("age_bucket").is_in(["180-365d", ">365d"])
+            )["permit_count"].sum()
+            or 0
+        )
+        if _pipeline_has_data
+        else 0
+    )
+
     cards = [
         dbc.Col(
             build_kpi_card(
@@ -191,7 +238,7 @@ def refresh(start_date, end_date, neighborhoods):
                 kpis["net_units"][1],
                 ACCENT,
             ),
-            md=3,
+            width=True,
         ),
         dbc.Col(
             build_kpi_card(
@@ -200,7 +247,7 @@ def refresh(start_date, end_date, neighborhoods):
                 kpis["permits_filed"][1],
                 "#6FB3B8",
             ),
-            md=3,
+            width=True,
         ),
         dbc.Col(
             build_kpi_card(
@@ -209,7 +256,7 @@ def refresh(start_date, end_date, neighborhoods):
                 kpis["project_cost"][1],
                 "#F2A65A",
             ),
-            md=3,
+            width=True,
         ),
         dbc.Col(
             build_kpi_card(
@@ -219,7 +266,17 @@ def refresh(start_date, end_date, neighborhoods):
                 "#772E25",
                 higher_is_better=False,
             ),
-            md=3,
+            width=True,
+        ),
+        dbc.Col(
+            build_kpi_card(
+                "Stalled permits",
+                _fmt_int(stalled),
+                None,
+                "#9DA9A0",
+                higher_is_better=False,
+            ),
+            width=True,
         ),
     ]
 
@@ -230,6 +287,9 @@ def refresh(start_date, end_date, neighborhoods):
         fig.district_breakdown(filtered),
         fig.median_days_to_issue_trend(filtered),
         fig.completion_rate_by_district(filtered),
+        fig.use_transition_breakdown(filtered),
+        fig.cost_per_unit_by_neighborhood(filtered),
+        fig.pipeline_backlog(pipeline_filtered),
     )
 
 

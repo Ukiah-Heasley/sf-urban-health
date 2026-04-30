@@ -11,12 +11,35 @@ from __future__ import annotations
 import plotly.graph_objects as go
 import polars as pl
 
-from dashboard.data.transforms import monthly_net_units, with_rolling_avg
+from dashboard.data.transforms import (
+    cost_per_unit_neighborhoods,
+    monthly_net_units,
+    pipeline_by_age,
+    use_transition_monthly,
+    with_rolling_avg,
+)
 
 ACCENT = "#2C7873"
 ACCENT_LIGHT = "#6FB3B8"
 NEUTRAL = "#9DA9A0"
 PALETTE = ["#2C7873", "#6FB3B8", "#C8D5B9", "#F2A65A", "#772E25"]
+
+_TRANSITION_COLORS = {
+    "new_residential": "#2C7873",
+    "unit_addition": "#6FB3B8",
+    "commercial_to_residential": "#C8D5B9",
+    "sfr_to_multifamily": "#F2A65A",
+    "demolition": "#772E25",
+    "renovation_same_use": "#9DA9A0",
+    "other": "#D3D3D3",
+}
+
+_AGE_COLORS = {
+    "<90d": "#C8D5B9",
+    "90-180d": "#F2A65A",
+    "180-365d": "#D46027",
+    ">365d": "#772E25",
+}
 
 _BASE_LAYOUT = dict(
     template="plotly_white",
@@ -214,6 +237,103 @@ def completion_rate_by_district(df: pl.DataFrame) -> go.Figure:
         xaxis_title="Supervisor district",
         yaxis_title="Completed / filed",
         yaxis=dict(tickformat=".0%", range=[0, 1]),
+        xaxis=dict(type="category"),
+    )
+    return fig
+
+
+def use_transition_breakdown(df: pl.DataFrame) -> go.Figure:
+    if df.is_empty():
+        return _empty("No data in the selected window", 350)
+
+    monthly = use_transition_monthly(df)
+    if monthly.is_empty():
+        return _empty("No transition data available", 350)
+
+    transitions = sorted(monthly["use_transition"].drop_nulls().unique().to_list())
+    fig = go.Figure()
+    for transition in transitions:
+        subset = monthly.filter(pl.col("use_transition") == transition)
+        label = transition.replace("_", " ").title()
+        fig.add_bar(
+            x=subset["filed_month"],
+            y=subset["net_units_added"],
+            name=label,
+            marker_color=_TRANSITION_COLORS.get(transition, NEUTRAL),
+            hovertemplate=f"{label}<br>%{{x|%b %Y}}<br>%{{y:,.0f}} net units<extra></extra>",
+        )
+    fig.update_layout(
+        **_BASE_LAYOUT,
+        title="Net new units by permit type, by month",
+        height=350,
+        barmode="stack",
+        bargap=0.1,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis_title="Net new units",
+        xaxis_title=None,
+    )
+    return fig
+
+
+def cost_per_unit_by_neighborhood(df: pl.DataFrame, n: int = 15) -> go.Figure:
+    if df.is_empty():
+        return _empty("No data in the selected window", 400)
+
+    data = cost_per_unit_neighborhoods(df, n=n)
+    if data.is_empty():
+        return _empty("No cost data available", 400)
+
+    layout = {**_BASE_LAYOUT, "margin": dict(l=180, r=20, t=50, b=40)}
+    fig = go.Figure(
+        go.Bar(
+            x=data["avg_cost_per_unit"],
+            y=data["neighborhood"],
+            orientation="h",
+            marker_color=PALETTE[3],
+            hovertemplate="%{y}<br>$%{x:,.0f} per unit<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        **layout,
+        title=f"Avg cost per new unit — top {n} neighborhoods (new construction only)",
+        height=400,
+        xaxis_title="Avg cost per net unit ($)",
+        yaxis_title=None,
+        xaxis=dict(tickformat="$,.0f"),
+    )
+    return fig
+
+
+def pipeline_backlog(df: pl.DataFrame) -> go.Figure:
+    if df.is_empty():
+        return _empty("No pipeline data available", 350)
+
+    data = pipeline_by_age(df)
+    if data.is_empty():
+        return _empty("No in-flight permits", 350)
+
+    age_order = ["<90d", "90-180d", "180-365d", ">365d"]
+    fig = go.Figure()
+    for bucket in age_order:
+        subset = data.filter(pl.col("age_bucket") == bucket)
+        if subset.is_empty():
+            continue
+        fig.add_bar(
+            x=subset["lifecycle_stage"].cast(pl.Utf8),
+            y=subset["permit_count"],
+            name=bucket,
+            marker_color=_AGE_COLORS[bucket],
+            hovertemplate=f"{bucket}<br>%{{x}}<br>%{{y:,.0f}} permits<extra></extra>",
+        )
+    fig.update_layout(
+        **_BASE_LAYOUT,
+        title="In-flight residential permits by stage and age",
+        height=350,
+        barmode="group",
+        bargap=0.2,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis_title="Permits",
+        xaxis_title=None,
         xaxis=dict(type="category"),
     )
     return fig
