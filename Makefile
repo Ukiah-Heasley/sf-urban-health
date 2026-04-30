@@ -31,7 +31,7 @@ check-env:
 
 .PHONY: ingest
 ingest: check-env
-	uv run python airflow/scripts/permits.py
+	uv run python airflow/include/scripts/permits.py
 
 .PHONY: dbt-deps
 dbt-deps: check-env
@@ -52,7 +52,7 @@ sync-dbt:
 	@mkdir -p $(DBT_MIRROR)
 	@rsync -a --delete \
 		--exclude='target/' --exclude='dbt_packages/' --exclude='logs/' \
-		--exclude='.user.yml' --exclude='profiles.yml' \
+		--exclude='.user.yml' \
 		$(DBT_DIR)/ $(DBT_MIRROR)/
 	@echo "synced $(DBT_DIR)/ -> $(DBT_MIRROR)/"
 

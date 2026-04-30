@@ -1,12 +1,10 @@
-"""Extract SF building permits from the DataSF SODA API and land them as raw JSON.
-
-Writes to s3://$AWS_S3_BUCKET/raw/permits/YYYY/MM/DD/permits.json.
-"""
+"""Generic SODA API ingestion: paginate a DataSF endpoint → S3 raw JSON."""
 from __future__ import annotations
 
 import json
 import logging
 import os
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Iterator
 
@@ -16,8 +14,19 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
-SODA_ENDPOINT = "https://data.sfgov.org/resource/i98e-djp9.json"
-PAGE_SIZE = 1000
+
+@dataclass
+class DatasetConfig:
+    name: str
+    dataset_id: str
+    date_field: str
+    order_field: str
+    epoch: date
+    page_size: int = field(default=1000)
+
+    @property
+    def endpoint(self) -> str:
+        return f"https://data.sfgov.org/resource/{self.dataset_id}.json"
 
 
 def _session() -> requests.Session:
@@ -38,11 +47,11 @@ def _session() -> requests.Session:
     return s
 
 
-def count_permits(since: date) -> int:
-    """Return the total number of permits filed on or after `since`."""
-    where = f"filed_date >= '{since.isoformat()}T00:00:00.000'"
+def count_records(config: DatasetConfig, since: date) -> int:
+    """Return the total number of records filed on or after `since`."""
+    where = f"{config.date_field} >= '{since.isoformat()}T00:00:00.000'"
     resp = _session().get(
-        SODA_ENDPOINT,
+        config.endpoint,
         params={"$select": "count(*)", "$where": where},
         timeout=60,
     )
@@ -50,62 +59,65 @@ def count_permits(since: date) -> int:
     return int(resp.json()[0]["count"])
 
 
-def fetch_permits(since: date, resume_offset: int = 0) -> Iterator[dict]:
-    """Yield permit records filed on or after `since`, paginated.
+def fetch_records(config: DatasetConfig, since: date, resume_offset: int = 0) -> Iterator[dict]:
+    """Yield records filed on or after `since`, paginated.
 
     If `resume_offset` is given, skips that many records before yielding
     (resumes a previous partial fetch).
     """
     session = _session()
     offset = resume_offset
-    where = f"filed_date >= '{since.isoformat()}T00:00:00.000'"
+    where = f"{config.date_field} >= '{since.isoformat()}T00:00:00.000'"
     while True:
         params = {
             "$where": where,
-            "$limit": PAGE_SIZE,
+            "$limit": config.page_size,
             "$offset": offset,
-            "$order": "permit_number",
+            "$order": config.order_field,
         }
-        resp = session.get(SODA_ENDPOINT, params=params, timeout=60)
+        resp = session.get(config.endpoint, params=params, timeout=60)
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
             return
         yield from batch
-        offset += PAGE_SIZE
+        offset += config.page_size
         if offset % 50_000 == 0:
             logger.info("fetch progress: %d records retrieved so far", offset)
-        if len(batch) < PAGE_SIZE:
+        if len(batch) < config.page_size:
             return
 
 
-def _s3_key(run_date: date, start_offset: int = 0) -> str:
-    return f"raw/permits/{run_date:%Y/%m/%d}/permits_{start_offset}.json"
+def _s3_key(config: DatasetConfig, run_date: date, start_offset: int = 0) -> str:
+    return f"raw/{config.name}/{run_date:%Y/%m/%d}/{config.name}_{start_offset}.json"
 
 
-def _write_s3(records: list[dict], run_date: date, start_offset: int = 0) -> str:
+def _write_s3(config: DatasetConfig, records: list[dict], run_date: date, start_offset: int = 0) -> str:
     import boto3
 
     bucket = os.environ["AWS_S3_BUCKET"]
-    key = _s3_key(run_date, start_offset)
+    key = _s3_key(config, run_date, start_offset)
     body = ("\n".join(json.dumps(r) for r in records) + "\n").encode()
     boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=body)
     return f"s3://{bucket}/{key}"
 
 
-_CHECKPOINT_KEY = "checkpoints/permits.json"
-_MANIFEST_KEY = "checkpoints/permits_runs.jsonl"
-_EPOCH = date(2013, 1, 1)
+def _checkpoint_key(config: DatasetConfig) -> str:
+    return f"checkpoints/{config.name}.json"
 
 
-def _read_checkpoint() -> tuple[date, int] | None:
+def _manifest_key(config: DatasetConfig) -> str:
+    return f"checkpoints/{config.name}_runs.jsonl"
+
+
+def _read_checkpoint(config: DatasetConfig) -> tuple[date, int] | None:
     """Return (since_date, resume_offset) or None if no checkpoint exists."""
     import boto3
     from botocore.exceptions import ClientError
 
     bucket = os.environ["AWS_S3_BUCKET"]
     try:
-        obj = boto3.client("s3").get_object(Bucket=bucket, Key=_CHECKPOINT_KEY)
+        obj = boto3.client("s3").get_object(Bucket=bucket, Key=_checkpoint_key(config))
         data = json.loads(obj["Body"].read())
         return date.fromisoformat(data["last_loaded_date"]), data.get("resume_offset", 0)
     except ClientError as e:
@@ -114,7 +126,7 @@ def _read_checkpoint() -> tuple[date, int] | None:
         raise
 
 
-def _write_checkpoint(run_date: date, resume_offset: int | None = None) -> None:
+def _write_checkpoint(config: DatasetConfig, run_date: date, resume_offset: int | None = None) -> None:
     import boto3
 
     bucket = os.environ["AWS_S3_BUCKET"]
@@ -122,11 +134,17 @@ def _write_checkpoint(run_date: date, resume_offset: int | None = None) -> None:
     if resume_offset:
         data["resume_offset"] = resume_offset
     boto3.client("s3").put_object(
-        Bucket=bucket, Key=_CHECKPOINT_KEY, Body=json.dumps(data).encode()
+        Bucket=bucket, Key=_checkpoint_key(config), Body=json.dumps(data).encode()
     )
 
 
-def _write_run_manifest(run_date: date, since: date, record_count: int, complete: bool = True) -> None:
+def _write_run_manifest(
+    config: DatasetConfig,
+    run_date: date,
+    since: date,
+    record_count: int,
+    complete: bool = True,
+) -> None:
     import boto3
     from botocore.exceptions import ClientError
 
@@ -140,28 +158,27 @@ def _write_run_manifest(run_date: date, since: date, record_count: int, complete
     })
     existing = b""
     try:
-        obj = client.get_object(Bucket=bucket, Key=_MANIFEST_KEY)
+        obj = client.get_object(Bucket=bucket, Key=_manifest_key(config))
         existing = obj["Body"].read()
     except ClientError as e:
         if e.response["Error"]["Code"] != "NoSuchKey":
             raise
-    body = existing + (entry + "\n").encode()
-    client.put_object(Bucket=bucket, Key=_MANIFEST_KEY, Body=body)
+    client.put_object(Bucket=bucket, Key=_manifest_key(config), Body=existing + (entry + "\n").encode())
 
 
-def run(run_date: date | None = None) -> str:
+def run(config: DatasetConfig, run_date: date | None = None) -> str:
     run_date = run_date or date.today()
     if not os.environ.get("AWS_S3_BUCKET"):
         raise RuntimeError("AWS_S3_BUCKET must be set")
-    checkpoint = _read_checkpoint()
-    since, resume_offset = checkpoint if checkpoint else (_EPOCH, 0)
+    checkpoint = _read_checkpoint(config)
+    since, resume_offset = checkpoint if checkpoint else (config.epoch, 0)
     if resume_offset:
         logger.info("resuming from offset %d (since %s)", resume_offset, since)
-    expected = count_permits(since)
-    logger.info("API reports %d permit records since %s", expected, since)
-    records = list(fetch_permits(since, resume_offset=resume_offset))
+    expected = count_records(config, since)
+    logger.info("API reports %d %s records since %s", expected, config.name, since)
+    records = list(fetch_records(config, since, resume_offset=resume_offset))
     logger.info("fetched %d records", len(records))
-    dest = _write_s3(records, run_date, start_offset=resume_offset)
+    dest = _write_s3(config, records, run_date, start_offset=resume_offset)
     total_fetched = resume_offset + len(records)
     if total_fetched < expected:
         logger.warning(
@@ -169,23 +186,9 @@ def run(run_date: date | None = None) -> str:
             "saving offset %d, next run resumes from there",
             total_fetched, expected, total_fetched,
         )
-        _write_checkpoint(since, resume_offset=total_fetched)
+        _write_checkpoint(config, since, resume_offset=total_fetched)
     else:
-        _write_checkpoint(run_date)
-    _write_run_manifest(run_date, since, total_fetched, complete=total_fetched >= expected)
-    logger.info("wrote permits to %s", dest)
+        _write_checkpoint(config, run_date)
+    _write_run_manifest(config, run_date, since, total_fetched, complete=total_fetched >= expected)
+    logger.info("wrote %s to %s", config.name, dest)
     return dest
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Fetch SF building permits from DataSF.")
-    parser.add_argument("--run-date", type=date.fromisoformat, default=None,
-                        help="Date to run for (YYYY-MM-DD). Defaults to today.")
-    args = parser.parse_args()
-
-    from dotenv import load_dotenv
-    load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run(run_date=args.run_date)
