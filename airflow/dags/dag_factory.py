@@ -87,17 +87,14 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             ),
         )
 
-        if cfg.dbt_mart_models:
-            mart_models = " ".join(cfg.dbt_mart_models)
-            run_marts = BashOperator(
-                task_id="run_dbt_marts",
-                bash_command=(
-                    f"cd {DBT_PROJECT_DIR} && "
-                    f"dbt run --select {mart_models} --profiles-dir {DBT_PROFILES_DIR} --target prod"
-                ),
-            )
-            extract >> load >> dbt_deps >> run_staging >> run_marts
-        else:
-            extract >> load >> dbt_deps >> run_staging
+        mart_models = " ".join(cfg.dbt_mart_models)
+        run_marts = BashOperator(
+            task_id="run_dbt_marts",
+            bash_command=(
+                f"cd {DBT_PROJECT_DIR} && "
+                f"dbt run --select {mart_models} --profiles-dir {DBT_PROFILES_DIR} --target prod"
+            ),
+        )
+        extract >> load >> dbt_deps >> run_staging >> run_marts
 
     return dag
