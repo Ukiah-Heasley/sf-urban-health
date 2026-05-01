@@ -5,9 +5,9 @@ from __future__ import annotations
 import dash_bootstrap_components as dbc
 from dash import html
 
-POSITIVE = "#1B7B3A"
-NEGATIVE = "#B33A3A"
-MUTED = "#6c757d"
+POSITIVE = "#4caf66"
+NEGATIVE = "#ef5350"
+MUTED = "#664d00"
 
 
 def build_kpi_card(
@@ -42,24 +42,26 @@ def build_kpi_card(
                     label,
                     style={
                         "color": MUTED,
-                        "fontSize": "0.85rem",
+                        "fontFamily": "inherit",
+                        "fontSize": "0.65rem",
                         "textTransform": "uppercase",
-                        "letterSpacing": "0.05em",
+                        "letterSpacing": "0.15em",
                     },
                 ),
                 html.Div(
                     value,
                     style={
-                        "fontSize": "2rem",
+                        "fontSize": "1.8rem",
                         "fontWeight": 700,
                         "color": accent,
                         "lineHeight": 1.1,
                         "margin": "0.25rem 0",
+                        "textShadow": f"0 0 10px {accent}66",
                     },
                 ),
                 delta_node,
             ]
         ),
-        className="shadow-sm",
-        style={"borderTop": f"3px solid {accent}", "height": "100%"},
+        className="",
+        style={"background": "#0f0c00", "border": "1px solid #2a1f00", "height": "100%"},
     )

@@ -6,7 +6,8 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, callback, dcc, html
 
-from dashboard.pages import housing, incidents
+import dashboard.components.figures  # registers terminal_amber template for all pages  # noqa: F401
+from dashboard.pages import evictions, housing, incidents, muni
 
 app = dash.Dash(
     __name__,
@@ -20,6 +21,8 @@ _NAVBAR = dbc.NavbarSimple(
     children=[
         dbc.NavItem(dbc.NavLink("Housing Production", href="/")),
         dbc.NavItem(dbc.NavLink("Public Safety Incidents", href="/incidents")),
+        dbc.NavItem(dbc.NavLink("Evictions", href="/evictions")),
+        dbc.NavItem(dbc.NavLink("MUNI", href="/muni")),
     ],
     brand="SF Urban Health",
     brand_href="/",
@@ -39,8 +42,12 @@ app.layout = html.Div([
 def display_page(pathname):
     if pathname == "/incidents":
         return incidents.layout
+    if pathname == "/evictions":
+        return evictions.layout
+    if pathname == "/muni":
+        return muni.layout
     return housing.layout
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8050, debug=True)
+    app.run(host="0.0.0.0", port="8050", debug=True)

@@ -17,7 +17,7 @@ from dashboard.data.transforms import (
     trailing_window,
 )
 
-ACCENT = "#2C7873"
+ACCENT = "#ffb300"
 
 _NEIGHBORHOODS = sorted(
     n for n in MART["neighborhood"].unique().to_list() if n is not None
@@ -243,7 +243,7 @@ def refresh(start_date, end_date, neighborhoods):
                 "Permits filed",
                 _fmt_int(kpis["permits_filed"][0]),
                 kpis["permits_filed"][1],
-                "#6FB3B8",
+                "#ffe066",
             ),
             width=True,
         ),
@@ -252,7 +252,7 @@ def refresh(start_date, end_date, neighborhoods):
                 "Total project cost",
                 _fmt_money(kpis["project_cost"][0]),
                 kpis["project_cost"][1],
-                "#F2A65A",
+                "#ff6b35",
             ),
             width=True,
         ),
@@ -261,7 +261,7 @@ def refresh(start_date, end_date, neighborhoods):
                 "Median days to issue",
                 _fmt_days(kpis["median_days"][0]),
                 kpis["median_days"][1],
-                "#772E25",
+                "#ef5350",
                 higher_is_better=False,
             ),
             width=True,
@@ -271,7 +271,7 @@ def refresh(start_date, end_date, neighborhoods):
                 "Stalled permits",
                 _fmt_int(stalled),
                 None,
-                "#9DA9A0",
+                "#664d00",
                 higher_is_better=False,
             ),
             width=True,

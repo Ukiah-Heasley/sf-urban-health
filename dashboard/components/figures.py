@@ -9,6 +9,7 @@ inspect in a REPL or unit-test.
 from __future__ import annotations
 
 import plotly.graph_objects as go
+import plotly.io as pio
 import polars as pl
 
 from dashboard.data.transforms import (
@@ -19,34 +20,44 @@ from dashboard.data.transforms import (
     with_rolling_avg,
 )
 
-ACCENT = "#2C7873"
-ACCENT_LIGHT = "#6FB3B8"
-NEUTRAL = "#9DA9A0"
-PALETTE = ["#2C7873", "#6FB3B8", "#C8D5B9", "#F2A65A", "#772E25"]
+ACCENT = "#ffb300"
+ACCENT_LIGHT = "#ffe066"
+NEUTRAL = "#3a2a00"
+PALETTE = ["#ffb300", "#ffe066", "#ff6b35", "#4caf66", "#ef5350"]
 
 _TRANSITION_COLORS = {
-    "new_residential": "#2C7873",
-    "unit_addition": "#6FB3B8",
-    "commercial_to_residential": "#C8D5B9",
-    "sfr_to_multifamily": "#F2A65A",
-    "demolition": "#772E25",
-    "renovation_same_use": "#9DA9A0",
-    "other": "#D3D3D3",
+    "new_residential": "#ffb300",
+    "unit_addition": "#ffe066",
+    "commercial_to_residential": "#ff6b35",
+    "sfr_to_multifamily": "#4caf66",
+    "demolition": "#ef5350",
+    "renovation_same_use": "#3a2a00",
+    "other": "#664d00",
 }
 
 _AGE_COLORS = {
-    "<90d": "#C8D5B9",
-    "90-180d": "#F2A65A",
-    "180-365d": "#D46027",
-    ">365d": "#772E25",
+    "<90d": "#ffe066",
+    "90-180d": "#ffb300",
+    "180-365d": "#ff6b35",
+    ">365d": "#ef5350",
 }
 
+pio.templates["terminal_amber"] = go.layout.Template(
+    layout=go.Layout(
+        paper_bgcolor="#0f0c00",
+        plot_bgcolor="#0f0c00",
+        font=dict(family="'Share Tech Mono', monospace", color="#664d00", size=11),
+        xaxis=dict(gridcolor="#1f1800", linecolor="#2a1f00", tickcolor="#664d00"),
+        yaxis=dict(gridcolor="#1f1800", linecolor="#2a1f00", tickcolor="#664d00"),
+        hoverlabel=dict(bgcolor="#1a1200", font_size=12, bordercolor="#ffb300"),
+    )
+)
+
 _BASE_LAYOUT = dict(
-    template="plotly_white",
-    margin=dict(l=60, r=20, t=50, b=40),
-    font=dict(family="system-ui, -apple-system, sans-serif", size=12),
-    title_font=dict(size=15, family="system-ui, sans-serif"),
-    hoverlabel=dict(bgcolor="white", font_size=12),
+    template="terminal_amber",
+    margin=dict(l=75, r=20, t=50, b=40),
+    font=dict(family="'Share Tech Mono', monospace", size=11),
+    title_font=dict(size=13, color="#886600"),
 )
 
 
@@ -95,7 +106,7 @@ def trend_net_units(df: pl.DataFrame) -> go.Figure:
         hovertemplate="%{x|%b %Y}<br>%{y:,.0f} avg<extra></extra>",
     )
     fig.update_layout(
-        **_BASE_LAYOUT,
+        **{**_BASE_LAYOUT, "margin": dict(l=60, r=20, t=80, b=40)},
         title="Net new units permitted, by month",
         height=350,
         bargap=0.15,
@@ -263,7 +274,7 @@ def use_transition_breakdown(df: pl.DataFrame) -> go.Figure:
             hovertemplate=f"{label}<br>%{{x|%b %Y}}<br>%{{y:,.0f}} net units<extra></extra>",
         )
     fig.update_layout(
-        **_BASE_LAYOUT,
+        **{**_BASE_LAYOUT, "margin": dict(l=60, r=20, t=80, b=40)},
         title="Net new units by permit type, by month",
         height=350,
         barmode="stack",
@@ -326,7 +337,7 @@ def pipeline_backlog(df: pl.DataFrame) -> go.Figure:
             hovertemplate=f"{bucket}<br>%{{x}}<br>%{{y:,.0f}} permits<extra></extra>",
         )
     fig.update_layout(
-        **_BASE_LAYOUT,
+        **{**_BASE_LAYOUT, "margin": dict(l=60, r=20, t=80, b=40)},
         title="In-flight residential permits by stage and age",
         height=350,
         barmode="group",
