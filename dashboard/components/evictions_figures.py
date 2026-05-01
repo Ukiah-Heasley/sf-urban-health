@@ -18,7 +18,7 @@ PALETTE = ["#ef5350", "#ffb300", "#ffe066", "#4caf66", "#42a5f5"]
 
 _BASE_LAYOUT = dict(
     template="terminal_amber",
-    margin=dict(l=60, r=20, t=50, b=40),
+    margin=dict(l=75, r=20, t=50, b=40),
     font=dict(family="'Share Tech Mono', monospace", size=11),
     title_font=dict(size=13, color="#886600"),
 )
