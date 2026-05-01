@@ -23,12 +23,18 @@ unpacked as (
         payload:permit_number::string                          as permit_number,
         payload:permit_type::string                            as permit_type_code,
         payload:permit_type_definition::string                 as permit_type,
-        lower(payload:current_status::string)                  as current_status,
+        lower(payload:status::string)                          as current_status,
         payload:filed_date::timestamp_ntz                      as filed_at,
         payload:issued_date::timestamp_ntz                     as issued_at,
-        payload:completed_date::timestamp_ntz                  as completed_at,
-        payload:first_construction_document_date::timestamp_ntz as first_construction_doc_at,
-        payload:current_status_date::timestamp_ntz             as current_status_at,
+        -- completed_date is not a DataSF field; derive from status + status_date
+        case
+            when lower(payload:status::string) = 'complete'
+                then payload:status_date::timestamp_ntz
+        end                                                    as completed_at,
+        payload:status_date::timestamp_ntz                     as current_status_at,
+        payload:approved_date::timestamp_ntz                   as approved_at,
+        payload:last_permit_activity_date::timestamp_ntz       as last_activity_at,
+        payload:adu::boolean                                   as is_adu,
         payload:estimated_cost::number(18, 2)                  as estimated_cost,
         payload:revised_cost::number(18, 2)                    as revised_cost,
         payload:existing_units::integer                        as existing_units,

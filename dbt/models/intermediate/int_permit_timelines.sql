@@ -24,7 +24,32 @@ timelines as (
             when completed_at is not null then 'completed'
             when issued_at is not null then 'issued'
             when filed_at is not null then 'filed'
-        end as lifecycle_stage
+        end as lifecycle_stage,
+
+        -- Classify the structural change represented by the permit
+        case
+            when coalesce(existing_units, 0) = 0 and coalesce(proposed_units, 0) > 0
+                then 'new_residential'
+            when coalesce(existing_units, 0) > 0 and coalesce(proposed_units, 0) = 0
+                then 'demolition'
+            when coalesce(proposed_units, 0) > coalesce(existing_units, 0)
+                then 'unit_addition'
+            when lower(existing_use) like any ('%commercial%', '%retail%', '%office%')
+                and lower(proposed_use) like any ('%residential%', '%dwelling%', '%apartment%')
+                then 'commercial_to_residential'
+            when lower(existing_use) like '%single%'
+                and lower(proposed_use) like any ('%multi%', '%apartment%', '%dwelling%')
+                then 'sfr_to_multifamily'
+            when existing_use = proposed_use or proposed_use is null
+                then 'renovation_same_use'
+            else 'other'
+        end as use_transition,
+
+        case
+            when coalesce(proposed_units, 0) - coalesce(existing_units, 0) > 0
+                then coalesce(revised_cost, estimated_cost)
+                    / (coalesce(proposed_units, 0) - coalesce(existing_units, 0))
+        end as cost_per_unit
     from permits
 )
 

@@ -1,245 +1,53 @@
-"""SF Urban Health dashboard — housing production."""
+"""SF Urban Health dashboard — multi-page shell."""
 
 from __future__ import annotations
 
-from datetime import date, datetime
-
+import dash
 import dash_bootstrap_components as dbc
-from dash import Dash, Input, Output, dcc, html
+from dash import Input, Output, callback, dcc, html
 
-from dashboard.components import figures as fig
-from dashboard.components.kpi import build_kpi_card
-from dashboard.data.cache import MART
-from dashboard.data.transforms import (
-    apply_filters,
-    kpi_summary,
-    trailing_window,
-)
+import dashboard.components.figures  # registers terminal_amber template for all pages  # noqa: F401
+from dashboard.pages import evictions, housing, incidents, muni
 
-ACCENT = "#2C7873"
-
-_NEIGHBORHOODS = sorted(
-    n for n in MART["neighborhood"].unique().to_list() if n is not None
-)
-_MIN_DATE: date = MART["filed_month"].min()
-_MAX_DATE: date = MART["filed_month"].max()
-
-
-app = Dash(
+app = dash.Dash(
     __name__,
     title="SF Urban Health",
     external_stylesheets=[dbc.themes.FLATLY],
-    suppress_callback_exceptions=False,
+    suppress_callback_exceptions=True,
 )
 server = app.server  # WSGI handle for gunicorn
 
-
-def _filter_bar() -> dbc.Row:
-    return dbc.Row(
-        [
-            dbc.Col(
-                [
-                    dbc.Label("Date range", className="fw-semibold mb-1"),
-                    dcc.DatePickerRange(
-                        id="date-range",
-                        min_date_allowed=_MIN_DATE,
-                        max_date_allowed=_MAX_DATE,
-                        start_date=_MIN_DATE,
-                        end_date=_MAX_DATE,
-                        display_format="MMM YYYY",
-                    ),
-                ],
-                md=6,
-            ),
-            dbc.Col(
-                [
-                    dbc.Label("Neighborhoods", className="fw-semibold mb-1"),
-                    dcc.Dropdown(
-                        id="neighborhoods",
-                        options=[{"label": n, "value": n} for n in _NEIGHBORHOODS],
-                        multi=True,
-                        placeholder="All neighborhoods",
-                    ),
-                ],
-                md=6,
-            ),
-        ],
-        className="g-3 mb-4",
-    )
-
-
-app.layout = dbc.Container(
-    [
-        html.Div(
-            [
-                html.H2("SF Housing Production", className="mb-0"),
-                html.Div(
-                    "Permits filed with the City of San Francisco, "
-                    f"{_MIN_DATE:%b %Y}–{_MAX_DATE:%b %Y}",
-                    className="text-muted",
-                ),
-            ],
-            className="py-4",
-        ),
-        _filter_bar(),
-        # KPI strip
-        dbc.Row(id="kpi-row", className="g-3 mb-4"),
-        # Section 1: trend
-        dbc.Card(dbc.CardBody(dcc.Graph(id="fig-trend")), className="mb-4 shadow-sm"),
-        # Section 2: geography
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(dcc.Graph(id="fig-top-neighborhoods")),
-                        className="shadow-sm h-100",
-                    ),
-                    md=6,
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(dcc.Graph(id="fig-districts")),
-                        className="shadow-sm h-100",
-                    ),
-                    md=6,
-                ),
-            ],
-            className="g-3 mb-4",
-        ),
-        # Section 3: process efficiency
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(dcc.Graph(id="fig-days-to-issue")),
-                        className="shadow-sm h-100",
-                    ),
-                    md=6,
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(dcc.Graph(id="fig-completion-rate")),
-                        className="shadow-sm h-100",
-                    ),
-                    md=6,
-                ),
-            ],
-            className="g-3 mb-5",
-        ),
+_NAVBAR = dbc.NavbarSimple(
+    children=[
+        dbc.NavItem(dbc.NavLink("Housing Production", href="/")),
+        dbc.NavItem(dbc.NavLink("Public Safety Incidents", href="/incidents")),
+        dbc.NavItem(dbc.NavLink("Evictions", href="/evictions")),
+        dbc.NavItem(dbc.NavLink("MUNI", href="/muni")),
     ],
+    brand="SF Urban Health",
+    brand_href="/",
+    color="primary",
+    dark=True,
     fluid=True,
-    style={"maxWidth": "1400px"},
 )
 
-
-def _parse(d: str | None) -> date | None:
-    if not d:
-        return None
-    return datetime.fromisoformat(d[:10]).date()
-
-
-def _fmt_int(v: float | None) -> str:
-    return "—" if v is None else f"{v:,.0f}"
+app.layout = html.Div([
+    dcc.Location(id="url", refresh=False),
+    _NAVBAR,
+    html.Div(id="page-content"),
+])
 
 
-def _fmt_money(v: float | None) -> str:
-    if v is None:
-        return "—"
-    if abs(v) >= 1e9:
-        return f"${v / 1e9:.2f}B"
-    if abs(v) >= 1e6:
-        return f"${v / 1e6:.1f}M"
-    return f"${v:,.0f}"
-
-
-def _fmt_days(v: float | None) -> str:
-    return "—" if v is None else f"{v:.0f} d"
-
-
-@app.callback(
-    Output("kpi-row", "children"),
-    Output("fig-trend", "figure"),
-    Output("fig-top-neighborhoods", "figure"),
-    Output("fig-districts", "figure"),
-    Output("fig-days-to-issue", "figure"),
-    Output("fig-completion-rate", "figure"),
-    Input("date-range", "start_date"),
-    Input("date-range", "end_date"),
-    Input("neighborhoods", "value"),
-)
-def refresh(start_date, end_date, neighborhoods):
-    start = _parse(start_date) or _MIN_DATE
-    end = _parse(end_date) or _MAX_DATE
-
-    filtered = apply_filters(MART, start, end, neighborhoods)
-
-    # KPI deltas: last 12 months in the selected window vs. the 12 months
-    # before that. We respect the neighborhood filter but ignore the date
-    # filter when computing the prior window — otherwise the comparison
-    # baseline would shrink as the user narrows the date range.
-    nbhd_only = apply_filters(MART, None, None, neighborhoods)
-    cur_window = trailing_window(nbhd_only, end, 12)
-    prior_window = trailing_window(nbhd_only, _shift_months(end, -12), 12)
-
-    kpis = kpi_summary(cur_window, prior_window)
-
-    cards = [
-        dbc.Col(
-            build_kpi_card(
-                "Net new units",
-                _fmt_int(kpis["net_units"][0]),
-                kpis["net_units"][1],
-                ACCENT,
-            ),
-            md=3,
-        ),
-        dbc.Col(
-            build_kpi_card(
-                "Permits filed",
-                _fmt_int(kpis["permits_filed"][0]),
-                kpis["permits_filed"][1],
-                "#6FB3B8",
-            ),
-            md=3,
-        ),
-        dbc.Col(
-            build_kpi_card(
-                "Total project cost",
-                _fmt_money(kpis["project_cost"][0]),
-                kpis["project_cost"][1],
-                "#F2A65A",
-            ),
-            md=3,
-        ),
-        dbc.Col(
-            build_kpi_card(
-                "Median days to issue",
-                _fmt_days(kpis["median_days"][0]),
-                kpis["median_days"][1],
-                "#772E25",
-                higher_is_better=False,
-            ),
-            md=3,
-        ),
-    ]
-
-    return (
-        cards,
-        fig.trend_net_units(filtered),
-        fig.top_neighborhoods(filtered, n=15),
-        fig.district_breakdown(filtered),
-        fig.median_days_to_issue_trend(filtered),
-        fig.completion_rate_by_district(filtered),
-    )
-
-
-def _shift_months(d: date, months: int) -> date:
-    m = d.month - 1 + months
-    year = d.year + m // 12
-    month = m % 12 + 1
-    day = min(d.day, 28)
-    return date(year, month, day)
+@callback(Output("page-content", "children"), Input("url", "pathname"))
+def display_page(pathname):
+    if pathname == "/incidents":
+        return incidents.layout
+    if pathname == "/evictions":
+        return evictions.layout
+    if pathname == "/muni":
+        return muni.layout
+    return housing.layout
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8050, debug=True)
+    app.run(host="0.0.0.0", port="8050", debug=True)

@@ -16,9 +16,16 @@ models:
           - not_null
       - name: net_units_added
         description: "Proposed minus existing units. Negative values indicate demolitions."
+      - name: use_transition
+        description: "Type of structural change (see int_permit_timelines for values)."
+      - name: avg_cost_per_unit
+        description: "Average project cost per net unit added. Null for rows with no unit gains."
+      - name: median_cost_per_unit
+        description: "Median project cost per net unit added. Null for rows with no unit gains."
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - filed_month
             - neighborhood
             - supervisor_district
+            - use_transition

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All workflows go through the root `Makefile`, which auto-loads `airflow/.env`.
 
 ```bash
-make ingest         # DataSF -> S3 (uv run airflow/scripts/permits.py)
+make ingest         # DataSF -> S3 (uv run airflow/include/scripts/permits.py)
 make dbt-deps       # one-time: install dbt packages
 make dbt-build      # dbt run + test against Snowflake
 make dbt-test
@@ -24,7 +24,7 @@ For ad-hoc dbt selectors not covered by a target, run from `airflow/include/dbt/
 ## Architecture
 
 ```
-DataSF SODA API → airflow/scripts/permits.py → S3 raw/permits/YYYY/MM/DD/permits.json
+DataSF SODA API → airflow/include/scripts/permits.py → S3 raw/permits/YYYY/MM/DD/permits.json
 S3 → Snowflake RAW.PERMITS (COPY INTO via Airflow SnowflakeOperator)
 Snowflake → dbt staging → intermediate → marts
 Airflow DAG (airflow/dags/ingest_permits.py) orchestrates all five steps daily at 06:00 UTC
@@ -46,7 +46,7 @@ Airflow DAG (airflow/dags/ingest_permits.py) orchestrates all five steps daily a
 
 ## Airflow → scripts import path
 
-`airflow/Dockerfile` copies `scripts/` to `/opt/airflow/dags/scripts/` at image build time. The DAG does `from scripts import permits`. If you rename or restructure the `scripts/` package, update the `COPY` line in `Dockerfile` and the DAG import.
+Scripts live in `airflow/include/scripts/`. Astro auto-mounts `include/` at `/usr/local/airflow/include/` in all containers; the Dockerfile sets `PYTHONPATH` to include that directory so `from scripts import permits` resolves. No `COPY` step is needed — changes to scripts are picked up automatically on `astro dev restart` without a full image rebuild.
 
 ## dbt grain and tests
 

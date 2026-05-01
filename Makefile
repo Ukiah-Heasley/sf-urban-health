@@ -14,6 +14,8 @@ help:
 	@echo "Targets:"
 	@echo "  make ingest         Run permits extractor (DataSF -> S3)"
 	@echo "  make dbt-deps       Install dbt packages"
+	@echo "  make dbt-run        Run dbt models only (no tests, dev schema)"
+	@echo "  make dbt-run-prod   Run dbt models only (no tests, prod schema)"
 	@echo "  make dbt-build      Run dbt build (run + test) against Snowflake"
 	@echo "  make dbt-test       Run dbt tests only"
 	@echo "  make sync-dbt       Mirror dbt/ into airflow/include/dbt/ for the Airflow image"
@@ -31,11 +33,19 @@ check-env:
 
 .PHONY: ingest
 ingest: check-env
-	uv run python airflow/scripts/permits.py
+	uv run python airflow/include/scripts/permits.py
 
 .PHONY: dbt-deps
 dbt-deps: check-env
 	cd $(DBT_DIR) && uv run --group dbt dbt deps --profiles-dir .
+
+.PHONY: dbt-run
+dbt-run: check-env
+	cd $(DBT_DIR) && uv run --group dbt dbt run --profiles-dir .
+
+.PHONY: dbt-run-prod
+dbt-run-prod: check-env
+	cd $(DBT_DIR) && uv run --group dbt dbt run --target prod --profiles-dir .
 
 .PHONY: dbt-build
 dbt-build: check-env
@@ -52,7 +62,7 @@ sync-dbt:
 	@mkdir -p $(DBT_MIRROR)
 	@rsync -a --delete \
 		--exclude='target/' --exclude='dbt_packages/' --exclude='logs/' \
-		--exclude='.user.yml' --exclude='profiles.yml' \
+		--exclude='.user.yml' \
 		$(DBT_DIR)/ $(DBT_MIRROR)/
 	@echo "synced $(DBT_DIR)/ -> $(DBT_MIRROR)/"
 

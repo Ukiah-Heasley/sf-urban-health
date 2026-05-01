@@ -33,6 +33,12 @@ models:
                 - revoked
                 - suspend
                 - withdrawn
+      - name: approved_at
+        description: "Timestamp the permit was approved by DBI."
+      - name: last_activity_at
+        description: "Timestamp of most recent permit activity (DataSF last_permit_activity_date)."
+      - name: is_adu
+        description: "True if the permit is for an Accessory Dwelling Unit."
       - name: estimated_cost
         description: "Applicant-reported estimated cost at filing."
       - name: revised_cost
