@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: stg_evictions
+    description: "One row per SF Rent Board eviction notice, typed and renamed from the raw JSON payload."
+    columns:
+      - name: eviction_id
+        description: "Rent Board internal case record identifier. Grain of this model."
+        tests:
+          - not_null
+          - unique
+      - name: filed_at
+        description: "Date the eviction notice was filed with the Rent Board."
+        tests:
+          - not_null
+      - name: address
+        description: "Block-level address where the notice was issued."
+      - name: zipcode
+        description: "Zip code of the eviction address."
+      - name: supervisor_district
+        description: "SF Supervisor district (1–11), auto-assigned from geocoding. May be null if geocoding failed."
+      - name: neighborhood
+        description: "Analysis Boundaries neighborhood, raw from DataSF. Normalized via normalize_neighborhood macro in marts."
+      - name: eviction_type
+        description: "Derived classification: 'no_fault' if any no-fault reason flag is set, else 'at_fault'."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["at_fault", "no_fault"]
+      - name: non_payment
+        description: "Non-payment of rent was cited as a grounds for eviction."
+      - name: breach
+        description: "Breach of lease was cited."
+      - name: nuisance
+        description: "Nuisance was cited."
+      - name: illegal_use
+        description: "Illegal use of the unit was cited."
+      - name: failure_to_sign_renewal
+        description: "Failure to sign lease renewal was cited."
+      - name: access_denial
+        description: "Unlawful denial of access was cited."
+      - name: unapproved_subtenant
+        description: "Unapproved subtenant was cited."
+      - name: late_payments
+        description: "Habitual late payment was cited."
+      - name: roommate_same_unit
+        description: "Eviction of a roommate in the same unit was cited."
+      - name: other_cause
+        description: "Other cause not covered by the admin code was cited."
+      - name: owner_move_in
+        description: "Owner move-in was cited (no-fault)."
+      - name: demolition
+        description: "Demolition of the property was cited (no-fault)."
+      - name: capital_improvement
+        description: "Capital improvement was cited (no-fault)."
+      - name: substantial_rehab
+        description: "Substantial rehabilitation was cited (no-fault)."
+      - name: ellis_act_withdrawal
+        description: "Ellis Act withdrawal (going out of the rental business) was cited (no-fault)."
+      - name: condo_conversion
+        description: "Condo conversion was cited (no-fault)."
+      - name: lead_remediation
+        description: "Lead remediation was cited (no-fault)."
+      - name: development
+        description: "Development agreement was cited (no-fault)."
+      - name: good_samaritan_ends
+        description: "End of Good Samaritan period was cited (no-fault)."

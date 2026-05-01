@@ -18,3 +18,9 @@ sources:
         freshness:
           warn_after: { count: 36, period: hour }
           error_after: { count: 72, period: hour }
+      - name: evictions
+        description: "SF Rent Board eviction notices (DataSF 5cei-gny5)."
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after: { count: 36, period: hour }
+          error_after: { count: 72, period: hour }
