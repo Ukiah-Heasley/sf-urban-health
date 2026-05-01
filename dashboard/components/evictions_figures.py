@@ -11,13 +11,36 @@ from dashboard.data.evictions_transforms import (
     top_eviction_neighborhoods,
 )
 
-_PALETTE = {"no_fault": "#C0392B", "at_fault": "#E67E22"}
+ACCENT = "#ef5350"
+ACCENT_LIGHT = "#ffb300"
+NEUTRAL = "#664d00"
+PALETTE = ["#ef5350", "#ffb300", "#ffe066", "#4caf66", "#42a5f5"]
+
+_BASE_LAYOUT = dict(
+    template="terminal_amber",
+    margin=dict(l=60, r=20, t=50, b=40),
+    font=dict(family="'Share Tech Mono', monospace", size=11),
+    title_font=dict(size=13, color="#886600"),
+)
 
 
 def _empty(msg: str, height: int = 400) -> go.Figure:
     fig = go.Figure()
-    fig.add_annotation(text=msg, xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    fig.update_layout(height=height, xaxis_visible=False, yaxis_visible=False)
+    fig.update_layout(
+        **_BASE_LAYOUT,
+        height=height,
+        annotations=[
+            dict(
+                text=msg,
+                xref="paper", yref="paper",
+                x=0.5, y=0.5,
+                showarrow=False,
+                font=dict(size=14, color=NEUTRAL),
+            )
+        ],
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+    )
     return fig
 
 
@@ -34,8 +57,9 @@ def evictions_vs_units(evictions: pl.DataFrame, housing: pl.DataFrame) -> go.Fig
         x=data["filed_month"].to_list(),
         y=data["eviction_count"].to_list(),
         name="Eviction notices",
-        line={"color": "#C0392B", "width": 2},
+        line={"color": ACCENT, "width": 2},
         yaxis="y1",
+        hovertemplate="%{x|%b %Y}<br>%{y:,.0f} notices<extra></extra>",
     ))
 
     if "net_units_added" in data.columns:
@@ -43,23 +67,31 @@ def evictions_vs_units(evictions: pl.DataFrame, housing: pl.DataFrame) -> go.Fig
             x=data["filed_month"].to_list(),
             y=data["net_units_added"].to_list(),
             name="Net units added",
-            line={"color": "#2471A3", "width": 2, "dash": "dot"},
+            line={"color": "#42a5f5", "width": 2, "dash": "dot"},
             yaxis="y2",
+            hovertemplate="%{x|%b %Y}<br>%{y:,.0f} units<extra></extra>",
         ))
 
     fig.update_layout(
-        title="Eviction Notices vs. New Housing Units — Monthly",
-        xaxis={"title": "Month"},
-        yaxis={"title": "Eviction notices", "titlefont": {"color": "#C0392B"}},
-        yaxis2={
-            "title": "Net units added",
-            "titlefont": {"color": "#2471A3"},
-            "overlaying": "y",
-            "side": "right",
-        },
-        legend={"orientation": "h", "y": -0.15},
+        **_BASE_LAYOUT,
+        title="Eviction notices vs. new housing units — monthly",
         height=420,
         hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis=dict(
+            title="Eviction notices",
+            titlefont=dict(color=ACCENT),
+            gridcolor="#1f1800",
+            linecolor="#2a1f00",
+        ),
+        yaxis2=dict(
+            title="Net units added",
+            titlefont=dict(color="#42a5f5"),
+            overlaying="y",
+            side="right",
+            gridcolor="#1f1800",
+            linecolor="#2a1f00",
+        ),
     )
     return fig
 
@@ -72,6 +104,7 @@ def eviction_type_breakdown(df: pl.DataFrame) -> go.Figure:
     data = eviction_type_trend(df)
     fig = go.Figure()
 
+    type_colors = {"at_fault": ACCENT, "no_fault": ACCENT_LIGHT}
     for etype in ["at_fault", "no_fault"]:
         subset = data.filter(pl.col("eviction_type") == etype)
         label = "At-fault" if etype == "at_fault" else "No-fault"
@@ -81,17 +114,19 @@ def eviction_type_breakdown(df: pl.DataFrame) -> go.Figure:
             name=label,
             mode="lines",
             stackgroup="one",
-            fillcolor=_PALETTE[etype],
-            line={"color": _PALETTE[etype]},
+            fillcolor=type_colors[etype],
+            line={"color": type_colors[etype]},
+            hovertemplate=f"{label}<br>%{{x|%b %Y}}<br>%{{y:,.0f}} notices<extra></extra>",
         ))
 
     fig.update_layout(
-        title="At-Fault vs No-Fault Evictions — Monthly",
-        xaxis={"title": "Month"},
-        yaxis={"title": "Eviction notices"},
-        legend={"orientation": "h", "y": -0.15},
+        **{**_BASE_LAYOUT, "margin": dict(l=60, r=20, t=80, b=40)},
+        title="At-fault vs no-fault evictions — monthly",
         height=380,
         hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis_title="Eviction notices",
+        xaxis_title=None,
     )
     return fig
 
@@ -106,13 +141,14 @@ def top_neighborhoods_bar(df: pl.DataFrame) -> go.Figure:
         x=data["eviction_count"].to_list(),
         y=data["neighborhood"].to_list(),
         orientation="h",
-        marker_color="#C0392B",
+        marker_color=ACCENT,
+        hovertemplate="%{y}<br>%{x:,.0f} notices<extra></extra>",
     ))
     fig.update_layout(
-        title="Top Neighborhoods by Eviction Notices",
-        xaxis={"title": "Total notices"},
-        yaxis={"title": ""},
+        **{**_BASE_LAYOUT, "margin": dict(l=160, r=20, t=50, b=40)},
+        title="Top neighborhoods by eviction notices",
         height=420,
-        margin={"l": 160},
+        xaxis_title="Total notices",
+        yaxis_title=None,
     )
     return fig

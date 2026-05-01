@@ -17,17 +17,16 @@ from dashboard.data.incidents_transforms import (
     top_incident_neighborhoods,
 )
 
-ACCENT = "#772E25"
-ACCENT_LIGHT = "#D46027"
-NEUTRAL = "#9DA9A0"
-PALETTE = ["#772E25", "#D46027", "#F2A65A", "#C8D5B9", "#6FB3B8"]
+ACCENT = "#ff6b35"
+ACCENT_LIGHT = "#ffb300"
+NEUTRAL = "#664d00"
+PALETTE = ["#ff6b35", "#ffb300", "#ffe066", "#4caf66", "#42a5f5"]
 
 _BASE_LAYOUT = dict(
-    template="plotly_white",
+    template="terminal_amber",
     margin=dict(l=60, r=20, t=50, b=40),
-    font=dict(family="system-ui, -apple-system, sans-serif", size=12),
-    title_font=dict(size=15, family="system-ui, sans-serif"),
-    hoverlabel=dict(bgcolor="white", font_size=12),
+    font=dict(family="'Share Tech Mono', monospace", size=11),
+    title_font=dict(size=13, color="#886600"),
 )
 
 
@@ -146,7 +145,7 @@ def resolution_by_district(df: pl.DataFrame) -> go.Figure:
         height=350,
         xaxis_title="Police district",
         yaxis_title="Resolved / total",
-        yaxis=dict(tickformat=".0%", range=[0, 1]),
+        yaxis=dict(tickformat=".0%", range=[0, 1], gridcolor="#1f1800", linecolor="#2a1f00"),
         xaxis=dict(type="category"),
     )
     return fig

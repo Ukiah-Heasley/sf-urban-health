@@ -15,7 +15,7 @@ from dashboard.data.incidents_transforms import (
     incident_kpi_summary,
 )
 
-ACCENT = "#772E25"
+ACCENT = "#ff6b35"
 
 _NEIGHBORHOODS = (
     sorted(n for n in SAFETY_MART["neighborhood"].unique().to_list() if n is not None)
@@ -162,11 +162,11 @@ def refresh(start_date, end_date, neighborhoods, categories):
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("Top category", kpis["top_category"] or "—", None, "#D46027"),
+            build_kpi_card("Top category", kpis["top_category"] or "—", None, "#ffb300"),
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("% resolved", _fmt_pct(kpis["pct_resolved"]), None, "#2C7873"),
+            build_kpi_card("% resolved", _fmt_pct(kpis["pct_resolved"]), None, "#4caf66"),
             md=4,
         ),
     ]

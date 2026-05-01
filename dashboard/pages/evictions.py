@@ -13,7 +13,7 @@ from dashboard.components.kpi import build_kpi_card
 from dashboard.data.cache import EVICTIONS, MART
 from dashboard.data.evictions_transforms import apply_eviction_filters, eviction_kpi_summary
 
-ACCENT = "#C0392B"
+ACCENT = "#ef5350"
 
 _NEIGHBORHOODS = (
     sorted(n for n in EVICTIONS["neighborhood"].unique().to_list() if n is not None)
@@ -124,11 +124,11 @@ def refresh(start_date, end_date, neighborhoods):
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("No-fault share", _fmt_pct(kpis["no_fault_pct"]), None, "#922B21"),
+            build_kpi_card("No-fault share", _fmt_pct(kpis["no_fault_pct"]), None, "#ff6b35"),
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("Ellis Act notices", _fmt_int(kpis["ellis_act"]), None, "#7B241C"),
+            build_kpi_card("Ellis Act notices", _fmt_int(kpis["ellis_act"]), None, "#ffb300"),
             md=4,
         ),
     ]

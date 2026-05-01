@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+body {
+    background: #0d0d0d !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    color: #ffb300 !important;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.03) 2px,
+        rgba(0, 0, 0, 0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+}
+
+.navbar,
+.navbar-dark {
+    background-color: #0f0c00 !important;
+    border-bottom: 1px solid #2a1f00;
+}
+
+.navbar-brand,
+.navbar-dark .navbar-brand {
+    color: #ffb300 !important;
+}
+
+.navbar-dark .navbar-nav .nav-link {
+    color: #ffb300 !important;
+}
+
+.navbar-dark .navbar-nav .nav-link:hover,
+.navbar-dark .navbar-nav .nav-link.active {
+    color: #ffe066 !important;
+}
+
+.card {
+    background: #0f0c00 !important;
+    border: 1px solid #2a1f00 !important;
+    box-shadow: none !important;
+}
+
+.card-body {
+    color: #ffb300;
+}
+
+.form-control,
+.form-control:focus {
+    background: #110e00 !important;
+    border-color: #ffb300 !important;
+    color: #ffb300 !important;
+}
+
+.form-control:focus {
+    border-color: #ffe066 !important;
+    box-shadow: 0 0 0 0.25rem rgba(255, 179, 0, 0.15) !important;
+}
+
+/* dcc.Dropdown internals */
+.Select-control {
+    background: #110e00 !important;
+    border-color: #ffb300 !important;
+}
+
+.Select-value-label,
+.Select-placeholder {
+    color: #664d00 !important;
+}
+
+.Select-menu-outer {
+    background: #110e00 !important;
+    border-color: #2a1f00 !important;
+}
+
+.Select-option {
+    background: #110e00 !important;
+    color: #ffb300 !important;
+}
+
+.Select-option.is-focused {
+    background: #1f1800 !important;
+}
+
+.btn-primary {
+    background: #ffb300 !important;
+    color: #0d0d0d !important;
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+h1, h2, h3 {
+    color: #ffb300;
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 10px #ffb30044;
+}
+
+.text-muted {
+    color: #664d00 !important;
+}
+
+label {
+    color: #886600 !important;
+}
+
+/* DatePickerRange */
+.DateInput_input {
+    background: #110e00 !important;
+    color: #ffb300 !important;
+    border-bottom-color: #ffb300 !important;
+}
+
+.DateRangePickerInput {
+    background: #110e00 !important;
+    border-color: #2a1f00 !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track { background: #0d0d0d; }
+::-webkit-scrollbar-thumb { background: #2a1f00; }
+::-webkit-scrollbar-thumb:hover { background: #ffb300; }
