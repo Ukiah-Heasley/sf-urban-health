@@ -140,6 +140,36 @@ CREATE TABLE SF_URBAN_HEALTH.METADATA.INGEST_WATERMARKS (
     updated_at    TIMESTAMP_NTZ NOT NULL,
     CONSTRAINT pk_ingest_watermarks PRIMARY KEY (dataset_name)
 );
+
+-- Pipeline observability tables (written directly from Airflow Python operators)
+CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.RAW.AIRFLOW_DAG_RUNS (
+    dag_id           VARCHAR       NOT NULL,
+    run_id           VARCHAR       NOT NULL,
+    state            VARCHAR,
+    execution_date   TIMESTAMP_NTZ,
+    start_date       TIMESTAMP_NTZ,
+    end_date         TIMESTAMP_NTZ,
+    duration_seconds FLOAT,
+    run_type         VARCHAR,
+    _loaded_at       TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
+    PRIMARY KEY (dag_id, run_id)
+);
+
+CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.RAW.AIRFLOW_TASK_INSTANCES (
+    dag_id             VARCHAR       NOT NULL,
+    run_id             VARCHAR       NOT NULL,
+    task_id            VARCHAR       NOT NULL,
+    state              VARCHAR,
+    start_date         TIMESTAMP_NTZ,
+    end_date           TIMESTAMP_NTZ,
+    duration_seconds   FLOAT,
+    try_number         INTEGER,
+    records_fetched    INTEGER,
+    max_watermark      TIMESTAMP_NTZ,
+    s3_path            VARCHAR,
+    _loaded_at         TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
+    PRIMARY KEY (dag_id, run_id, task_id)
+);
 ```
 
 ## Running it
@@ -147,8 +177,10 @@ CREATE TABLE SF_URBAN_HEALTH.METADATA.INGEST_WATERMARKS (
 Every workflow has a `make` target — `airflow/.env` is loaded automatically.
 
 ```bash
-make dbt-deps       # install dbt packages (one-time)
+make dbt-deps       # install dbt packages (one-time, includes elementary)
 make dbt-build      # run + test all dbt models
+# After first dbt-deps, run elementary once to create its schema:
+# cd dbt && dbt run --select elementary --profiles-dir . --target prod
 make airflow-up     # start the local Airflow stack
 make airflow-down
 make airflow-logs   # tail scheduler logs

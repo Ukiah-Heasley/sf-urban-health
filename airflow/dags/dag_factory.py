@@ -1,8 +1,8 @@
 """Factory for building standard SODA ingest DAGs."""
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from datetime import datetime, timedelta
 
 from airflow import DAG
@@ -11,7 +11,7 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 from scripts.soda_ingest import DatasetConfig, run as _soda_run
 
-_SQL_DIR = os.path.join(os.path.dirname(__file__), "..", "include", "sql")
+_SQL_DIR = Path(__file__).parent.parent / "include" / "sql"
 
 
 @dataclass
@@ -35,9 +35,11 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         since = rows[0][0].date() if rows else cfg.dataset.epoch
         run_date_str = context.get("ds")
         run_date = datetime.strptime(run_date_str, "%Y-%m-%d").date() if run_date_str else None
-        s3_path, max_wm = _soda_run(cfg.dataset, run_date, since)
-        context["ti"].xcom_push(key="max_watermark", value=max_wm.isoformat())
-        return s3_path
+        result = _soda_run(cfg.dataset, run_date, since)
+        context["ti"].xcom_push(key="max_watermark", value=result.max_watermark.isoformat())
+        context["ti"].xcom_push(key="records_fetched", value=result.records_fetched)
+        context["ti"].xcom_push(key="fetch_duration_seconds", value=result.fetch_duration_seconds)
+        return result.s3_path
 
     with DAG(
         dag_id=f"ingest_{cfg.dataset.name}",

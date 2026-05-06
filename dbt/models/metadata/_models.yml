@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: stg_airflow_dag_runs
+    description: "Cleaned Airflow DAG run metadata from METADATA.AIRFLOW_DAG_RUNS."
+    columns:
+      - name: run_id
+        description: "Airflow dag_run_id — unique per run."
+        tests:
+          - not_null
+          - unique
+      - name: dag_id
+        tests:
+          - not_null
+      - name: run_date
+        tests:
+          - not_null
+      - name: state
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['success', 'failed', 'running', 'queued']
+
+  - name: stg_airflow_task_instances
+    description: "Cleaned Airflow task instance metadata from METADATA.AIRFLOW_TASK_INSTANCES."
+    columns:
+      - name: dag_id
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: task_id
+        tests:
+          - not_null
+
+  - name: mart_pipeline_health
+    description: "Daily DAG run health metrics — success rates, durations, records ingested."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [run_date, dag_id]
+    columns:
+      - name: run_date
+        tests:
+          - not_null
+      - name: dag_id
+        tests:
+          - not_null
+      - name: total_runs
+        tests:
+          - not_null
+      - name: success_rate_pct
+        tests:
+          - not_null
+
+  - name: mart_dbt_test_health
+    description: "dbt test results per run with rolling pass rates."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [run_date, run_id, test_name]
+    columns:
+      - name: run_date
+        tests:
+          - not_null
+      - name: test_name
+        tests:
+          - not_null
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['pass', 'fail', 'error', 'warn']

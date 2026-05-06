@@ -14,7 +14,7 @@ from scripts.evictions import EVICTIONS_CONFIG
 dag = make_ingest_dag(DagConfig(
     dataset=EVICTIONS_CONFIG,
     snowflake_table="RAW.EVICTIONS",
-    schedule="30 6 * * *",
+    schedule="0 6 * * *",
     start_date=datetime(2026, 5, 1),
     tags=["sf-civic", "evictions", "daily"],
 ))

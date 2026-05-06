@@ -4,9 +4,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Iterator
+from typing import Iterator, NamedTuple
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -27,6 +28,13 @@ class DatasetConfig:
     @property
     def endpoint(self) -> str:
         return f"https://data.sfgov.org/resource/{self.dataset_id}.json"
+
+
+class RunResult(NamedTuple):
+    s3_path: str
+    max_watermark: date
+    records_fetched: int
+    fetch_duration_seconds: float
 
 
 def _session() -> requests.Session:
@@ -98,14 +106,36 @@ def _write_s3(config: DatasetConfig, records: list[dict], run_date: date) -> str
     return f"s3://{bucket}/{key}"
 
 
-def run(config: DatasetConfig, run_date: date, since: date) -> tuple[str, date]:
+def run(config: DatasetConfig, run_date: date, since: date) -> RunResult:
     if not os.environ.get("AWS_S3_BUCKET"):
         raise RuntimeError("AWS_S3_BUCKET must be set")
+
     expected = count_records(config, since)
     logger.info("API reports %d %s records since %s", expected, config.name, since)
+
+    t0 = time.monotonic()
     records = list(fetch_records(config, since))
-    logger.info("fetched %d records", len(records))
+    fetch_duration = time.monotonic() - t0
+    logger.info(
+        "fetched %d records in %.1fs (%.0f rec/s)",
+        len(records),
+        fetch_duration,
+        len(records) / fetch_duration if fetch_duration else 0,
+    )
+
+    t1 = time.monotonic()
     dest = _write_s3(config, records, run_date)
+    write_duration = time.monotonic() - t1
+    logger.info("wrote %d bytes to %s in %.1fs", len(records), dest, write_duration)
+
     max_wm = date.fromisoformat(max(r[config.date_field] for r in records)[:10])
-    logger.info("wrote %d %s records to %s (watermark: %s)", len(records), config.name, dest, max_wm)
-    return dest, max_wm
+    logger.info(
+        "completed %s: %d records, watermark %s, fetch %.1fs",
+        config.name, len(records), max_wm, fetch_duration,
+    )
+    return RunResult(
+        s3_path=dest,
+        max_watermark=max_wm,
+        records_fetched=len(records),
+        fetch_duration_seconds=round(fetch_duration, 2),
+    )

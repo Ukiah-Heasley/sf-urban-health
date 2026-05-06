@@ -28,3 +28,14 @@ models:
       +schema: marts
       +materialized: table
       +tags: ['daily']
+    metadata:
+      +schema: metadata
+      +materialized: view
+      +tags: ['daily']
+
+  elementary:
+    +schema: elementary
+
+tests:
+  sf_urban_health:
+    +severity: warn

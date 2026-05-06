@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: metadata
+    database: SF_URBAN_HEALTH
+    schema: METADATA
+    description: "Observability and pipeline metadata — Airflow runs, watermarks."
+    tables:
+      - name: airflow_dag_runs
+        description: "Airflow DAG run metadata collected via REST API by ingest_pipeline_metadata."
+      - name: airflow_task_instances
+        description: "Airflow task instance metadata including records_fetched from XCom."
