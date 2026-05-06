@@ -70,3 +70,41 @@ models:
           - not_null
           - accepted_values:
               values: ['pass', 'fail', 'error', 'warn']
+
+  - name: mart_pipeline_summary
+    description: "Per-DAG rolling 7d/30d summary for the engineer health dashboard."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [dag_id]
+    columns:
+      - name: dag_id
+        tests:
+          - not_null
+      - name: success_rate_7d
+        tests:
+          - not_null
+      - name: last_run_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['healthy', 'degraded', 'failing']
+
+  - name: mart_data_trust
+    description: "Per-dataset freshness and trust score for the analyst dashboard."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [dataset_name]
+    columns:
+      - name: dataset_name
+        tests:
+          - not_null
+      - name: freshness_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['fresh', 'stale', 'critical']
+      - name: trust_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['trusted', 'degraded', 'untrusted']

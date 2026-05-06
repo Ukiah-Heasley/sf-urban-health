@@ -95,8 +95,10 @@ def _fmt_int(v: int | None) -> str:
     Output("pl-fig-test-trend", "figure"),
     Output("pl-fig-failing-tests", "figure"),
     Input("pl-days", "value"),
+    Input("theme-store", "data"),
 )
-def refresh(days):
+def refresh(days, theme):
+    template = "cal_light" if theme == "light" else "terminal_amber"
     days = days or _DEFAULT_DAYS
     cutoff = date.today() - timedelta(days=days)
 
@@ -122,8 +124,8 @@ def refresh(days):
 
     return (
         cards,
-        pfig.dag_timeline_bar(pipeline),
-        pfig.task_duration_bar(pipeline),
-        pfig.test_pass_rate_line(tests),
-        pfig.failing_tests_table(tests),
+        pfig.dag_timeline_bar(pipeline, template=template),
+        pfig.task_duration_bar(pipeline, template=template),
+        pfig.test_pass_rate_line(tests, template=template),
+        pfig.failing_tests_table(tests, template=template),
     )

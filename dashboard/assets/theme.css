@@ -260,3 +260,140 @@ label {
 ::-webkit-scrollbar-track { background: #0d0d0d; }
 ::-webkit-scrollbar-thumb { background: #2a1f00; }
 ::-webkit-scrollbar-thumb:hover { background: #ffb300; }
+
+/* ════════════════════════════════════════════════════════════════════
+   LIGHT MODE — Cal Bear palette
+   Applied by setting body.light-mode via clientside_callback in app.py
+   ════════════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+body.light-mode {
+    background: #F8F5EE !important;
+    color: #1A1208 !important;
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif !important;
+}
+
+/* Remove CRT scanlines in light mode */
+body.light-mode::before { display: none !important; }
+
+/* Navbar */
+body.light-mode .navbar,
+body.light-mode .navbar-dark {
+    background-color: #003262 !important;
+    border-bottom: 3px solid #FDB515 !important;
+}
+body.light-mode .navbar-brand,
+body.light-mode .navbar-dark .navbar-brand { color: #FFFFFF !important; }
+body.light-mode .navbar-dark .navbar-nav .nav-link { color: rgba(255,255,255,0.85) !important; }
+body.light-mode .navbar-dark .navbar-nav .nav-link:hover,
+body.light-mode .navbar-dark .navbar-nav .nav-link.active { color: #FDB515 !important; }
+
+/* Cards */
+body.light-mode .card {
+    background: #FFFFFF !important;
+    border: 1px solid #E0D8C4 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.03) !important;
+}
+body.light-mode .card-body { color: #1A1208; }
+
+/* Headings */
+body.light-mode h1,
+body.light-mode h2,
+body.light-mode h3 {
+    color: #003262;
+    text-shadow: none !important;
+    letter-spacing: normal !important;
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif !important;
+}
+
+/* Text utilities */
+body.light-mode .text-muted { color: #9A8B6E !important; }
+body.light-mode label       { color: #4A3F28 !important; }
+
+/* Forms */
+body.light-mode .form-control,
+body.light-mode .form-control:focus {
+    background: #FFFFFF !important;
+    border-color: #E0D8C4 !important;
+    color: #1A1208 !important;
+}
+body.light-mode .form-control:focus {
+    border-color: #003262 !important;
+    box-shadow: 0 0 0 0.2rem rgba(0,50,98,0.15) !important;
+}
+
+/* Dropdowns */
+body.light-mode .Select-control {
+    background: #FFFFFF !important;
+    border-color: #E0D8C4 !important;
+}
+body.light-mode .Select-value-label,
+body.light-mode .Select-placeholder { color: #9A8B6E !important; }
+body.light-mode .Select-menu-outer  {
+    background: #FFFFFF !important;
+    border-color: #E0D8C4 !important;
+}
+body.light-mode .Select-option {
+    background: #FFFFFF !important;
+    color: #1A1208 !important;
+}
+body.light-mode .Select-option.is-focused { background: #F2EEE3 !important; }
+
+/* Buttons */
+body.light-mode .btn-primary {
+    background: #003262 !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 4px !important;
+}
+body.light-mode .btn-primary:hover { background: #1D5FA8 !important; }
+
+/* Date picker */
+body.light-mode .DateRangePickerInput {
+    background: #FFFFFF !important;
+    border-color: #E0D8C4 !important;
+}
+body.light-mode .DateInput,
+body.light-mode .DateInput_input {
+    background: #FFFFFF !important;
+    color: #1A1208 !important;
+    border-bottom-color: #E0D8C4 !important;
+    font-family: 'Inter', sans-serif !important;
+}
+body.light-mode .DateInput_input:focus { border-bottom-color: #003262 !important; }
+body.light-mode .DateRangePicker_picker {
+    background: #FFFFFF !important;
+    border: 1px solid #E0D8C4 !important;
+}
+body.light-mode .DayPicker,
+body.light-mode .CalendarMonth,
+body.light-mode .CalendarMonthGrid { background: #FFFFFF !important; }
+body.light-mode .CalendarMonth_caption { color: #003262 !important; font-family: 'Inter', sans-serif !important; }
+body.light-mode .DayPicker_weekHeader  { color: #9A8B6E !important; }
+body.light-mode .CalendarDay__default  {
+    background: #FFFFFF !important;
+    color: #4A3F28 !important;
+    border-color: #F2EEE3 !important;
+}
+body.light-mode .CalendarDay__default:hover {
+    background: #F2EEE3 !important;
+    color: #003262 !important;
+    border-color: #003262 !important;
+}
+body.light-mode .CalendarDay__selected,
+body.light-mode .CalendarDay__selected:hover {
+    background: #003262 !important;
+    color: #FFFFFF !important;
+    border-color: #003262 !important;
+}
+body.light-mode .CalendarDay__selected_span,
+body.light-mode .CalendarDay__selected_span:hover {
+    background: #EDF3FA !important;
+    color: #003262 !important;
+    border-color: #E0D8C4 !important;
+}
+
+/* Scrollbar */
+body.light-mode ::-webkit-scrollbar-track { background: #F8F5EE; }
+body.light-mode ::-webkit-scrollbar-thumb { background: #E0D8C4; }
+body.light-mode ::-webkit-scrollbar-thumb:hover { background: #003262; }

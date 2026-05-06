@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Health · SF Urban Health</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════
+   THEME TOKENS — Cal Bear palette
+   Light: warm parchment + Cal Blue + Gold
+   Dark:  amber ember + bright gold
+   ═══════════════════════════════════════════════ */
+:root {
+  --bg:            #F8F5EE;
+  --surface:       #FFFFFF;
+  --surface-2:     #F2EEE3;
+  --border:        #E0D8C4;
+  --border-accent: #FDB515;
+  --text-1:        #0D0A03;
+  --text-2:        #4A3F28;
+  --text-3:        #9A8B6E;
+  --topbar-bg:     #003262;
+  --topbar-text:   #FFFFFF;
+  --topbar-sub:    #A8C2E0;
+  --topbar-gold:   #FDB515;
+  --accent:        #003262;
+  --accent-mid:    #1D5FA8;
+  --gold:          #C4820A;
+  --gold-bright:   #FDB515;
+  --c1:            #003262;
+  --c2:            #C4820A;
+  --c3:            #3B7EA1;
+  --ok:            #16a34a;
+  --ok-bg:         #dcfce7;
+  --ok-text:       #14532d;
+  --warn:          #C4820A;
+  --warn-bg:       #fef3c7;
+  --warn-text:     #78350f;
+  --bad:           #dc2626;
+  --bad-bg:        #fee2e2;
+  --bad-text:      #991b1b;
+  --chart-grid:    #ede9df;
+  --chart-text:    #9A8B6E;
+  --shadow:        0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+  transition: background 0.3s, color 0.3s;
+}
+[data-theme="dark"] {
+  --bg:            #13090000;
+  --bg:            #120900;
+  --surface:       #1E1200;
+  --surface-2:     #281A00;
+  --border:        #3F2A00;
+  --border-accent: #FDB515;
+  --text-1:        #F8EDD8;
+  --text-2:        #C9A96E;
+  --text-3:        #7A5E30;
+  --topbar-bg:     #0A0600;
+  --topbar-text:   #F8EDD8;
+  --topbar-sub:    #9A7540;
+  --topbar-gold:   #FDB515;
+  --accent:        #5BA6D8;
+  --accent-mid:    #4A90C4;
+  --gold:          #FDB515;
+  --gold-bright:   #FFD060;
+  --c1:            #5BA6D8;
+  --c2:            #FDB515;
+  --c3:            #7EC8E3;
+  --ok:            #4ade80;
+  --ok-bg:         #052e16;
+  --ok-text:       #4ade80;
+  --warn:          #FDB515;
+  --warn-bg:       #2A1A00;
+  --warn-text:     #FDB515;
+  --bad:           #f87171;
+  --bad-bg:        #2a0808;
+  --bad-text:      #f87171;
+  --chart-grid:    #2A1A00;
+  --chart-text:    #7A5E30;
+  --shadow:        0 1px 3px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* ═══ Reset & Base ═══ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: var(--bg); color: var(--text-1); font-size: 14px;
+  line-height: 1.5;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ═══ Topbar ═══ */
+.topbar {
+  background: var(--topbar-bg);
+  border-bottom: 3px solid var(--topbar-gold);
+  padding: 0 28px; height: 62px;
+  display: flex; align-items: center; gap: 24px;
+  position: sticky; top: 0; z-index: 100;
+  transition: background 0.3s;
+}
+.brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.brand-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: var(--topbar-gold); color: #003262;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 900; flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(253,181,21,0.4);
+}
+.brand-text { display: flex; flex-direction: column; }
+.brand-name { font-size: 13px; font-weight: 700; color: var(--topbar-text); letter-spacing: 0.02em; }
+.brand-sub  { font-size: 11px; color: var(--topbar-sub); }
+.topbar-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.15); flex-shrink: 0; }
+.topbar-title { font-size: 14px; font-weight: 600; color: var(--topbar-text); flex: 1; }
+
+.status-chip {
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px; padding: 5px 14px; flex-shrink: 0;
+}
+.status-chip .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74,222,128,0.25);
+  animation: pulse 2.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(74,222,128,0.25); }
+  50%       { box-shadow: 0 0 0 6px rgba(74,222,128,0.1); }
+}
+.status-chip span { font-size: 12px; color: #d1fae5; font-weight: 500; }
+
+.header-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+.last-run { font-size: 11px; color: var(--topbar-sub); text-align: right; }
+.last-run strong { color: var(--topbar-text); }
+
+/* ── Theme Toggle ── */
+.toggle-wrap { display: flex; align-items: center; gap: 8px; }
+.toggle-label-text { font-size: 11px; color: var(--topbar-sub); }
+.toggle {
+  position: relative; width: 44px; height: 24px;
+  background: rgba(255,255,255,0.12); border-radius: 12px;
+  cursor: pointer; transition: background 0.25s;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.toggle input { display: none; }
+.toggle input:checked + .toggle-thumb { transform: translateX(20px); background: var(--topbar-gold); }
+.toggle input:checked ~ .toggle-bg { background: rgba(253,181,21,0.2); }
+.toggle-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: rgba(255,255,255,0.7);
+  transition: transform 0.25s, background 0.25s;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px;
+}
+.toggle-icons { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; font-size: 9px; pointer-events: none; }
+
+/* ═══ Layout ═══ */
+.content { padding: 24px 28px; max-width: 1300px; margin: 0 auto; }
+.gap { margin-bottom: 20px; }
+
+/* ═══ Section Header ═══ */
+.section-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.section-head h2 { font-size: 12px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.section-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ═══ KPI Cards ═══ */
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border-accent);
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+  transition: background 0.3s, border-color 0.3s;
+}
+.kpi-label { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+.kpi-value { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.kpi-value.green { color: var(--ok); }
+.kpi-value.gold  { color: var(--gold); }
+.kpi-value.base  { color: var(--text-1); }
+.kpi-delta { font-size: 12px; margin-top: 7px; display: flex; align-items: center; gap: 4px; }
+.kpi-delta.up    { color: var(--ok); }
+.kpi-delta.down  { color: var(--bad); }
+.kpi-delta.muted { color: var(--text-3); }
+
+/* ═══ DAG Status Row ═══ */
+.dag-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.dag-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: var(--shadow);
+  transition: background 0.3s;
+}
+.dag-card.ok   { border-left: 4px solid var(--ok); }
+.dag-card.warn { border-left: 4px solid var(--warn); }
+.dag-card.bad  { border-left: 4px solid var(--bad); }
+.dag-info { display: flex; flex-direction: column; gap: 3px; }
+.dag-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.dag-meta { font-size: 11px; color: var(--text-3); }
+.dag-rate { text-align: right; }
+.dag-rate .rate-val { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.dag-rate.ok   .rate-val { color: var(--ok); }
+.dag-rate.warn .rate-val { color: var(--warn); }
+.dag-rate .rate-sub { font-size: 10px; color: var(--text-3); }
+
+/* ═══ Chart Cards ═══ */
+.chart-row { display: grid; gap: 14px; }
+.two-col   { grid-template-columns: 1fr 1fr; }
+.three-two { grid-template-columns: 3fr 2fr; }
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 22px;
+  box-shadow: var(--shadow);
+  transition: background 0.3s;
+}
+.chart-card-head { margin-bottom: 14px; }
+.chart-card-head h3 { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 2px; }
+.chart-card-head p  { font-size: 11px; color: var(--text-3); }
+.chart-wrap { position: relative; height: 210px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+/* ═══ Table ═══ */
+.table-wrap { overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th {
+  padding: 8px 10px; font-size: 10px; font-weight: 700;
+  color: var(--text-3); text-transform: uppercase; letter-spacing: 0.07em;
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+  text-align: left;
+  transition: background 0.3s;
+}
+tbody td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-1); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface-2); }
+.muted { color: var(--text-3); }
+
+.badge {
+  display: inline-block; padding: 2px 8px;
+  border-radius: 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+}
+.badge.pass { background: var(--ok-bg); color: var(--ok-text); }
+.badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+.badge.fail { background: var(--bad-bg); color: var(--bad-text); }
+</style>
+</head>
+<body>
+
+<!-- ══════════ TOPBAR ══════════ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="24" height="20" viewBox="0 0 24 20" fill="none" aria-hidden="true">
+        <rect x="6.5"  y="0"   width="2.5" height="15" rx="0.5" fill="currentColor"/>
+        <rect x="15"   y="0"   width="2.5" height="15" rx="0.5" fill="currentColor"/>
+        <rect x="6.5"  y="4.5" width="2.5" height="1"  rx="0.3" fill="currentColor"/>
+        <rect x="15"   y="4.5" width="2.5" height="1"  rx="0.3" fill="currentColor"/>
+        <rect x="0"    y="12"  width="24"  height="2"  rx="1"   fill="currentColor"/>
+        <path d="M0 13 Q7.5 3.5 7.75 1"  stroke="currentColor" stroke-width="1.2" fill="none"/>
+        <path d="M24 13 Q16.5 3.5 16.25 1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+        <path d="M0 18 Q6 16 12 18 Q18 20 24 18" stroke="currentColor" stroke-width="1" fill="none" opacity="0.65"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <div class="brand-name">SF Urban Health</div>
+      <div class="brand-sub">Data Platform</div>
+    </div>
+  </div>
+  <div class="topbar-divider"></div>
+  <div class="topbar-title">Pipeline Health Dashboard</div>
+
+  <div class="status-chip">
+    <div class="dot"></div>
+    <span>All systems operational</span>
+  </div>
+
+  <div class="header-right">
+    <div class="toggle-wrap">
+      <span class="toggle-label-text">☀</span>
+      <label class="toggle" title="Toggle dark mode">
+        <input type="checkbox" id="themeToggle">
+        <div class="toggle-thumb" id="toggleThumb"></div>
+      </label>
+      <span class="toggle-label-text">🌙</span>
+    </div>
+    <div class="last-run">
+      Last run: <strong>today, 06:47 UTC</strong><br>
+      <span style="font-size:10px">mart_pipeline_summary · mart_dbt_test_health</span>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════ CONTENT ══════════ -->
+<div class="content">
+
+  <!-- KPI Row -->
+  <div class="kpi-row gap">
+    <div class="kpi-card">
+      <div class="kpi-label">7-Day Success Rate</div>
+      <div class="kpi-value green">97.6%</div>
+      <div class="kpi-delta up">↑ 1.4 pts vs prior 7 days</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Failures (7d)</div>
+      <div class="kpi-value gold">3</div>
+      <div class="kpi-delta muted">21 total runs · 3 DAGs</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Avg Runtime (7d)</div>
+      <div class="kpi-value base">4m 18s</div>
+      <div class="kpi-delta down">↑ 23s vs prior 7 days</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Records Ingested (7d)</div>
+      <div class="kpi-value base">284,310</div>
+      <div class="kpi-delta muted">across all ingest DAGs</div>
+    </div>
+  </div>
+
+  <!-- DAG Status -->
+  <div class="section-head gap"><h2>DAG Status</h2></div>
+  <div class="dag-row gap">
+    <div class="dag-card ok">
+      <div class="dag-info">
+        <div class="dag-name">ingest_permits</div>
+        <div class="dag-meta">Last run: today 06:12 · 4m 08s · 36,840 records</div>
+      </div>
+      <div class="dag-rate ok">
+        <div class="rate-val">100%</div>
+        <div class="rate-sub">7-day success rate</div>
+      </div>
+    </div>
+    <div class="dag-card ok">
+      <div class="dag-info">
+        <div class="dag-name">ingest_evictions</div>
+        <div class="dag-meta">Last run: today 06:09 · 3m 14s · 28,620 records</div>
+      </div>
+      <div class="dag-rate ok">
+        <div class="rate-val">100%</div>
+        <div class="rate-sub">7-day success rate</div>
+      </div>
+    </div>
+    <div class="dag-card warn">
+      <div class="dag-info">
+        <div class="dag-name">ingest_incidents</div>
+        <div class="dag-meta">Last run: today 06:21 · 5m 47s · 37,480 records</div>
+      </div>
+      <div class="dag-rate warn">
+        <div class="rate-val">85.7%</div>
+        <div class="rate-sub">7-day rate · 1 failure</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success Rate + Runtime -->
+  <div class="section-head gap"><h2>Trends</h2></div>
+  <div class="chart-row two-col gap">
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h3>DAG Success Rate — Last 30 Days</h3>
+        <p>Daily run outcome per ingest DAG · dot marks failures</p>
+      </div>
+      <div class="chart-wrap"><canvas id="successChart"></canvas></div>
+      <div class="legend" id="successLegend"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h3>Avg Runtime — Last 30 Days</h3>
+        <p>Minutes per run · 3-day rolling average</p>
+      </div>
+      <div class="chart-wrap"><canvas id="runtimeChart"></canvas></div>
+      <div class="legend" id="runtimeLegend"></div>
+    </div>
+  </div>
+
+  <!-- Test Health -->
+  <div class="section-head gap"><h2>Validation Tests</h2></div>
+  <div class="chart-row three-two gap">
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h3>Daily Test Results — Last 14 Days</h3>
+        <p>Pass / fail counts across all dbt models</p>
+      </div>
+      <div class="chart-wrap"><canvas id="testBarChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h3>Pass Rate by Model</h3>
+        <p>Rolling 7-day from mart_dbt_test_health</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Model</th><th>Test</th><th>7d Rate</th><th>Last Failure</th></tr></thead>
+          <tbody id="testTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ SCRIPT ══════════ -->
+<script>
+// ── Theme ──────────────────────────────────────────────
+const toggle = document.getElementById('themeToggle');
+const thumb  = document.getElementById('toggleThumb');
+const root   = document.documentElement;
+
+function applyTheme(dark) {
+  root.dataset.theme = dark ? 'dark' : 'light';
+  thumb.style.transform = dark ? 'translateX(20px)' : '';
+  thumb.style.background = dark ? '#FDB515' : '';
+  localStorage.setItem('sfuh-theme', dark ? 'dark' : 'light');
+  buildAllCharts();
+}
+toggle.addEventListener('change', () => applyTheme(toggle.checked));
+const saved = localStorage.getItem('sfuh-theme') || 'light';
+toggle.checked = saved === 'dark';
+
+// ── Mock Data ──────────────────────────────────────────
+const DAGS = ['permits', 'evictions', 'incidents'];
+
+function lastNDates(n) {
+  return Array.from({length: n}, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (n - 1 - i));
+    return d.toISOString().slice(0, 10);
+  });
+}
+const d30 = lastNDates(30);
+const d14 = lastNDates(14);
+
+const successRate = {
+  permits:   d30.map((_, i) => (i === 5 || i === 18) ? 0 : 100),
+  evictions: d30.map((_, i) => i === 12 ? 0 : 100),
+  incidents: d30.map((_, i) => i === 25 ? 0 : 100),
+};
+
+function randn(mu, sig) { return mu + sig * (Math.random() * 2 - 1); }
+const rawRT = {
+  permits:   d30.map(() => Math.max(160, randn(248, 40))),
+  evictions: d30.map(() => Math.max(110, randn(194, 28))),
+  incidents: d30.map(() => Math.max(190, randn(318, 55))),
+};
+rawRT.incidents[27] = 510; rawRT.permits[28] = 485;
+function smooth(a) {
+  return a.map((v, i) => i < 2 ? v : (a[i-2]+a[i-1]+v)/3);
+}
+const runtime = { permits: smooth(rawRT.permits), evictions: smooth(rawRT.evictions), incidents: smooth(rawRT.incidents) };
+
+const testDays = d14.map((date, i) => ({
+  date, passed: 14, failed: (i === 3 || i === 9) ? 2 : 0,
+}));
+const testRows = [
+  { model: 'stg_permits',   test: 'unique',          rate: 100,  fail: null },
+  { model: 'stg_permits',   test: 'not_null',         rate: 100,  fail: null },
+  { model: 'stg_permits',   test: 'accepted_values',  rate: 92.9, fail: '04-28' },
+  { model: 'stg_evictions', test: 'not_null',         rate: 100,  fail: null },
+  { model: 'stg_evictions', test: 'accepted_values',  rate: 100,  fail: null },
+  { model: 'stg_incidents', test: 'unique',           rate: 100,  fail: null },
+  { model: 'stg_incidents', test: 'not_null',         rate: 100,  fail: null },
+];
+
+// ── Chart helpers ──────────────────────────────────────
+let charts = {};
+
+function getColors() {
+  const cs = getComputedStyle(root);
+  return {
+    c: [cs.getPropertyValue('--c1').trim(), cs.getPropertyValue('--c2').trim(), cs.getPropertyValue('--c3').trim()],
+    grid: cs.getPropertyValue('--chart-grid').trim(),
+    text: cs.getPropertyValue('--chart-text').trim(),
+    ok:   cs.getPropertyValue('--ok').trim(),
+    bad:  cs.getPropertyValue('--bad').trim(),
+  };
+}
+
+function buildAllCharts() {
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+  const col = getColors();
+
+  Chart.defaults.color = col.text;
+
+  // ─ Success Rate ─
+  charts.success = new Chart('successChart', {
+    type: 'line',
+    data: {
+      labels: d30.map(d => d.slice(5)),
+      datasets: DAGS.map((dag, i) => ({
+        label: 'ingest_' + dag,
+        data: successRate[dag],
+        borderColor: col.c[i],
+        backgroundColor: 'transparent',
+        borderWidth: 2.5,
+        pointRadius: successRate[dag].map(v => v < 100 ? 5 : 0),
+        pointBackgroundColor: col.c[i],
+        pointBorderColor: root.dataset.theme === 'dark' ? '#1E1200' : '#fff',
+        pointBorderWidth: 2,
+        tension: 0,
+      })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { min: -15, max: 115, ticks: { callback: v => (v >= 0 && v <= 100) ? v + '%' : '', font: { size: 10 } }, grid: { color: col.grid } },
+        x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+      },
+      plugins: { legend: { display: false } },
+    },
+  });
+
+  // ─ Runtime ─
+  charts.runtime = new Chart('runtimeChart', {
+    type: 'line',
+    data: {
+      labels: d30.map(d => d.slice(5)),
+      datasets: DAGS.map((dag, i) => ({
+        label: 'ingest_' + dag,
+        data: runtime[dag].map(s => +(s / 60).toFixed(2)),
+        borderColor: col.c[i],
+        backgroundColor: col.c[i] + '18',
+        borderWidth: 2.5,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.4,
+      })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { ticks: { callback: v => v + 'm', font: { size: 10 } }, grid: { color: col.grid } },
+        x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+      },
+      plugins: { legend: { display: false } },
+    },
+  });
+
+  // ─ Test Bar ─
+  charts.testBar = new Chart('testBarChart', {
+    type: 'bar',
+    data: {
+      labels: testDays.map(d => d.date.slice(5)),
+      datasets: [
+        { label: 'Passed', data: testDays.map(d => d.passed), backgroundColor: col.ok + '55', borderColor: col.ok, borderWidth: 1 },
+        { label: 'Failed', data: testDays.map(d => d.failed), backgroundColor: col.bad + '55', borderColor: col.bad, borderWidth: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 10 } }, grid: { display: false } },
+        y: { stacked: true, ticks: { font: { size: 10 }, stepSize: 4 }, grid: { color: col.grid } },
+      },
+      plugins: { legend: { labels: { font: { size: 11 }, boxWidth: 12 } } },
+    },
+  });
+
+  // ─ Rebuild legend ─
+  ['success', 'runtime'].forEach(id => {
+    const el = document.getElementById(id + 'Legend');
+    el.innerHTML = '';
+    DAGS.forEach((dag, i) => {
+      el.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${col.c[i]}"></div>ingest_${dag}</div>`;
+    });
+  });
+}
+
+// ─ Test table (static) ─
+const tbody = document.getElementById('testTableBody');
+testRows.forEach(r => {
+  const cls = r.rate === 100 ? 'pass' : r.rate >= 90 ? 'warn' : 'fail';
+  tbody.innerHTML += `
+    <tr>
+      <td class="muted" style="font-size:11px">${r.model}</td>
+      <td>${r.test}</td>
+      <td><span class="badge ${cls}">${r.rate}%</span></td>
+      <td class="muted" style="font-size:11px">${r.fail || '—'}</td>
+    </tr>`;
+});
+
+// Init
+applyTheme(saved === 'dark');
+</script>
+</body>
+</html>
