@@ -1,10 +1,11 @@
 # TODO
 
 ## Performance
-- [ ] Materialize `stg_permits` as a table instead of a view — currently re-runs full dedup window function across all of `RAW.PERMITS` on every downstream query. Change `config(materialized='table')` in `dbt/models/staging/stg_permits.sql` and update CLAUDE.md.
+- [ ] Migrate staging models from views to incremental materialization — currently views are fine but will become expensive as raw tables grow. Revisit when query performance degrades.
+- [ ] Investigate streaming S3 writes per page-batch (avoid full in-memory accumulation in `soda_ingest.run()`) if large datasets cause OOM or API timeout issues during backfill — at 5–10 KB/record, datasets with 500k+ records can approach 2 GB of RAM in a single run.
 
 ## Airflow / DAG
-- [ ] Consolidate the three dbt BashOperator tasks (`dbt_deps`, `run_dbt_staging`, `run_dbt_marts`) in `dag_factory.py` into a single task — reduces DAG complexity and overhead. Could be one BashOperator chaining the commands, or switch to [Astronomer Cosmos](https://github.com/astronomer/astronomer-cosmos) for native dbt-as-tasks support.
+- [x] Consolidate dbt tasks — moved to `transform_all.py` shared DAG with `ExternalTaskSensor` fan-in; dbt now runs once per day across all datasets instead of once per ingest DAG.
 
 ## MUNI Dashboard
 - [ ] Fix route path rendering on map — pull static SFMTA stops and route line geometries from DataSF into S3/Snowflake (same pipeline pattern as permits/incidents) and query from there instead of approximating via the 511 `trippatterns` endpoint (stop-to-stop straight lines look bad at zoom 15).

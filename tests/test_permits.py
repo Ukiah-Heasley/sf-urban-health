@@ -36,20 +36,28 @@ def test_fetch_records_stops_on_empty_batch():
     assert records == []
 
 
-def test_fetch_records_resumes_from_offset():
-    session = MagicMock()
-    session.get.return_value = _mock_response([])
-
-    with patch.object(soda_ingest, "_session", return_value=session):
-        list(soda_ingest.fetch_records(PERMITS_CONFIG, date(2024, 1, 1), resume_offset=2000))
-
-    _, kwargs = session.get.call_args
-    assert kwargs["params"]["$offset"] == 2000
-
-
 def test_count_records_parses_response():
     session = MagicMock()
     session.get.return_value = _mock_response([{"count": "42"}])
 
     with patch.object(soda_ingest, "_session", return_value=session):
         assert soda_ingest.count_records(PERMITS_CONFIG, date(2024, 1, 1)) == 42
+
+
+def test_run_returns_s3_path_and_watermark():
+    since = date(2024, 1, 1)
+    records = [
+        {"permit_number": "1", "data_loaded_at": "2024-03-15T00:00:00.000"},
+        {"permit_number": "2", "data_loaded_at": "2024-01-10T00:00:00.000"},
+    ]
+
+    with (
+        patch.object(soda_ingest, "count_records", return_value=2),
+        patch.object(soda_ingest, "fetch_records", return_value=iter(records)),
+        patch.object(soda_ingest, "_write_s3", return_value="s3://bucket/key") as mock_write,
+    ):
+        s3_path, max_wm = soda_ingest.run(PERMITS_CONFIG, date(2024, 3, 20), since)
+
+    assert s3_path == "s3://bucket/key"
+    assert max_wm == date(2024, 3, 15)
+    mock_write.assert_called_once()

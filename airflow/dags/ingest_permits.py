@@ -1,9 +1,7 @@
 """Daily ingestion of SF building permits into the warehouse.
 
-Extract:   DataSF SODA API (filed_date lookback)
+Extract:   DataSF SODA API (data_loaded_at lookback)
 Load:      S3 raw layer -> Snowflake RAW.PERMITS via COPY INTO
-Transform: dbt staging -> marts
-Test:      dbt tests
 """
 from __future__ import annotations
 
@@ -16,8 +14,6 @@ from scripts.permits import PERMITS_CONFIG
 dag = make_ingest_dag(DagConfig(
     dataset=PERMITS_CONFIG,
     snowflake_table="RAW.PERMITS",
-    dbt_staging_models=["stg_permits"],
-    dbt_mart_models=["int_permit_timelines", "mart_housing_production"],
     schedule="0 6 * * *",
     start_date=datetime(2026, 3, 24),
     tags=["sf-civic", "permits", "daily"],

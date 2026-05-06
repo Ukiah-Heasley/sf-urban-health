@@ -19,9 +19,12 @@ models:
     staging:
       +schema: staging
       +materialized: view
+      +tags: ['daily']
     intermediate:
       +schema: intermediate
       +materialized: view
+      +tags: ['daily']
     marts:
       +schema: marts
       +materialized: table
+      +tags: ['daily']

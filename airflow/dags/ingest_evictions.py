@@ -2,7 +2,6 @@
 
 Extract:   DataSF SODA API (data_loaded_at lookback — captures new records and updates)
 Load:      S3 raw layer -> Snowflake RAW.EVICTIONS via COPY INTO
-Transform: dbt staging -> marts
 """
 from __future__ import annotations
 
@@ -15,8 +14,6 @@ from scripts.evictions import EVICTIONS_CONFIG
 dag = make_ingest_dag(DagConfig(
     dataset=EVICTIONS_CONFIG,
     snowflake_table="RAW.EVICTIONS",
-    dbt_staging_models=["stg_evictions"],
-    dbt_mart_models=["mart_evictions"],
     schedule="30 6 * * *",
     start_date=datetime(2026, 5, 1),
     tags=["sf-civic", "evictions", "daily"],
