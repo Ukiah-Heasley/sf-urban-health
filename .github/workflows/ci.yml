@@ -19,8 +19,79 @@ jobs:
       - name: Pin Python to project version
         run: uv python install 3.11
 
-      - name: Lint
+      - name: Ruff
         run: uv run --group dev ruff check .
 
-      - name: Test
+      - name: yamllint
+        run: uv run --group dev yamllint .
+
+      - name: Pytest (dev group)
         run: uv run --group dev pytest -v
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python to project version
+        run: uv python install 3.11
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      # Run only the fast default-stage hooks here. dbt-checkpoint hooks live
+      # under stages: [manual] in .pre-commit-config.yaml and are run on demand
+      # via `make pre-commit` locally; they need a compiled dbt manifest, which
+      # we don't compile in this job to keep PR feedback under a minute.
+      - name: pre-commit run --all-files
+        run: uv run --group dev pre-commit run --all-files --show-diff-on-failure
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs the full history to scan rewritten/reverted commits.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Free for public repos; remove this var if running against a private fork.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
+  dag-integrity:
+    # Heavier job — installs Airflow + Snowflake/Amazon providers — so it
+    # runs in parallel with the lighter jobs and only on Airflow-touching
+    # paths plus main. Keeps PR feedback fast on doc-only / dbt-only PRs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python to project version
+        run: uv python install 3.11
+
+      - name: Install Airflow group
+        run: uv sync --group dev --group airflow
+
+      - name: DAG-bag import + factory tests
+        run: |
+          uv run --group dev --group airflow pytest -v \
+            tests/test_dag_factory.py \
+            tests/test_dag_integrity.py

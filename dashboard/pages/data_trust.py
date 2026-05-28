@@ -10,7 +10,6 @@ import polars as pl
 from dash import Input, Output, callback, dcc, html
 
 from dashboard.components import trust_figures as tfig
-from dashboard.components import theme_utils as tu
 from dashboard.data.cache import DATA_TRUST, DBT_TEST_HEALTH, PIPELINE_HEALTH
 from dashboard.data.trust_transforms import (
     freshness_grid,
@@ -146,9 +145,6 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
 
         # Score ring (small donut)
         ring_fig = tfig.score_donut(score, status, template=template)
-
-        # Card left-border color
-        border = f"4px solid {score_color}"
 
         card = dbc.Col(
             dbc.Card(

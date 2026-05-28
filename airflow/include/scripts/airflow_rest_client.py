@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict
+from urllib.parse import urlparse
 
 import requests
 
@@ -13,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 _UPSERT_DAG_RUNS      = (Path(__file__).parent.parent / "sql" / "upsert_dag_runs.sql").read_text()
 _UPSERT_TASK_INSTANCES = (Path(__file__).parent.parent / "sql" / "upsert_task_instances.sql").read_text()
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +79,18 @@ class AirflowClient:
         self._base = f"{base}/api/v2"
         _user = user or os.environ.get("AIRFLOW_API_USER", "admin")
         _pass = password or os.environ.get("AIRFLOW_API_PASSWORD", "admin")
+
+        # Refuse to ship the default admin/admin credentials at any host that
+        # isn't unambiguously local. Catches the easy mistake of pointing this
+        # client at a remote Airflow without setting AIRFLOW_API_PASSWORD.
+        host = (urlparse(base).hostname or "").lower()
+        if _pass == "admin" and host not in _LOCAL_HOSTS:
+            raise RuntimeError(
+                f"Refusing to authenticate against {host!r} with the default "
+                "admin/admin credentials. Set AIRFLOW_API_PASSWORD (and "
+                "AIRFLOW_API_USER if needed) to a real value."
+            )
+
         self._session = requests.Session()
         # Airflow 3 uses JWT auth; exchange credentials for a bearer token once per session.
         resp = self._session.post(

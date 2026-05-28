@@ -34,7 +34,7 @@ dbt  staging → intermediate → marts  (transform_all DAG)
 
 ## DAG architecture
 
-The pipeline uses four Airflow DAGs with a clear separation of concerns:
+The pipeline uses **five Airflow DAGs** with a clear separation of concerns:
 
 **Three ingest DAGs** (one per dataset, run at 06:00 UTC daily):
 ```
@@ -48,7 +48,14 @@ wait_evictions_watermark ─┼─► dbt_deps ─► run_dbt_staging ─► run
 wait_incidents_watermark ─┘
 ```
 
-`transform_all` uses `ExternalTaskSensor` to wait for each dataset's `update_watermark` task before running dbt once across all models. Sensors use `mode="reschedule"` (no worker slot held while waiting), `poke_interval=120s`, `timeout=3h`.
+`transform_all` uses `ExternalTaskSensor` to wait for each dataset's `update_watermark` task before running dbt once across all models. Sensors use `mode="reschedule"` (no worker slot held while waiting), `poke_interval=120s`, `timeout=3h`. (A known quirk with this fan-in pattern is tracked in `TODO.md` under "Airflow code quality" — B1.)
+
+**One observability DAG** (`ingest_pipeline_metadata`, every 30 min):
+```
+fetch_dag_runs → upsert_to_snowflake_metadata
+```
+
+Pulls Airflow's REST API for DAG-run + task-instance state and writes to `METADATA.AIRFLOW_DAG_RUNS` / `METADATA.AIRFLOW_TASK_INSTANCES`, where dbt builds the four observability marts that drive the Pipeline Health, Eng Health, and Data Trust dashboard pages.
 
 ## Repository layout
 
@@ -56,31 +63,44 @@ wait_incidents_watermark ─┘
 .
 ├── dbt/                              dbt project — canonical location, edit here
 │   ├── dbt_project.yml
-│   ├── packages.yml
+│   ├── packages.yml                  installs dbt_utils + elementary
 │   ├── profiles.yml                  env-var-driven; safe to commit
 │   ├── macros/
-│   └── models/{staging,intermediate,marts}/
+│   └── models/{staging,intermediate,marts,metadata}/
 ├── airflow/                          Astro CLI project root
-│   ├── Dockerfile                    Astro Runtime image
+│   ├── Dockerfile                    Astro Runtime image (Airflow 3)
 │   ├── dags/
 │   │   ├── dag_factory.py            Factory for ingest DAGs
 │   │   ├── ingest_permits.py         Permits ingest DAG
 │   │   ├── ingest_evictions.py       Evictions ingest DAG
 │   │   ├── ingest_incidents.py       Incidents ingest DAG
-│   │   └── transform_all.py          Shared dbt transform DAG
+│   │   ├── transform_all.py          Shared dbt transform DAG
+│   │   └── ingest_pipeline_metadata.py  Airflow → Snowflake observability
 │   ├── include/scripts/
 │   │   ├── soda_ingest.py            Generic SODA API engine
-│   │   ├── permits.py                Permits config + CLI
-│   │   ├── evictions.py              Evictions config + CLI
-│   │   └── incident_reports.py       Incidents config + CLI
+│   │   ├── permits.py / evictions.py / incident_reports.py
+│   │   └── airflow_rest_client.py    Airflow REST API → Snowflake
+│   ├── include/sql/                  SQL templates loaded by Airflow operators
 │   ├── include/dbt/                  Mirror of dbt/ (gitignored, refreshed by `make sync-dbt`)
 │   ├── requirements.txt              Python deps inside the Airflow image
 │   └── .env.example                  Snowflake / AWS / DataSF credentials template
+├── dashboard/                        Plotly Dash multi-page app (6 pages, in-memory Polars)
+├── snowflake/                        One-shot bootstrap SQL
+├── tests/                            pytest unit tests (dev group)
+├── wiki/                             Versioned wiki source (synced to GitHub Wiki)
+├── docs/                             Operator-facing docs (architecture, deploy, wiki sync)
+├── .github/workflows/                CI: lint + test + pre-commit + gitleaks + dag-integrity + dbt
+├── .pre-commit-config.yaml           Ruff + yamllint + sqlfluff + dbt-checkpoint
+├── .sqlfluff / .sqlfluffignore       Snowflake-dialect SQL lint config
+├── .yamllint                         YAML lint config
+├── LICENSE                           MIT
 ├── Makefile                          One-line entrypoints for every workflow
-└── pyproject.toml                    uv-managed deps for local Python work
+├── README.md (this file)
+├── TODO.md                           Tracked follow-ups, including deferred Airflow + dbt audit
+└── pyproject.toml                    uv-managed Python deps
 ```
 
-> **Why the mirror?** Astro CLI's Docker build context is `airflow/`, so the image can only `COPY` from inside that directory. To keep dbt as a true top-level peer, `make sync-dbt` rsyncs `dbt/` into `airflow/include/dbt/` before the image is built. `make airflow-up` runs the sync automatically; never edit the mirror by hand.
+> **Why the dbt mirror?** Astro CLI's Docker build context is `airflow/`, so the image can only `COPY` from inside that directory. To keep `dbt/` as a true top-level peer, `make sync-dbt` rsyncs `dbt/` into `airflow/include/dbt/` before the image is built. `make airflow-up` runs the sync automatically; never edit the mirror by hand.
 
 ## Prerequisites
 
@@ -141,8 +161,8 @@ CREATE TABLE SF_URBAN_HEALTH.METADATA.INGEST_WATERMARKS (
     CONSTRAINT pk_ingest_watermarks PRIMARY KEY (dataset_name)
 );
 
--- Pipeline observability tables (written directly from Airflow Python operators)
-CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.RAW.AIRFLOW_DAG_RUNS (
+-- Pipeline observability tables (written by ingest_pipeline_metadata DAG)
+CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.METADATA.AIRFLOW_DAG_RUNS (
     dag_id           VARCHAR       NOT NULL,
     run_id           VARCHAR       NOT NULL,
     state            VARCHAR,
@@ -155,7 +175,7 @@ CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.RAW.AIRFLOW_DAG_RUNS (
     PRIMARY KEY (dag_id, run_id)
 );
 
-CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.RAW.AIRFLOW_TASK_INSTANCES (
+CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.METADATA.AIRFLOW_TASK_INSTANCES (
     dag_id             VARCHAR       NOT NULL,
     run_id             VARCHAR       NOT NULL,
     task_id            VARCHAR       NOT NULL,
@@ -171,6 +191,8 @@ CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.RAW.AIRFLOW_TASK_INSTANCES (
     PRIMARY KEY (dag_id, run_id, task_id)
 );
 ```
+
+The `dbt` package set installed by `make dbt-deps` includes `dbt-labs/dbt_utils` and `elementary-data/elementary` — Elementary writes its observability tables on `dbt run`/`dbt test` (see TODO.md D4 for the on-run-end hook follow-up).
 
 ## Running it
 
@@ -188,7 +210,7 @@ make lint
 make test
 ```
 
-The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all four DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`) to enable the full daily pipeline at 06:00 UTC.
+The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all five DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`, `ingest_pipeline_metadata`) to enable the full daily pipeline at 06:00 UTC plus the observability loop every 30 min.
 
 ### Initial backfill
 
@@ -265,14 +287,23 @@ ORDER BY filed_month DESC;
 
 Two GitHub Actions workflows gate every PR:
 
-| Workflow | Triggers on | What it does |
-|----------|-------------|--------------|
-| [`ci.yml`](.github/workflows/ci.yml) | every PR + pushes to `main` | `ruff check` + `pytest` (mocks the SODA API) |
-| [`dbt-ci.yml`](.github/workflows/dbt-ci.yml) | PRs touching `dbt/**` | `dbt parse` + `dbt compile` against Snowflake — validates SQL renders with live source metadata; no models run, no data written |
+| Workflow | Job | Triggers on | What it does |
+|---|---|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | `lint-and-test` | every PR + pushes to `main` | Ruff + yamllint + pytest (dev group, mocks the SODA API) |
+| | `pre-commit` | same | All `pre-commit` hooks across the tree |
+| | `secrets-scan` | same | `gitleaks` over the full git history |
+| | `dag-integrity` | same | DAG-bag import + factory tests with the airflow group installed |
+| [`dbt-ci.yml`](.github/workflows/dbt-ci.yml) | `dbt-compile` | PRs touching `dbt/**` | `dbt deps` + `dbt parse` + `dbt compile` against Snowflake — validates SQL renders with live source metadata; no models run, no data written |
 
 `dbt-ci.yml` requires these GitHub repository secrets (Settings → Secrets and variables → Actions):
 `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_WAREHOUSE`.
 
+Test runs against `dbt build` (with `--select` filters) are intentionally **not** part of `dbt-ci.yml` until the project-wide `+severity: warn` block in `dbt/dbt_project.yml` is removed (TODO.md item D1) — adding `dbt test` while severity is `warn` would always produce a falsely-green check.
+
 ## What's next (Phase 2+)
 
-Phase 1 is a vertical slice: three data sources wired all the way through. Subsequent phases will add additional civic datasets (311 service requests, Muni transit performance), a cross-domain mart joining them by neighborhood-month, a BI dashboard, and a RAG layer over Board of Supervisors meeting minutes.
+Phase 1 is a vertical slice: three data sources wired all the way through. Subsequent phases will add additional civic datasets (e.g. 311 service requests), a cross-domain mart joining them by neighborhood-month, a BI dashboard, and a RAG layer over Board of Supervisors meeting minutes.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

@@ -1,6 +1,8 @@
 """SF Urban Health dashboard — multi-page shell."""
 from __future__ import annotations
 
+import os
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, clientside_callback, dcc, html
@@ -12,7 +14,6 @@ from dashboard.pages import (
     evictions,
     housing,
     incidents,
-    muni,
     pipeline_health,
 )
 
@@ -62,7 +63,6 @@ _NAVBAR = dbc.Navbar(
                         dbc.NavItem(dbc.NavLink("Housing",         href="/")),
                         dbc.NavItem(dbc.NavLink("Incidents",       href="/incidents")),
                         dbc.NavItem(dbc.NavLink("Evictions",       href="/evictions")),
-                        dbc.NavItem(dbc.NavLink("MUNI",            href="/muni")),
                         dbc.NavItem(dbc.NavLink("Pipeline Health", href="/pipeline")),
                         dbc.NavItem(dbc.NavLink("Eng Health",      href="/engineer")),
                         dbc.NavItem(dbc.NavLink("Data Trust",      href="/data-trust")),
@@ -146,8 +146,6 @@ def display_page(pathname: str):
         return incidents.layout
     if pathname == "/evictions":
         return evictions.layout
-    if pathname == "/muni":
-        return muni.layout
     if pathname == "/pipeline":
         return pipeline_health.layout
     if pathname == "/engineer":
@@ -158,4 +156,7 @@ def display_page(pathname: str):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port="8050", debug=True)
+    # debug=True exposes the interactive traceback / dev tools, which leak
+    # source lines and stack traces. Keep it opt-in via DASH_DEBUG=1.
+    debug = os.environ.get("DASH_DEBUG") == "1"
+    app.run(host="0.0.0.0", port="8050", debug=debug)

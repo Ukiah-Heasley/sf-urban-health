@@ -10,9 +10,10 @@ dependencies = [
 
 [dependency-groups]
 airflow = [
-    "apache-airflow==2.9.3",
-    "apache-airflow-providers-snowflake==5.6.1",
-    "apache-airflow-providers-amazon==8.25.0",
+    # Pin matches the Astro Runtime image used in airflow/Dockerfile (Airflow 3.x).
+    "apache-airflow==3.0.2",
+    "apache-airflow-providers-snowflake==6.0.0",
+    "apache-airflow-providers-amazon==9.1.0",
 ]
 dbt = [
     "dbt-core==1.9.0",
@@ -30,8 +31,14 @@ dashboard = [
 dev = [
     "pytest==8.3.2",
     "ruff==0.5.6",
+    "pre-commit==4.0.1",
+    "sqlfluff==3.2.5",
+    "sqlfluff-templater-dbt==3.2.5",
+    "yamllint==1.35.1",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["airflow", "airflow/include"]
+# Note: do NOT add "airflow" itself to pythonpath — that turns the directory
+# into an empty namespace package and shadows the real `apache-airflow` install.
+pythonpath = [".", "airflow/include", "airflow/dags"]

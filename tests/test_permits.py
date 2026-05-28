@@ -56,8 +56,10 @@ def test_run_returns_s3_path_and_watermark():
         patch.object(soda_ingest, "fetch_records", return_value=iter(records)),
         patch.object(soda_ingest, "_write_s3", return_value="s3://bucket/key") as mock_write,
     ):
-        s3_path, max_wm = soda_ingest.run(PERMITS_CONFIG, date(2024, 3, 20), since)
+        result = soda_ingest.run(PERMITS_CONFIG, date(2024, 3, 20), since)
 
-    assert s3_path == "s3://bucket/key"
-    assert max_wm == date(2024, 3, 15)
+    assert result.s3_path == "s3://bucket/key"
+    assert result.max_watermark == date(2024, 3, 15)
+    assert result.records_fetched == 2
+    assert result.fetch_duration_seconds >= 0
     mock_write.assert_called_once()

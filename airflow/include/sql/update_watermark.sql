@@ -1,8 +1,11 @@
+-- Bound via SQLExecuteQueryOperator.parameters: %(name)s is the dataset
+-- name, %(watermark)s is the ISO-8601 timestamp pulled from XCom at task
+-- execution time. Both are values (not SQL identifiers), so they bind
+-- cleanly through the Snowflake driver — no Jinja string concatenation.
 MERGE INTO METADATA.INGEST_WATERMARKS AS t
 USING (
-    SELECT
-        '{{ params.name }}' AS dataset_name,
-        '{{ ti.xcom_pull(task_ids=params.extract_task_id, key="max_watermark") }}'::TIMESTAMP_NTZ AS watermark
+    SELECT %(name)s                      AS dataset_name,
+           %(watermark)s::TIMESTAMP_NTZ  AS watermark
 ) AS s
 ON t.dataset_name = s.dataset_name
 WHEN MATCHED THEN

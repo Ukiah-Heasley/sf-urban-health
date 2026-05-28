@@ -75,9 +75,16 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             task_id="update_watermark",
             conn_id="snowflake_default",
             sql="update_watermark.sql",
-            params={
+            # parameters= flows through the driver as bind values (no SQL
+            # injection surface). Jinja still resolves the XCom pull at
+            # render time before the driver sees the watermark string.
+            parameters={
                 "name": cfg.dataset.name,
-                "extract_task_id": f"extract_{cfg.dataset.name}_to_s3",
+                "watermark": (
+                    "{{ ti.xcom_pull("
+                    f"task_ids='extract_{cfg.dataset.name}_to_s3', "
+                    "key='max_watermark') }}"
+                ),
             },
         )
 

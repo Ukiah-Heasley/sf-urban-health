@@ -88,8 +88,16 @@ dashboard-docker:
 
 .PHONY: lint
 lint:
-	uv run ruff check .
+	uv run --group dev ruff check .
+
+.PHONY: yamllint
+yamllint:
+	uv run --group dev yamllint .
+
+.PHONY: pre-commit
+pre-commit:
+	uv run --group dev pre-commit run --all-files
 
 .PHONY: test
 test:
-	uv run pytest
+	uv run --group dev pytest

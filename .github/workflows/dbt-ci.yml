@@ -6,7 +6,11 @@
 #   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD,
 #   SNOWFLAKE_ROLE, SNOWFLAKE_DATABASE, SNOWFLAKE_WAREHOUSE
 # Add them under Settings -> Secrets and variables -> Actions.
-
+#
+# We deliberately stop at parse + compile (no `dbt test`) until the
+# project-wide `+severity: warn` block in dbt/dbt_project.yml is removed —
+# see TODO.md "dbt code quality" section, item D1. Adding `dbt test` while
+# severity-warn is in place would give a falsely green check.
 name: dbt-ci
 
 on:
@@ -19,11 +23,11 @@ jobs:
   dbt-compile:
     runs-on: ubuntu-latest
     env:
-      SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USER }}
-      SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
-      SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
-      SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
       DBT_TARGET: dev
       DBT_DEV_SCHEMA: dbt_ci  # compile/parse don't write — placeholder only
@@ -37,6 +41,14 @@ jobs:
 
       - name: Pin Python to project version
         run: uv python install 3.11
+
+      - name: Cache dbt packages
+        uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ runner.os }}-${{ hashFiles('dbt/packages.yml') }}
+          restore-keys: |
+            dbt-packages-${{ runner.os }}-
 
       - name: dbt deps
         working-directory: dbt

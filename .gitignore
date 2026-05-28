@@ -6,7 +6,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-data/
+# Backfill staging directory at repo root only; do NOT match dashboard/data/.
+/data/
 airflow/logs/
 airflow/plugins/
 
@@ -31,4 +32,3 @@ astro
 .idea/
 .vscode/
 .claude/
-TODO.md
