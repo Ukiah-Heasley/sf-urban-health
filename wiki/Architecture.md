@@ -10,7 +10,7 @@ airflow/include/scripts/soda_ingest.py
 S3: s3://$AWS_S3_BUCKET/raw/<dataset>/YYYY/MM/DD/<dataset>.json
    │  (durable raw layer; permanent)
    ▼
-Snowflake RAW.<DATASET>  ◄── COPY INTO via SnowflakeOperator
+Snowflake RAW.<DATASET>  ◄── COPY INTO via SQLExecuteQueryOperator
    │  (loading target, not source-of-truth)
    ▼
 dbt staging  →  intermediate  →  marts
@@ -30,7 +30,7 @@ Five DAGs orchestrate the platform, all defined under `airflow/dags/`:
 | `ingest_evictions` | `0 6 * * *` | DataSF → S3 → `RAW.EVICTIONS` → `METADATA.INGEST_WATERMARKS` |
 | `ingest_incidents` | `0 6 * * *` | DataSF → S3 → `RAW.INCIDENTS` → `METADATA.INGEST_WATERMARKS` |
 | `transform_all` | `0 7 * * *` | After ingests, runs `dbt build` against all three datasets |
-| `ingest_pipeline_metadata` | `*/30 * * * *` | Pulls Airflow REST API → `METADATA.AIRFLOW_DAG_RUNS` / `AIRFLOW_TASK_INSTANCES` for the observability marts |
+| `ingest_pipeline_metadata` | `0 7 * * *` | Pulls Airflow REST API → `METADATA.AIRFLOW_DAG_RUNS` / `AIRFLOW_TASK_INSTANCES` for the observability marts |
 
 The three ingest DAGs share a factory (`airflow/dags/dag_factory.py`) so
 adding a fourth dataset is a single `DagConfig(...)` declaration — see
@@ -61,21 +61,21 @@ rest — every neighborhood-grain mart must use it.
 
 ### dbt intermediate
 
-Computed timelines (`int_permit_timelines`, `int_incident_timelines`)
-that build the `(permit, status, status_changed_at)` history from raw
-status fields.
+Per-record derived models (`int_permit_timelines`, `int_incident_timelines`):
+one row per permit / incident with computed lifecycle timings, structural-
+change classification, and time-of-day buckets consumed by the marts.
 
 ### dbt marts
 
 | Mart | Grain | Purpose |
 |---|---|---|
-| `mart_housing_production` | `(filed_month, neighborhood, supervisor_district)` | Net-units / cost-per-unit BI |
-| `mart_evictions` | `(filed_month, neighborhood, eviction_type)` | Eviction trend & top-neighborhood views |
-| `mart_public_safety` | `(incident_month, neighborhood, incident_category)` | Incident & resolution-rate analysis |
-| `mart_permit_pipeline` | `(permit_number, snapshot_date)` | Pipeline lifecycle snapshot |
+| `mart_housing_production` | `(filed_month, neighborhood, supervisor_district, use_transition)` | Net-units / cost-per-unit BI |
+| `mart_evictions` | `(filed_month, neighborhood, supervisor_district, eviction_type)` | Eviction trend & top-neighborhood views |
+| `mart_public_safety` | `(incident_month, neighborhood, supervisor_district, police_district, incident_category)` | Incident & resolution-rate analysis |
+| `mart_permit_pipeline` | `(neighborhood, supervisor_district, lifecycle_stage, age_bucket)` | Pipeline backlog snapshot |
 | `mart_pipeline_health` | `(run_date, dag_id)` | DAG-run success rate & duration |
-| `mart_dbt_test_health` | `(snapshot_date, model, test)` | Per-test pass/fail trend |
-| `mart_data_trust` | `(dataset)` | Composite trust score per source |
+| `mart_dbt_test_health` | `(run_date, run_id, test_name)` | Per-test pass/fail trend |
+| `mart_data_trust` | `(dataset_name)` | Composite trust score per source |
 
 Marts materialize as **tables** for fast dashboard reads; staging and
 intermediate stay as **views** so they're always fresh.
@@ -83,7 +83,7 @@ intermediate stay as **views** so they're always fresh.
 ## Observability
 
 The Airflow REST client (`airflow/include/scripts/airflow_rest_client.py`)
-runs every 30 minutes and writes DAG-run + task-instance metadata into
+runs daily (07:00 UTC) and writes DAG-run + task-instance metadata into
 `METADATA.AIRFLOW_DAG_RUNS` and `METADATA.AIRFLOW_TASK_INSTANCES`. dbt
 treats these as sources, builds the four observability marts above,
 and surfaces them in the Pipeline Health, Eng Health, and Data Trust

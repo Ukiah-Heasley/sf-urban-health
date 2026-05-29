@@ -19,7 +19,9 @@ models:
         description: "Weekday or Weekend derived from incident_day_of_week."
       - name: report_lag_hours
         description: "Hours between incident_at and reported_at. Null when either timestamp is absent."
+      - name: resolution_status
+        description: "Case resolution with DataSF nulls coalesced to 'Unknown' (DataSF leaves resolution null for both genuinely open and not-yet-recorded cases)."
       - name: is_resolved
-        description: "True when resolution is not 'Open or Active'. Null when resolution is null."
+        description: "True only when the case reached a real resolution — not 'Open or Active' and not 'Unknown'. Never null."
       - name: incident_month
         description: "First day of the month of incident_date. Grain key for the mart."

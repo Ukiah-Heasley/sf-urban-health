@@ -31,8 +31,7 @@ bucketed as (
             when datediff('day', filed_at, current_date) < 365  then '180-365d'
             else '>365d'
         end                                                      as age_bucket,
-        coalesce(proposed_units, 0)                             as proposed_units,
-        days_since_filed                                         as days_in_stage
+        coalesce(proposed_units, 0)                             as proposed_units
     from in_flight
 )
 
@@ -44,6 +43,6 @@ select
     current_date                                                 as snapshot_date,
     count(*)                                                     as permit_count,
     sum(proposed_units)                                          as proposed_units,
-    avg(days_in_stage)                                           as avg_days_in_stage
+    avg(days_since_filed)                                        as avg_days_in_stage
 from bucketed
 group by 1, 2, 3, 4, 5

@@ -9,10 +9,10 @@ models:
         tests:
           - not_null
           - unique
-      - name: filed_at
-        description: "Timestamp the permit application was filed."
-        tests:
-          - not_null
+      - name: permit_type_code
+        description: "Numeric DataSF permit_type code."
+      - name: permit_type
+        description: "Human-readable permit type definition (DataSF permit_type_definition)."
       - name: current_status
         description: "Latest DBI lifecycle status (lowercased)."
         tests:
@@ -33,6 +33,16 @@ models:
                 - revoked
                 - suspend
                 - withdrawn
+      - name: filed_at
+        description: "Timestamp the permit application was filed."
+        tests:
+          - not_null
+      - name: issued_at
+        description: "Timestamp the permit was issued by DBI. Null if not yet issued."
+      - name: completed_at
+        description: "Timestamp the permit reached 'complete' status (status_date when status = complete). Null otherwise."
+      - name: current_status_at
+        description: "Timestamp the current status was set (DataSF status_date)."
       - name: approved_at
         description: "Timestamp the permit was approved by DBI."
       - name: last_activity_at
@@ -44,10 +54,26 @@ models:
       - name: revised_cost
         description: "Updated project cost if revised after filing."
       - name: existing_units
-        description: "Number of residential units in existing structure."
+        description: "Number of residential units in the existing structure."
       - name: proposed_units
-        description: "Number of residential units in proposed structure."
+        description: "Number of residential units in the proposed structure."
+      - name: existing_stories
+        description: "Number of stories in the existing structure."
+      - name: proposed_stories
+        description: "Number of stories in the proposed structure."
+      - name: street_number
+        description: "Street number of the project address."
+      - name: street_name
+        description: "Street name of the project address."
+      - name: zipcode
+        description: "Zip code of the project address."
       - name: supervisor_district
-        description: "SF Supervisor district where project is located."
+        description: "SF Supervisor district where the project is located (string; may be null)."
       - name: neighborhood
-        description: "Neighborhood name from DataSF analysis boundaries."
+        description: "Neighborhood name from DataSF analysis boundaries (raw; normalized in marts)."
+      - name: existing_use
+        description: "Existing use classification of the structure."
+      - name: proposed_use
+        description: "Proposed use classification of the structure."
+      - name: _loaded_at
+        description: "Timestamp the raw record was loaded into Snowflake (audit column)."

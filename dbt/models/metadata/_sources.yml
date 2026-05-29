@@ -8,5 +8,14 @@ sources:
     tables:
       - name: airflow_dag_runs
         description: "Airflow DAG run metadata collected via REST API by ingest_pipeline_metadata."
+        loaded_at_field: _loaded_at
+        # ingest_pipeline_metadata runs daily (07:00 UTC); thresholds match the raw sources.
+        freshness:
+          warn_after: { count: 36, period: hour }
+          error_after: { count: 72, period: hour }
       - name: airflow_task_instances
         description: "Airflow task instance metadata including records_fetched from XCom."
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after: { count: 36, period: hour }
+          error_after: { count: 72, period: hour }

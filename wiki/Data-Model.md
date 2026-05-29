@@ -19,7 +19,7 @@ re-loaded into Snowflake `RAW.*`. The shape is always `{ payload VARIANT }`
 | Model | PK | Notable typing / cleaning |
 |---|---|---|
 | `stg_permits` | `permit_number` | `existing_units` / `proposed_units` cast to `INTEGER`; `neighborhood` normalized via `normalize_neighborhood`. |
-| `stg_evictions` | `eviction_id` | `eviction_type` derived from no-fault / Ellis Act / for-cause flags; `supervisor_district` cast to `INTEGER`. |
+| `stg_evictions` | `eviction_id` | `eviction_type` derived from no-fault / Ellis Act / for-cause flags; `supervisor_district` cast to `STRING` (consistent with permits/incidents). |
 | `stg_incidents` | `row_id` | `incident_category` initcap'd; `police_district` and `supervisor_district` cast to `STRING`. |
 | `stg_airflow_dag_runs` | `(dag_id, run_id)` | Durations from `start_date` / `end_date` deltas. |
 | `stg_airflow_task_instances` | `(dag_id, run_id, task_id)` | XCom payloads (`records_fetched`, `max_watermark`, `s3_path`) lifted out for the extract tasks. |
@@ -35,18 +35,18 @@ under `dbt/models/staging/_stg_*.yml`.
 
 ## Intermediate
 
-- `int_permit_timelines` — one row per permit-status transition, derived
-  from `stg_permits` plus the status-history columns. Used by
-  `mart_permit_pipeline`.
-- `int_incident_timelines` — one row per incident; computes lifecycle
-  bucketing for `mart_public_safety`.
+- `int_permit_timelines` — one row per permit with derived lifecycle timings
+  (days to issue / complete), net-units, cost-per-unit, and a structural-change
+  classification. Used by `mart_housing_production` and `mart_permit_pipeline`.
+- `int_incident_timelines` — one row per incident; adds time-of-day buckets and
+  a non-null `resolution_status` (DataSF nulls → `'Unknown'`) for `mart_public_safety`.
 
 ## Marts
 
 ### `mart_housing_production`
 
-**Grain:** `(filed_month, neighborhood, supervisor_district)` — enforced
-by `dbt_utils.unique_combination_of_columns`.
+**Grain:** `(filed_month, neighborhood, supervisor_district, use_transition)` —
+enforced by `dbt_utils.unique_combination_of_columns`.
 
 The residential lens (`existing_units IS NOT NULL OR proposed_units IS NOT NULL`)
 sits in this mart, not in staging — see [[Design-Decisions]].
@@ -56,28 +56,29 @@ Key columns: `permits_filed`, `net_units_added`, `total_project_cost`,
 
 ### `mart_evictions`
 
-**Grain:** `(filed_month, neighborhood, eviction_type)`.
+**Grain:** `(filed_month, neighborhood, supervisor_district, eviction_type)`.
 
-Key columns: `eviction_count`, `ellis_act_count`, `no_fault_pct`.
+Key columns: `eviction_count`, `ellis_act_count`, `owner_move_in_count`, `non_payment_count`.
 
 ### `mart_public_safety`
 
-**Grain:** `(incident_month, neighborhood, incident_category)`.
+**Grain:** `(incident_month, neighborhood, supervisor_district, police_district, incident_category)`.
 
-Key columns: `total_incidents`, `resolved_count`, `open_count`,
-`police_district`.
+Key columns: `total_incidents`, `resolved_count`, `open_count`, `unknown_count`
+(open vs. unknown are kept distinct — DataSF nulls resolution for both).
 
 ### `mart_permit_pipeline`
 
-**Grain:** `(permit_number, snapshot_date)`. Currently materialized as
-`table` (snapshot semantics broken — see TODO.md D2).
+**Grain:** `(neighborhood, supervisor_district, lifecycle_stage, age_bucket)` —
+a daily backlog snapshot (one `snapshot_date` per build). Materialized as `table`,
+so prior snapshots aren't retained — see TODO.md D2.
 
 ### Observability marts (under `dbt/models/metadata/`)
 
 | Mart | Grain | What it surfaces |
 |---|---|---|
 | `mart_pipeline_health` | `(run_date, dag_id)` | Per-DAG success rate + duration |
-| `mart_dbt_test_health` | `(snapshot_date, model_name, test_name)` | Test-by-test pass/fail trend |
+| `mart_dbt_test_health` | `(run_date, run_id, test_name)` | Test-by-test pass/fail trend |
 | `mart_pipeline_summary` | `dag_id` | Aggregate "how often does this DAG succeed?" |
 | `mart_data_trust` | `dataset_name` | Composite freshness × pass-rate × volume score |
 

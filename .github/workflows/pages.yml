@@ -1,0 +1,80 @@
+# Build the Evidence static snapshot and publish it to GitHub Pages.
+#
+# Data: reports/scripts/export_marts.py dumps the Snowflake marts to parquet
+# using the SNOWFLAKE_* repo secrets. If those secrets are absent (e.g. a fork),
+# the export no-ops and the committed sample snapshot in
+# reports/sources/sf_urban_health/data/ is used instead — the site still builds.
+#
+# One-time setup: Settings → Pages → Source = "GitHub Actions".
+name: pages
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # after the daily ingest (06:00) + transform (06:00) + metadata (07:00)
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'reports/**'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python to project version
+        run: uv python install 3.11
+
+      - name: Export marts from Snowflake (falls back to committed sample if no secrets)
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        run: uv run --group dashboard python reports/scripts/export_marts.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: reports/package-lock.json
+
+      - name: Build Evidence site
+        working-directory: reports
+        run: |
+          npm ci
+          npm run sources
+          npm run build
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: reports/build
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

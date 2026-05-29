@@ -1,6 +1,18 @@
 # SF Urban Health Pipeline — Phase 1
 
+[![CI](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/ci.yml/badge.svg)](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/ci.yml)
+[![dbt CI](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/dbt-ci.yml/badge.svg)](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/dbt-ci.yml)
+![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
+![dbt](https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white)
+![Snowflake](https://img.shields.io/badge/Snowflake-warehouse-29B5E8?logo=snowflake&logoColor=white)
+![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)
+![SQLFluff](https://img.shields.io/badge/sql-sqlfluff-25D366)
+[![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-2ea44f)](https://ukiah-heasley.github.io/sf-urban-health/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A production-style daily ETL pipeline that ingests SF civic datasets (building permits, eviction notices, police incidents) from the DataSF SODA API, lands raw JSON in S3, loads into Snowflake, and transforms through a dbt staging → intermediate → mart layer on an Airflow schedule. Phase 1 of a larger SF Civic Intelligence Platform.
+
+**What this demonstrates:** watermark-driven incremental ingestion to a durable S3 raw lake; ELT into Snowflake with dbt (staging → intermediate → marts) plus data-quality tests and source freshness; an Airflow-native observability loop (DAG / test health → composite trust score); a Plotly Dash app; and a static [Evidence](https://evidence.dev) snapshot published to GitHub Pages (**[live demo](https://ukiah-heasley.github.io/sf-urban-health/)**).
 
 ## Architecture
 
@@ -50,12 +62,12 @@ wait_incidents_watermark ─┘
 
 `transform_all` uses `ExternalTaskSensor` to wait for each dataset's `update_watermark` task before running dbt once across all models. Sensors use `mode="reschedule"` (no worker slot held while waiting), `poke_interval=120s`, `timeout=3h`. (A known quirk with this fan-in pattern is tracked in `TODO.md` under "Airflow code quality" — B1.)
 
-**One observability DAG** (`ingest_pipeline_metadata`, every 30 min):
+**One observability DAG** (`ingest_pipeline_metadata`, daily at 07:00 UTC):
 ```
-fetch_dag_runs → upsert_to_snowflake_metadata
+collect_pipeline_metadata
 ```
 
-Pulls Airflow's REST API for DAG-run + task-instance state and writes to `METADATA.AIRFLOW_DAG_RUNS` / `METADATA.AIRFLOW_TASK_INSTANCES`, where dbt builds the four observability marts that drive the Pipeline Health, Eng Health, and Data Trust dashboard pages.
+A single `collect_pipeline_metadata` task pulls Airflow's REST API for DAG-run + task-instance state and writes to `METADATA.AIRFLOW_DAG_RUNS` / `METADATA.AIRFLOW_TASK_INSTANCES`, where dbt builds the four observability marts that drive the Pipeline Health, Eng Health, and Data Trust dashboard pages.
 
 ## Repository layout
 
@@ -117,8 +129,8 @@ Pulls Airflow's REST API for DAG-run + task-instance state and writes to `METADA
 cp airflow/.env.example airflow/.env
 # fill in Snowflake, AWS, and DataSF values
 
-# 2. Snowflake bootstrap (run once, in the Snowflake UI)
-#    See `Snowflake bootstrap` section below.
+# 2. Snowflake bootstrap (run once) — creates the database, schemas, S3 stage,
+#    RAW + METADATA tables. See `Snowflake bootstrap` below.
 
 # 3. dbt profile is rendered from airflow/.env via env_var() in
 #    dbt/profiles.yml — no separate profile file needed.
@@ -126,71 +138,12 @@ cp airflow/.env.example airflow/.env
 
 ### Snowflake bootstrap
 
-```sql
-CREATE DATABASE SF_URBAN_HEALTH;
-CREATE SCHEMA SF_URBAN_HEALTH.RAW;
-CREATE SCHEMA SF_URBAN_HEALTH.STAGING;
-CREATE SCHEMA SF_URBAN_HEALTH.INTERMEDIATE;
-CREATE SCHEMA SF_URBAN_HEALTH.MARTS;
-CREATE SCHEMA SF_URBAN_HEALTH.METADATA;
-
-CREATE STAGE SF_URBAN_HEALTH.RAW.S3_STAGE
-  URL = 's3://sf-urban-health/'
-  CREDENTIALS = (AWS_KEY_ID = '...' AWS_SECRET_KEY = '...')
-  FILE_FORMAT = (TYPE = JSON);
-
-CREATE TABLE SF_URBAN_HEALTH.RAW.PERMITS (
-    payload    VARIANT,
-    _loaded_at TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-CREATE TABLE SF_URBAN_HEALTH.RAW.EVICTIONS (
-    payload    VARIANT,
-    _loaded_at TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-CREATE TABLE SF_URBAN_HEALTH.RAW.INCIDENTS (
-    payload    VARIANT,
-    _loaded_at TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-CREATE TABLE SF_URBAN_HEALTH.METADATA.INGEST_WATERMARKS (
-    dataset_name  VARCHAR       NOT NULL,
-    watermark     TIMESTAMP_NTZ NOT NULL,
-    updated_at    TIMESTAMP_NTZ NOT NULL,
-    CONSTRAINT pk_ingest_watermarks PRIMARY KEY (dataset_name)
-);
-
--- Pipeline observability tables (written by ingest_pipeline_metadata DAG)
-CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.METADATA.AIRFLOW_DAG_RUNS (
-    dag_id           VARCHAR       NOT NULL,
-    run_id           VARCHAR       NOT NULL,
-    state            VARCHAR,
-    execution_date   TIMESTAMP_NTZ,
-    start_date       TIMESTAMP_NTZ,
-    end_date         TIMESTAMP_NTZ,
-    duration_seconds FLOAT,
-    run_type         VARCHAR,
-    _loaded_at       TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
-    PRIMARY KEY (dag_id, run_id)
-);
-
-CREATE TABLE IF NOT EXISTS SF_URBAN_HEALTH.METADATA.AIRFLOW_TASK_INSTANCES (
-    dag_id             VARCHAR       NOT NULL,
-    run_id             VARCHAR       NOT NULL,
-    task_id            VARCHAR       NOT NULL,
-    state              VARCHAR,
-    start_date         TIMESTAMP_NTZ,
-    end_date           TIMESTAMP_NTZ,
-    duration_seconds   FLOAT,
-    try_number         INTEGER,
-    records_fetched    INTEGER,
-    max_watermark      TIMESTAMP_NTZ,
-    s3_path            VARCHAR,
-    _loaded_at         TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
-    PRIMARY KEY (dag_id, run_id, task_id)
-);
-```
+Run [`snowflake/bootstrap.sql`](snowflake/bootstrap.sql) once (a Snowflake
+worksheet, or `snow sql -f snowflake/bootstrap.sql`). It is idempotent and
+creates the `SF_URBAN_HEALTH` database, the five schemas (`RAW`, `STAGING`,
+`INTERMEDIATE`, `MARTS`, `METADATA`), the S3 external stage, the three `RAW.*`
+VARIANT landing tables, `METADATA.INGEST_WATERMARKS`, and the two observability
+tables. Fill in the S3 stage credentials at the top of the file first.
 
 The `dbt` package set installed by `make dbt-deps` includes `dbt-labs/dbt_utils` and `elementary-data/elementary` — Elementary writes its observability tables on `dbt run`/`dbt test` (see TODO.md D4 for the on-run-end hook follow-up).
 
@@ -210,7 +163,7 @@ make lint
 make test
 ```
 
-The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all five DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`, `ingest_pipeline_metadata`) to enable the full daily pipeline at 06:00 UTC plus the observability loop every 30 min.
+The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all five DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`, `ingest_pipeline_metadata`) to enable the full daily pipeline at 06:00 UTC plus the observability collector at 07:00 UTC.
 
 ### Initial backfill
 
@@ -275,7 +228,7 @@ ORDER BY filed_month DESC;
 - **Staging/intermediate are views; marts are tables.** Upstream always reflects the latest raw; marts materialize once per run so BI hits precomputed data.
 - **Residential filter sits in the mart, not staging.** `stg_permits` is source-of-truth for all permits. The residential lens (rows with existing or proposed unit counts) is a reporting concern owned by `mart_housing_production`.
 - **`normalize_neighborhood` macro.** Collapses DataSF's null/empty/"unknown" spellings into a single `'Unknown'` and `initcap`s the rest. Any mart that groups by neighborhood uses this macro.
-- **Mart grain enforced by test.** `(filed_month, neighborhood, supervisor_district)` uniqueness is verified by `dbt_utils.unique_combination_of_columns`. Staging PK `permit_number` has `not_null` + `unique`.
+- **Mart grain enforced by test.** `mart_housing_production`'s `(filed_month, neighborhood, supervisor_district, use_transition)` uniqueness is verified by `dbt_utils.unique_combination_of_columns`. Staging PK `permit_number` has `not_null` + `unique`.
 - **dbt dev/prod isolation.** Two profile targets in [dbt/profiles.yml](dbt/profiles.yml). The Airflow DAG runs with `--target prod`. Local `make dbt-build` runs with `--target dev` and writes to a personal sandbox — the [generate_schema_name](dbt/macros/generate_schema_name.sql) macro adds the prefix. Set `DBT_DEV_SCHEMA` in `airflow/.env`.
 
 ## Why two dependency files

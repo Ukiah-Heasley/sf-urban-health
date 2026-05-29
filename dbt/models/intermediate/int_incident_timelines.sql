@@ -42,7 +42,11 @@ enriched as (
             else 'Weekday'
         end                                                   as day_type,
         datediff('hour', incident_at, reported_at)            as report_lag_hours,
-        (resolution != 'Open or Active')                      as is_resolved,
+        -- DataSF leaves resolution null for both "open" and "not yet recorded";
+        -- keep them distinct so downstream counts don't conflate the two.
+        coalesce(resolution, 'Unknown')                       as resolution_status,
+        coalesce(resolution, 'Unknown')
+            not in ('Open or Active', 'Unknown')              as is_resolved,
         date_trunc('month', incident_date)::date              as incident_month
     from incidents
 )

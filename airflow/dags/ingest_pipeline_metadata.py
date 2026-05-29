@@ -1,4 +1,4 @@
-"""Daily DAG: collect Airflow run metadata via REST API → Snowflake RAW."""
+"""Daily DAG: collect Airflow run metadata via REST API → Snowflake METADATA."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -14,7 +14,7 @@ def _collect(**_context):
 
 with DAG(
     dag_id="ingest_pipeline_metadata",
-    description="Collect Airflow DAG run + task instance metadata → RAW.AIRFLOW_DAG_RUNS",
+    description="Collect Airflow DAG run + task instance metadata → METADATA.AIRFLOW_DAG_RUNS",
     schedule="0 7 * * *",
     start_date=datetime(2026, 5, 1),
     catchup=False,

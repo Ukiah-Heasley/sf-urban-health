@@ -139,3 +139,34 @@ def run(config: DatasetConfig, run_date: date, since: date) -> RunResult:
         records_fetched=len(records),
         fetch_duration_seconds=round(fetch_duration, 2),
     )
+
+
+def cli(config: DatasetConfig) -> None:
+    """Command-line entry point for a single dataset (backfill / ad-hoc run).
+
+    Used by the dataset modules' ``__main__`` blocks. The Airflow ingest DAGs
+    do not use this — they call ``run`` directly with a watermark read from
+    Snowflake (see airflow/dags/dag_factory.py).
+    """
+    import argparse
+    import logging
+
+    from dotenv import load_dotenv
+
+    parser = argparse.ArgumentParser(
+        description=f"Fetch SF {config.name} from the DataSF SODA API."
+    )
+    parser.add_argument(
+        "--run-date", type=date.fromisoformat, default=date.today(),
+        help="Date to label the run (YYYY-MM-DD). Defaults to today.",
+    )
+    parser.add_argument(
+        "--since", type=date.fromisoformat, default=config.epoch,
+        help="Fetch records on or after this date (YYYY-MM-DD). Defaults to the "
+             "dataset epoch (full backfill). Use yearly chunks for large datasets.",
+    )
+    args = parser.parse_args()
+
+    load_dotenv()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    run(config, run_date=args.run_date, since=args.since)

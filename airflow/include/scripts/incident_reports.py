@@ -7,9 +7,9 @@ from __future__ import annotations
 from datetime import date
 
 try:
-    from scripts.soda_ingest import DatasetConfig, run as _run
+    from scripts.soda_ingest import DatasetConfig, cli
 except ImportError:
-    from soda_ingest import DatasetConfig, run as _run  # type: ignore[no-redef]  # standalone
+    from soda_ingest import DatasetConfig, cli  # type: ignore[no-redef]  # standalone
 
 INCIDENTS_CONFIG = DatasetConfig(
     name="incidents",
@@ -20,23 +20,5 @@ INCIDENTS_CONFIG = DatasetConfig(
 )
 
 
-def run(run_date: date, since: date) -> tuple[str, date]:
-    return _run(INCIDENTS_CONFIG, run_date, since)
-
-
 if __name__ == "__main__":
-    import argparse
-    import logging
-
-    from dotenv import load_dotenv
-
-    parser = argparse.ArgumentParser(description="Fetch SF incident reports from DataSF.")
-    parser.add_argument("--run-date", type=date.fromisoformat, default=date.today(),
-                        help="Date to label the run (YYYY-MM-DD). Defaults to today.")
-    parser.add_argument("--since", type=date.fromisoformat, default=INCIDENTS_CONFIG.epoch,
-                        help="Fetch records on or after this date (YYYY-MM-DD). Defaults to epoch (full backfill). Use yearly chunks for large datasets.")
-    args = parser.parse_args()
-
-    load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run(run_date=args.run_date, since=args.since)
+    cli(INCIDENTS_CONFIG)

@@ -37,7 +37,7 @@ Airflow REST API → METADATA.AIRFLOW_DAG_RUNS / AIRFLOW_TASK_INSTANCES → obse
 Five DAGs orchestrate this:
 - Three ingest DAGs (one per dataset, factory'd in `airflow/dags/dag_factory.py`), daily at 06:00 UTC.
 - `transform_all` runs `dbt build` once after the three ingests succeed.
-- `ingest_pipeline_metadata` polls the Airflow REST API every 30 minutes for the observability marts.
+- `ingest_pipeline_metadata` polls the Airflow REST API daily at 07:00 UTC for the observability marts.
 
 ## Key design decisions
 
@@ -65,7 +65,7 @@ Scripts live in `airflow/include/scripts/`. Astro auto-mounts `include/` at `/us
 
 ## dbt grain and tests
 
-The mart grain is `(filed_month, neighborhood, supervisor_district)` — declared via a `dbt_utils.unique_combination_of_columns` test. Staging PK is `permit_number` with `not_null` + `unique`. **Important caveat:** the project-level `tests: +severity: warn` block in `dbt/dbt_project.yml` neuters every test today; removing that block (TODO.md D1) is the next blocker for true grain enforcement.
+The `mart_housing_production` grain is `(filed_month, neighborhood, supervisor_district, use_transition)` — declared via a `dbt_utils.unique_combination_of_columns` test. Staging PK is `permit_number` with `not_null` + `unique`. **Important caveat:** the project-level `tests: +severity: warn` block in `dbt/dbt_project.yml` neuters every test today; removing that block (TODO.md D1) is the next blocker for true grain enforcement.
 
 Do not introduce aggregations in staging or intermediate that would break these constraints.
 

@@ -72,9 +72,10 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
   dag-integrity:
-    # Heavier job — installs Airflow + Snowflake/Amazon providers — so it
-    # runs in parallel with the lighter jobs and only on Airflow-touching
-    # paths plus main. Keeps PR feedback fast on doc-only / dbt-only PRs.
+    # Heavier job — installs Airflow + Snowflake/Amazon providers — so it runs
+    # in parallel with the lighter jobs rather than gating them. It runs on
+    # every PR (no path filter): a path-filtered required check stays "pending"
+    # on unrelated PRs and blocks merge, so we accept the extra minute instead.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

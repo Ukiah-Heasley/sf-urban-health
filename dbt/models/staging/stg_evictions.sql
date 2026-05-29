@@ -24,7 +24,7 @@ unpacked as (
         payload:file_date::date                                    as filed_at,
         payload:address::string                                    as address,
         payload:zip::string                                        as zipcode,
-        payload:supervisor_district::integer                       as supervisor_district,
+        payload:supervisor_district::string                        as supervisor_district,
         payload:neighborhood::string                               as neighborhood,
         -- at-fault reason flags
         coalesce(payload:non_payment::boolean, false)              as non_payment,

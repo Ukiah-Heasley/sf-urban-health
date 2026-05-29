@@ -8,7 +8,7 @@ monthly as (
     select
         date_trunc('month', filed_at)::date                      as filed_month,
         {{ normalize_neighborhood('neighborhood') }}             as neighborhood,
-        supervisor_district::string                              as supervisor_district,
+        supervisor_district,
         eviction_type,
         count(*)                                                 as eviction_count,
         count_if(ellis_act_withdrawal)                           as ellis_act_count,

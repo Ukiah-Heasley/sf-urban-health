@@ -31,9 +31,11 @@ models:
         tests:
           - not_null
       - name: resolved_count
-        description: "Incidents where resolution is not 'Open or Active'."
+        description: "Incidents that reached a real resolution (not open, not unknown)."
       - name: open_count
-        description: "Incidents where resolution is 'Open or Active' or null."
+        description: "Incidents explicitly marked 'Open or Active'."
+      - name: unknown_count
+        description: "Incidents with no resolution recorded (DataSF null)."
       - name: avg_report_lag_hours
         description: "Average hours between incident occurrence and report filing. Nulls excluded."
       - name: morning_incidents

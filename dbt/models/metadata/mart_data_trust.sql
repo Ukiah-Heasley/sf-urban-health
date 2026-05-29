@@ -24,7 +24,7 @@ test_health as (
     select
         model_name,
         round(avg(pass_rate_7d), 1)                                         as test_pass_rate_7d,
-        count(distinct run_date || '|' || test_name)                        as total_tests_7d,
+        count(distinct {{ dbt_utils.generate_surrogate_key(['run_date', 'test_name']) }}) as total_tests_7d,
         count_if(not is_passing and run_date >= current_date - 6)           as failed_tests_7d,
         max(last_failure_at)                                                as last_test_failure_at
     from {{ ref('mart_dbt_test_health') }}

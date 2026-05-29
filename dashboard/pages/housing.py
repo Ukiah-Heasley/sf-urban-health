@@ -19,11 +19,16 @@ from dashboard.data.transforms import (
 
 ACCENT = "#ffb300"
 
-_NEIGHBORHOODS = sorted(
-    n for n in MART["neighborhood"].unique().to_list() if n is not None
+# Marts load empty when Snowflake is unavailable (see data/cache.py); guard
+# every module-level column access so the app still imports/boots, matching
+# the evictions and incidents pages.
+_NEIGHBORHOODS = (
+    sorted(n for n in MART["neighborhood"].unique().to_list() if n is not None)
+    if not MART.is_empty()
+    else []
 )
-_MIN_DATE: date = MART["filed_month"].min()
-_MAX_DATE: date = MART["filed_month"].max()
+_MIN_DATE: date = MART["filed_month"].min() if not MART.is_empty() else date.today()
+_MAX_DATE: date = MART["filed_month"].max() if not MART.is_empty() else date.today()
 
 
 def _filter_bar() -> dbc.Row:

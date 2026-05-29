@@ -15,7 +15,6 @@ with_windows as (
         lower(status)                                          as status,
         lower(status) = 'pass'                                 as is_passing,
         coalesce(failures::integer, 0)                         as failures,
-        null::float                                            as execution_time_seconds,
         round(
             avg((lower(status) = 'pass')::integer) over (
                 partition by test_name

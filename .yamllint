@@ -18,3 +18,7 @@ ignore: |
   airflow/logs/
   airflow/.astro/
   airflow/airflow_settings.yaml
+  reports/node_modules/
+  reports/.evidence/
+  reports/.svelte-kit/
+  reports/build/
