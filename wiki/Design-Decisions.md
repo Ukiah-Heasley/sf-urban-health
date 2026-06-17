@@ -22,8 +22,10 @@ loads can't create duplicates at the storage level.
 ## Watermark-driven incremental loads via `METADATA.INGEST_WATERMARKS`
 
 Each ingest reads its last-successful watermark from a small
-`METADATA.INGEST_WATERMARKS` table, fetches `where data_loaded_at >=
-<wm>`, then writes a new watermark on success.
+`METADATA.INGEST_WATERMARKS` table, fetches `where data_loaded_at >
+<wm>` after the first load, then writes a new timestamp watermark on
+success. First runs use the dataset epoch at midnight and include that
+boundary.
 
 **Why over a checkpoint file in S3:** atomicity and queryability.
 Snowflake gives a transactional `MERGE` against the watermark row in
@@ -32,21 +34,21 @@ require careful file-level concurrency control. As a bonus, the
 watermark table is queryable from BI ("what's our freshest day for
 permits?") without scanning S3.
 
-**Trade-off:** known overlap on the boundary day. The current `>=`
-predicate plus a date-truncated watermark re-fetches the prior day's
-last record on each run — see TODO.md H1 for the planned fix
-(strict `>` on a `TIMESTAMP_NTZ` watermark).
+**Trade-off:** strict timestamp watermarks avoid the old boundary-day
+overlap, but they assume DataSF does not publish new records later with
+the exact same `data_loaded_at` timestamp after a successful fetch.
 
 ## Newline-delimited JSON, never an outer array
 
-`_write_s3` emits one JSON object per line. The COPY uses
-`STRIP_OUTER_ARRAY = FALSE`. **Don't change this.**
+`NdjsonS3Writer` emits one JSON object per line through a temporary file
+before uploading to S3. The COPY uses `STRIP_OUTER_ARRAY = FALSE`.
+**Don't change this.**
 
-**Why:** NDJSON streams. A 5 GB result set can be re-loaded line by
-line without holding the whole array in memory. An outer-array variant
-would require Snowflake to stage the entire object before processing,
-which (a) doubles RAM cost on the worker and (b) caps the file size at
-Snowflake's variant limit (16 MB compressed).
+**Why:** NDJSON streams. A 5 GB result set can be fetched and written
+line by line without holding the whole array in memory. An outer-array
+variant would require Snowflake to stage the entire object before
+processing, which (a) doubles RAM cost on the worker and (b) caps the
+file size at Snowflake's variant limit (16 MB compressed).
 
 ## dbt materialization policy
 
@@ -100,9 +102,10 @@ The three ingest DAGs share `airflow/dags/dag_factory.py`. Adding a
 fourth dataset is a single `DagConfig(...)` declaration plus the SODA
 endpoint metadata.
 
-**Why:** every dataset has the same shape (extract → load → update
-watermark). A factory removes boilerplate and ensures every dataset
-gets identical retry/observability defaults.
+**Why:** every dataset has the same shape (extract → branch → load →
+update watermark → emit asset, with a no-new-records branch). A factory
+removes boilerplate and ensures every dataset gets identical retry,
+asset, and observability defaults.
 
 **Trade-off:** factory'd DAGs are slightly harder to debug than
 hand-written ones because the Airflow UI shows the rendered DAG, not

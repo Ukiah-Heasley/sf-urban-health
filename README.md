@@ -10,7 +10,7 @@
 [![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-2ea44f)](https://ukiah-heasley.github.io/sf-urban-health/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-style daily ETL pipeline that ingests SF civic datasets (building permits, eviction notices, police incidents) from the DataSF SODA API, lands raw JSON in S3, loads into Snowflake, and transforms through a dbt staging → intermediate → mart layer on an Airflow schedule. Phase 1 of a larger SF Civic Intelligence Platform.
+A production-style daily ELT pipeline that ingests SF civic datasets (building permits, eviction notices, police incidents) from the DataSF SODA API, lands raw JSON in S3, loads into Snowflake, and transforms through a dbt staging → intermediate → mart layer on an Airflow schedule. Phase 1 of a larger SF Civic Intelligence Platform.
 
 **What this demonstrates:** watermark-driven incremental ingestion to a durable S3 raw lake; ELT into Snowflake with dbt (staging → intermediate → marts) plus data-quality tests and source freshness; an Airflow-native observability loop (DAG / test health → composite trust score); a Plotly Dash app; and a static [Evidence](https://evidence.dev) snapshot published to GitHub Pages (**[live demo](https://ukiah-heasley.github.io/sf-urban-health/)**).
 
@@ -32,7 +32,10 @@ Snowflake RAW.{PERMITS|EVICTIONS|INCIDENTS}  (COPY INTO, orchestrated by Airflow
 METADATA.INGEST_WATERMARKS  (high-water mark per dataset)
       │
       ▼
-dbt  staging → intermediate → marts  (transform_all DAG)
+Airflow Asset updates  (one per completed ingest)
+      │
+      ▼
+dbt  staging → intermediate → marts  (asset-triggered transform_all DAG)
 ```
 
 | Stage         | Tool                              |
@@ -50,17 +53,23 @@ The pipeline uses **five Airflow DAGs** with a clear separation of concerns:
 
 **Three ingest DAGs** (one per dataset, run at 06:00 UTC daily):
 ```
-extract_{dataset}_to_s3 → load_s3_to_snowflake → update_watermark
+extract_{dataset}_to_s3 → choose_load_path ─┬─► load_s3_to_snowflake → update_watermark ─┐
+                                            └─► no_new_records                           ├─► ingest_complete asset
+                                                                                          ┘
 ```
 
-**One shared transform DAG** (`transform_all`, also scheduled at 06:00 UTC):
+**One shared transform DAG** (`transform_all`, scheduled by Airflow Assets):
 ```
-wait_permits_watermark  ─┐
-wait_evictions_watermark ─┼─► dbt_deps ─► run_dbt_staging ─► run_dbt_marts
-wait_incidents_watermark ─┘
+permits_ingest asset   ─┐
+evictions_ingest asset ─┼─► dbt_deps ─► dbt_run ─► dbt_test
+incidents_ingest asset ─┘
 ```
 
-`transform_all` uses `ExternalTaskSensor` to wait for each dataset's `update_watermark` task before running dbt once across all models. Sensors use `mode="reschedule"` (no worker slot held while waiting), `poke_interval=120s`, `timeout=3h`. (A known quirk with this fan-in pattern is tracked in `TODO.md` under "Airflow code quality" — B1.)
+Each ingest DAG emits an Airflow asset from `ingest_complete` after either a
+successful load + watermark update or a successful no-new-records branch.
+`transform_all` runs once all three ingest assets have updated, avoiding a
+sensor fan-in and making manual/ad-hoc ingests behave the same as scheduled
+runs.
 
 **One observability DAG** (`ingest_pipeline_metadata`, daily at 07:00 UTC):
 ```
@@ -163,11 +172,11 @@ make lint
 make test
 ```
 
-The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all five DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`, `ingest_pipeline_metadata`) to enable the full daily pipeline at 06:00 UTC plus the observability collector at 07:00 UTC.
+The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all five DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`, `ingest_pipeline_metadata`) to enable daily ingests at 06:00 UTC, asset-triggered transforms after all ingests complete, and the observability collector at 07:00 UTC.
 
 ### Initial backfill
 
-For first-time setup, run each dataset's extractor via CLI in yearly chunks to avoid memory pressure (datasets with 500k+ records can approach 2 GB of RAM if loaded in a single run):
+For first-time setup, run each dataset's extractor via CLI in yearly chunks to keep API calls, S3 objects, and Snowflake loads easy to inspect. The extractor streams NDJSON through a temp file before uploading to S3, so backfills do not accumulate all records in memory:
 
 ```bash
 # Example: backfill permits year by year
@@ -222,9 +231,10 @@ ORDER BY filed_month DESC;
 ## Design decisions
 
 - **S3 is the durable raw layer.** Raw JSON lives in S3 permanently; Snowflake `RAW.*` tables are loading targets. To reprocess, replay from S3 — never re-hit DataSF.
-- **Watermark-driven incremental loads.** Each dataset's high-water mark (`MAX(data_loaded_at)` from the last successful load) is stored in `METADATA.INGEST_WATERMARKS`. The next run reads this as its `since` filter. The watermark only advances after `load_s3_to_snowflake` succeeds, so a failed load automatically causes the next run to re-fetch the gap. Falls back to `config.epoch` on first run.
+- **Watermark-driven incremental loads.** Each dataset's high-water mark (`MAX(data_loaded_at)` from the last successful load) is stored as a `TIMESTAMP_NTZ` in `METADATA.INGEST_WATERMARKS`. The next run queries DataSF with a strict `data_loaded_at > watermark` predicate. The watermark only advances after `load_s3_to_snowflake` succeeds, so a failed load automatically causes the next run to re-fetch the gap. First runs fall back to `config.epoch` at midnight and include that boundary.
 - **Newline-delimited JSON + `STRIP_OUTER_ARRAY = FALSE`.** One record per line; the COPY reads records independently.
-- **Ingest and transform are separate DAGs.** The three ingest DAGs own extract → load → watermark. `transform_all` uses `ExternalTaskSensor` to wait for all three before running dbt once. dbt failures don't block ingestion, and dbt can be re-run independently without re-hitting the API.
+- **No-new-record days are successful.** If DataSF returns zero rows, the DAG skips COPY and watermark update, emits the dataset's ingest-complete asset, and lets dbt rebuild against unchanged source data.
+- **Ingest and transform are separate DAGs.** The three ingest DAGs own extract → load → watermark → asset emission. `transform_all` is scheduled by the three ingest assets and runs dbt once after all datasets have checked in. dbt failures don't block ingestion, and dbt can be re-run independently without re-hitting the API.
 - **Staging/intermediate are views; marts are tables.** Upstream always reflects the latest raw; marts materialize once per run so BI hits precomputed data.
 - **Residential filter sits in the mart, not staging.** `stg_permits` is source-of-truth for all permits. The residential lens (rows with existing or proposed unit counts) is a reporting concern owned by `mart_housing_production`.
 - **`normalize_neighborhood` macro.** Collapses DataSF's null/empty/"unknown" spellings into a single `'Unknown'` and `initcap`s the rest. Any mart that groups by neighborhood uses this macro.

@@ -178,7 +178,7 @@ def _enrich_task_instances(
         if task_id.startswith("extract_"):
             row["records_fetched"] = client.get_xcom(dag_id, run_id, task_id, "records_fetched")
             raw_wm = client.get_xcom(dag_id, run_id, task_id, "max_watermark")
-            row["max_watermark"] = f"{raw_wm}T00:00:00" if raw_wm else None
+            row["max_watermark"] = str(raw_wm) if raw_wm else None
             row["s3_path"] = client.get_xcom(dag_id, run_id, task_id, "return_value")
         enriched.append(row)
     return enriched

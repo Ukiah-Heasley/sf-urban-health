@@ -16,30 +16,27 @@ watermark; it correctly fetches the gap.
 ## Backfill chunking
 
 Full backfills (epoch = 2013-01-01 for permits) can return 500 k+
-records in a single run. Today the implementation accumulates the full
-list in memory before writing S3 — this works for the steady-state
-daily load (a few hundred records) but is fragile on a cold backfill.
+records in a single run. The extractor streams SODA records through a
+temporary NDJSON file before uploading to S3, so it does not hold the
+entire result set in memory.
 
-A streaming refactor is tracked in TODO.md (item H2). Until then, the
-recommended backfill pattern is yearly chunks: pass `--since` and
-`--run-date` to the standalone script
+The recommended backfill pattern is still yearly chunks so each API
+call, S3 object, and Snowflake `COPY INTO` load stays easy to inspect:
+pass `--since` and `--run-date` to the standalone script
 (`airflow/include/scripts/permits.py --since 2018-01-01 --run-date 2019-01-01`).
 
-## Watermark boundary overlap
+## Watermark boundary behavior
 
-The current `WHERE data_loaded_at >= :watermark` predicate plus a
-date-truncated watermark re-fetches the prior day's last record on
-every run. Today this is harmless because:
+Incremental scheduled runs use `WHERE data_loaded_at > :watermark` with a
+`TIMESTAMP_NTZ` watermark. First runs use the dataset epoch at midnight
+and include that boundary. This avoids re-fetching the prior boundary
+day on every run.
 
-1. dbt's `unique(permit_number)` test would *eventually* catch a
-   genuine duplicate (currently masked by the project-wide
-   `+severity: warn`, see TODO.md D1), and
-2. Snowflake `COPY INTO ... ON_ERROR = ABORT_STATEMENT` rejects the
-   duplicate before it reaches the staging view.
-
-The proper fix (strict `>` on a `TIMESTAMP_NTZ` watermark, or a
-staging-layer dedupe via `qualify`) is on the deferred Airflow
-checklist (item H1).
+The staging models still dedupe on source primary keys because upstream
+civic datasets can revise records. The remaining edge case is a record
+published later with the exact same `data_loaded_at` timestamp as the
+stored high-water mark; that would require a compound watermark
+(`data_loaded_at`, primary key) if it shows up in practice.
 
 ## DataSF "Unknown" neighborhood spellings
 
@@ -64,13 +61,12 @@ S3 holds NDJSON (one object per line), not a JSON array. Don't toggle
 this even if you switch tooling — the alternative is a 16 MB-per-file
 cap from Snowflake's `VARIANT` limit.
 
-## Empty-results day → stale watermark
+## Empty-results day
 
-If a SODA query returns zero rows for the day, today the
-`update_watermark` task crashes (B2 + B4 in TODO.md). Until that's
-fixed, an empty day will show up as a failed Airflow task — which is
-the right "loud failure" behavior, but inconvenient. Workaround: clear
-the failure and let the retry pick up the next day's records.
+If a SODA query returns zero rows, the ingest DAG skips S3 upload,
+Snowflake `COPY INTO`, and watermark update. It still emits the
+dataset's ingest-complete Airflow asset so `transform_all` can rebuild
+marts against unchanged source data after all datasets have checked in.
 
 ## Dash debug surface
 

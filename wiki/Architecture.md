@@ -13,6 +13,9 @@ S3: s3://$AWS_S3_BUCKET/raw/<dataset>/YYYY/MM/DD/<dataset>.json
 Snowflake RAW.<DATASET>  ◄── COPY INTO via SQLExecuteQueryOperator
    │  (loading target, not source-of-truth)
    ▼
+Airflow ingest-complete assets
+   │  (one asset per completed dataset ingest)
+   ▼
 dbt staging  →  intermediate  →  marts
    │  (views → views → tables)
    ▼
@@ -29,11 +32,13 @@ Five DAGs orchestrate the platform, all defined under `airflow/dags/`:
 | `ingest_permits` | `0 6 * * *` | DataSF → S3 → `RAW.PERMITS` → `METADATA.INGEST_WATERMARKS` |
 | `ingest_evictions` | `0 6 * * *` | DataSF → S3 → `RAW.EVICTIONS` → `METADATA.INGEST_WATERMARKS` |
 | `ingest_incidents` | `0 6 * * *` | DataSF → S3 → `RAW.INCIDENTS` → `METADATA.INGEST_WATERMARKS` |
-| `transform_all` | `0 7 * * *` | After ingests, runs `dbt build` against all three datasets |
+| `transform_all` | Asset-triggered | After all three ingest assets update, runs `dbt build` against all datasets |
 | `ingest_pipeline_metadata` | `0 7 * * *` | Pulls Airflow REST API → `METADATA.AIRFLOW_DAG_RUNS` / `AIRFLOW_TASK_INSTANCES` for the observability marts |
 
-The three ingest DAGs share a factory (`airflow/dags/dag_factory.py`) so
-adding a fourth dataset is a single `DagConfig(...)` declaration — see
+Each ingest DAG branches around `COPY INTO` and watermark update when DataSF
+returns zero rows, then emits an ingest-complete Airflow asset. The three
+ingest DAGs share a factory (`airflow/dags/dag_factory.py`) so adding a fourth
+dataset is a single `DagConfig(...)` declaration plus an asset — see
 [[Design-Decisions]] for why.
 
 ## Layers

@@ -37,3 +37,8 @@ def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
         pytest.fail(f"DAG import errors:\n{formatted}")
 
     assert dag_bag.dags, "DagBag is empty — no DAGs were discovered"
+
+    transform = dag_bag.dags.get("transform_all")
+    assert transform is not None
+    assert [task.task_id for task in transform.tasks] == ["dbt_deps", "dbt_run", "dbt_test"]
+    assert all(task.task_type != "ExternalTaskSensor" for task in transform.tasks)

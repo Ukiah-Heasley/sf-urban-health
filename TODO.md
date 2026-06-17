@@ -26,6 +26,27 @@ Fixed and verified offline (ruff / pytest / `dbt parse` / yamllint / Evidence bu
 
 ---
 
+## Done in the SODA ingestion hardening pass
+
+Fixed and verified offline (ruff / pytest / DAG integrity):
+
+- **B1** — replaced `transform_all`'s `ExternalTaskSensor` fan-in with Airflow
+  Assets emitted by each ingest DAG's terminal `ingest_complete` task.
+- **B2 + B4** — no-new-records days now return
+  `RunResult(s3_path=None, max_watermark=None, records_fetched=0, ...)`, skip
+  `COPY INTO` and watermark update, and still emit the ingest-complete asset.
+- **H1** — watermarks now stay timestamp-grain and scheduled increments query
+  DataSF with strict `data_loaded_at > watermark`; first loads include the
+  dataset epoch boundary.
+- **H2** — `soda_ingest.py` now streams SODA records through
+  `NdjsonS3Writer` instead of accumulating the full response list in memory.
+- **Airflow 3 imports** — touched DAGs now use `airflow.sdk` plus
+  `airflow.providers.standard.*` operator imports.
+- **New (fixed):** `count_records()` remains available for diagnostics, but
+  the daily ingest path no longer issues an extra full-count API request.
+
+---
+
 ## Security (high)
 
 - [ ] **H3** — `airflow/airflow_settings.yaml` holds a **plaintext Snowflake password** (gitignored, never committed — verified). Action: **rotate that Snowflake password**, then either interpolate `conn_password: ${SNOWFLAKE_PASSWORD}` (add a tracked `airflow_settings.yaml.example`) or delete the file and define the connection via `AIRFLOW_CONN_SNOWFLAKE_DEFAULT` in `.env`. Managed deploys should define the connection in the platform UI (see DEPLOY.md).
@@ -47,21 +68,14 @@ Fixed and verified offline (ruff / pytest / `dbt parse` / yamllint / Evidence bu
 Severity: **B** blocker / **H** high / **M·L** medium·low.
 
 ### Blockers
-- [ ] **B1** — `airflow/dags/transform_all.py`: `_latest_success` resolves yesterday's `update_watermark` run, so `dbt_run` can run on stale data when ingest + transform share the 06:00 slot. Fix: migrate to Airflow 3 Assets — emit a `Dataset(...)` from each `update_watermark` and set `transform_all` `schedule=[asset_permits, asset_evictions, asset_incidents]`; drop the sensor block.
-- [ ] **B2** — short-circuit the `update_watermark` task when `records_fetched == 0` so a no-new-records day doesn't write a `NULL`-watermark row. Pairs with B4.
-- [ ] **B4** — `airflow/include/scripts/soda_ingest.py` `run()`: `max(r[date_field] for r in records)` raises `ValueError` on an empty fetch — this *will* fire daily once caught up. Fix: make `RunResult` fields `Optional`, early-return `RunResult(s3_path=None, max_watermark=None, records_fetched=0, ...)` on empty, and handle `None` in `dag_factory._extract` (the XCom `result.max_watermark.isoformat()`) + B2.
+- None open.
 
 ### Highs
-- [ ] **H1** — watermark stored as truncated date with `>=` predicate can re-fetch boundary rows. Partly mitigated already: all three staging models dedupe via `qualify`/`row_number() … = 1`. To fully close, switch the watermark column to `TIMESTAMP_NTZ` + strict `>`.
-- [ ] **H2** — stream NDJSON to S3 page-by-page instead of accumulating the full list in memory in `soda_ingest.run()` (datasets >500k rows approach ~2 GB/run).
 - [ ] **H4** — zero alerting: add an `on_failure_callback` to a shared `default_args` in `dag_factory.py` (Slack / stdout / log scan).
 
 ### Followups (M·L)
 - [ ] DAG `start_date` drift across files — pick one constant.
 - [ ] Audit `catchup=False` on each DAG.
-- [ ] Replace classic Operators with TaskFlow `@task` where it tightens code (esp. `transform_all.py`); note the Airflow-3 deprecation warnings for `airflow.operators.{python,bash}` / `sensors.external_task` → `airflow.providers.standard.*`.
-- [ ] Extract magic numbers (`poke_interval=120`, `timeout=10800`) into module constants.
-- [ ] **New (L):** `count_records()` issues an extra full-count API call per run only for a log line — drop it or gate behind a debug flag.
 
 ---
 

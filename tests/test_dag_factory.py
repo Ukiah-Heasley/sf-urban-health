@@ -12,8 +12,9 @@ import pytest
 pytest.importorskip("airflow.models", reason="airflow not installed; install --group airflow")
 
 
-def test_make_ingest_dag_produces_three_tasks_in_canonical_order():
+def test_make_ingest_dag_branches_empty_runs_and_emits_asset():
     from dag_factory import DagConfig, make_ingest_dag
+    from pipeline_assets import PERMITS_INGEST_ASSET
     from scripts.soda_ingest import DatasetConfig
 
     cfg = DagConfig(
@@ -35,14 +36,24 @@ def test_make_ingest_dag_produces_three_tasks_in_canonical_order():
     task_ids = [t.task_id for t in dag.tasks]
     assert task_ids == [
         "extract_permits_to_s3",
+        "choose_load_path",
         "load_s3_to_snowflake",
         "update_watermark",
+        "no_new_records",
+        "ingest_complete",
     ]
 
-    # Canonical extract -> load -> update_watermark dependency chain.
     extract = dag.get_task("extract_permits_to_s3")
+    branch = dag.get_task("choose_load_path")
     load = dag.get_task("load_s3_to_snowflake")
     update = dag.get_task("update_watermark")
-    assert load.upstream_task_ids == {"extract_permits_to_s3"}
+    no_new = dag.get_task("no_new_records")
+    complete = dag.get_task("ingest_complete")
+
+    assert branch.upstream_task_ids == {"extract_permits_to_s3"}
+    assert load.upstream_task_ids == {"choose_load_path"}
     assert update.upstream_task_ids == {"load_s3_to_snowflake"}
-    assert extract.downstream_task_ids == {"load_s3_to_snowflake"}
+    assert no_new.upstream_task_ids == {"choose_load_path"}
+    assert complete.upstream_task_ids == {"update_watermark", "no_new_records"}
+    assert extract.downstream_task_ids == {"choose_load_path"}
+    assert complete.outlets == [PERMITS_INGEST_ASSET]

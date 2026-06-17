@@ -67,8 +67,9 @@ The ingest + transform pipeline deploys independently of the demo:
    Snowflake + AWS connections and env vars in the platform UI, mirroring
    `airflow/.env.example`. Define the `snowflake_default` connection there —
    do not ship `airflow_settings.yaml` with a literal password (see TODO.md H3).
-3. **dbt scheduling.** The `transform_all` DAG already runs `dbt build` after the
-   ingests succeed — no separate dbt Cloud account required.
+3. **dbt scheduling.** The `transform_all` DAG is scheduled by the three
+   ingest-complete Airflow assets and runs `dbt build` after all datasets have
+   checked in — no separate dbt Cloud account required.
 4. **CI secrets.** `dbt-ci.yml` and `pages.yml` need the six `SNOWFLAKE_*` repo
    secrets (Settings → Secrets and variables → Actions). `ci.yml` needs none.
 

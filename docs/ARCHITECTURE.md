@@ -15,8 +15,8 @@ DataSF SODA API → S3 (NDJSON) → Snowflake RAW → dbt → MARTS / METADATA �
                        └─── orchestrated by 5 Airflow DAGs ─┘
 ```
 
-- **5 DAGs:** 3 ingest (permits, evictions, incidents) + 1 transform_all + 1 ingest_pipeline_metadata.
-- **Watermark-driven incremental** loads; `METADATA.INGEST_WATERMARKS` is the checkpoint of record.
+- **5 DAGs:** 3 scheduled ingests (permits, evictions, incidents) + 1 asset-triggered transform_all + 1 ingest_pipeline_metadata.
+- **Timestamp watermark-driven incremental** loads; `METADATA.INGEST_WATERMARKS` is the checkpoint of record.
 - **dbt:** views (staging, intermediate) → tables (marts), with a separate observability project under `dbt/models/metadata/`.
 - **Dashboard:** Plotly Dash, six pages, in-memory Polars caching at boot.
 

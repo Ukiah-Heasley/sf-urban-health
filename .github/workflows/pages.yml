@@ -10,7 +10,7 @@ name: pages
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # after the daily ingest (06:00) + transform (06:00) + metadata (07:00)
+    - cron: '0 9 * * *'   # after daily ingests (06:00), asset-triggered transform, and metadata (07:00)
   workflow_dispatch:
   pull_request:
     paths:
