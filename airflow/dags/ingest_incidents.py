@@ -1,7 +1,7 @@
 """Daily ingestion of SF Police Department incident reports into the warehouse.
 
-Extract:   DataSF SODA API (data_loaded_at lookback)
-Load:      S3 raw layer -> Snowflake RAW.INCIDENTS via COPY INTO
+Extract:   DataSF SODA API by Airflow data interval
+Load:      S3 raw interval object -> Snowflake RAW.INCIDENTS via COPY INTO
 """
 from __future__ import annotations
 

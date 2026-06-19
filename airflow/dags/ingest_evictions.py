@@ -1,7 +1,7 @@
 """Daily ingestion of SF eviction notices into the warehouse.
 
-Extract:   DataSF SODA API (data_loaded_at lookback — captures new records and updates)
-Load:      S3 raw layer -> Snowflake RAW.EVICTIONS via COPY INTO
+Extract:   DataSF SODA API by Airflow data interval
+Load:      S3 raw interval object -> Snowflake RAW.EVICTIONS via COPY INTO
 """
 from __future__ import annotations
 

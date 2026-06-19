@@ -2,17 +2,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as datetime_time, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import BranchPythonOperator, PythonOperator
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.sdk import DAG
 from airflow.utils.trigger_rule import TriggerRule
 
 from pipeline_assets import ingest_asset_for
-from scripts.soda_ingest import DatasetConfig, run as _soda_run
+from scripts.soda_ingest import (
+    DatasetConfig,
+    ExtractWindow,
+    S3NdjsonWriter,
+    SodaClient,
+    build_soda_session,
+    extract_to_raw,
+)
 
 _SQL_DIR = Path(__file__).parent.parent / "include" / "sql"
 
@@ -27,56 +34,48 @@ class DagConfig:
     snowflake_database: str = "SF_URBAN_HEALTH"
 
 
-def _coerce_watermark(value) -> datetime:
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
-    if isinstance(value, date):
-        return datetime.combine(value, datetime_time.min)
-    if isinstance(value, str):
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
-    raise TypeError(f"Unsupported watermark type from Snowflake: {type(value).__name__}")
-
-
 def make_ingest_dag(cfg: DagConfig) -> DAG:
     def _extract(**context):
-        from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-        hook = SnowflakeHook(snowflake_conn_id="snowflake_default")
-        rows = hook.get_records(
-            "SELECT watermark FROM METADATA.INGEST_WATERMARKS WHERE dataset_name = %s",
-            parameters=[cfg.dataset.name],
+        window = ExtractWindow(
+            data_interval_start=context["data_interval_start"],
+            data_interval_end=context["data_interval_end"],
         )
-        since = (
-            _coerce_watermark(rows[0][0])
-            if rows
-            else datetime.combine(cfg.dataset.epoch, datetime_time.min)
+        result = extract_to_raw(
+            cfg.dataset,
+            window,
+            client=SodaClient(session=build_soda_session()),
+            writer=S3NdjsonWriter.from_env(),
         )
-        include_since = not rows
-        run_date_str = context.get("ds")
-        run_date = (
-            datetime.strptime(run_date_str, "%Y-%m-%d").date()
-            if run_date_str
-            else datetime.utcnow().date()
-        )
-        result = _soda_run(cfg.dataset, run_date, since, include_since=include_since)
-        if result.max_watermark is not None:
-            context["ti"].xcom_push(
-                key="max_watermark",
-                value=result.max_watermark.isoformat(timespec="milliseconds"),
-            )
+        context["ti"].xcom_push(key="raw_path", value=result.raw_path)
+        context["ti"].xcom_push(key="raw_key", value=result.raw_key)
         context["ti"].xcom_push(key="records_fetched", value=result.records_fetched)
-        context["ti"].xcom_push(key="fetch_duration_seconds", value=result.fetch_duration_seconds)
-        return result.s3_path
+        context["ti"].xcom_push(
+            key="max_loaded_at",
+            value=result.max_loaded_at.isoformat() if result.max_loaded_at else None,
+        )
+        context["ti"].xcom_push(key="bytes_written", value=result.bytes_written)
+        context["ti"].xcom_push(key="duration_seconds", value=result.duration_seconds)
+        context["ti"].xcom_push(
+            key="data_interval_start",
+            value=result.data_interval_start.isoformat(),
+        )
+        context["ti"].xcom_push(
+            key="data_interval_end",
+            value=result.data_interval_end.isoformat(),
+        )
+        context["ti"].xcom_push(key="effective_start", value=result.effective_start.isoformat())
+        return result.raw_path
 
     def _choose_load_path(**context):
         records = context["ti"].xcom_pull(
-            task_ids=f"extract_{cfg.dataset.name}_to_s3",
+            task_ids=f"extract_{cfg.dataset.name}_to_raw",
             key="records_fetched",
         )
         return "load_s3_to_snowflake" if int(records or 0) > 0 else "no_new_records"
 
     with DAG(
         dag_id=f"ingest_{cfg.dataset.name}",
-        description=f"Daily {cfg.dataset.name}: DataSF -> S3 -> Snowflake -> watermark",
+        description=f"Daily {cfg.dataset.name}: DataSF interval -> S3 raw",
         schedule=cfg.schedule,
         start_date=cfg.start_date,
         catchup=False,
@@ -89,7 +88,7 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         tags=cfg.tags,
     ) as dag:
         extract = PythonOperator(
-            task_id=f"extract_{cfg.dataset.name}_to_s3",
+            task_id=f"extract_{cfg.dataset.name}_to_raw",
             python_callable=_extract,
         )
 
@@ -98,31 +97,14 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             python_callable=_choose_load_path,
         )
 
-        load = SQLExecuteQueryOperator(
+        load_s3_to_snowflake = SQLExecuteQueryOperator(
             task_id="load_s3_to_snowflake",
             conn_id="snowflake_default",
             sql="copy_into.sql",
             params={
                 "database": cfg.snowflake_database,
                 "table": cfg.snowflake_table,
-                "name": cfg.dataset.name,
-            },
-        )
-
-        update_wm = SQLExecuteQueryOperator(
-            task_id="update_watermark",
-            conn_id="snowflake_default",
-            sql="update_watermark.sql",
-            # parameters= flows through the driver as bind values (no SQL
-            # injection surface). Jinja still resolves the XCom pull at
-            # render time before the driver sees the watermark string.
-            parameters={
-                "name": cfg.dataset.name,
-                "watermark": (
-                    "{{ ti.xcom_pull("
-                    f"task_ids='extract_{cfg.dataset.name}_to_s3', "
-                    "key='max_watermark') }}"
-                ),
+                "extract_task_id": f"extract_{cfg.dataset.name}_to_raw",
             },
         )
 
@@ -135,7 +117,7 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         )
 
         extract >> choose_load_path
-        choose_load_path >> load >> update_wm >> ingest_complete
+        choose_load_path >> load_s3_to_snowflake >> ingest_complete
         choose_load_path >> no_new_records >> ingest_complete
 
     return dag
