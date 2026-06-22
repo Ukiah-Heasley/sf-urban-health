@@ -1,6 +1,7 @@
-"""Extract SF Police Department incident reports from the DataSF SODA API and land them as raw JSON.
+"""Dataset config and CLI entry point for SF incident-report raw extracts.
 
-Writes to s3://$AWS_S3_BUCKET/raw/incidents/YYYY/MM/DD/incidents.json.
+Input:    DataSF SODA resource wg3w-h783, filtered by data_loaded_at.
+Output:   Raw interval NDJSON under s3://$AWS_S3_BUCKET/raw/incidents/.
 """
 from __future__ import annotations
 

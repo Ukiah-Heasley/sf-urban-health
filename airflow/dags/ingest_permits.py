@@ -1,7 +1,7 @@
-"""Daily ingestion of SF building permits into the warehouse.
+"""Daily raw ingestion of SF building permits.
 
-Extract:   DataSF SODA API by Airflow data interval
-Load:      S3 raw interval object -> Snowflake RAW.PERMITS via COPY INTO
+Input:    DataSF SODA API, queried by Airflow data interval.
+Output:   Raw NDJSON in s3://$AWS_S3_BUCKET/raw/permits/... plus ingest asset.
 """
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from scripts.permits import PERMITS_CONFIG
 
 dag = make_ingest_dag(DagConfig(
     dataset=PERMITS_CONFIG,
-    snowflake_table="RAW.PERMITS",
     schedule="0 6 * * *",
     start_date=datetime(2026, 3, 24),
     tags=["sf-civic", "permits", "daily"],

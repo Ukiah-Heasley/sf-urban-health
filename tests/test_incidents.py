@@ -1,5 +1,5 @@
-"""Smoke tests for the incidents ingest config + run wrapper."""
-from datetime import date, datetime
+"""Smoke tests for the incidents ingest config and shared raw extractor."""
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from scripts import soda_ingest
@@ -20,8 +20,11 @@ def test_incidents_config_is_well_formed():
     assert INCIDENTS_CONFIG.endpoint.startswith("https://data.sfgov.org/")
 
 
-def test_incidents_run_returns_runresult():
-    since = datetime(2024, 1, 1)
+def test_incidents_extract_to_raw_returns_extract_result():
+    window = soda_ingest.ExtractWindow(
+        data_interval_start=datetime(2024, 4, 1, tzinfo=timezone.utc),
+        data_interval_end=datetime(2024, 4, 2, tzinfo=timezone.utc),
+    )
     records = [
         {"row_id": "r1", "data_loaded_at": "2024-02-15T00:00:00.000"},
         {"row_id": "r2", "data_loaded_at": "2024-04-01T00:00:00.000"},
@@ -31,20 +34,21 @@ def test_incidents_run_returns_runresult():
     client = MagicMock()
     client.fetch_records.return_value = iter(records)
     writer = MagicMock()
-    writer.write_records.side_effect = lambda _config, _run_date, recs: soda_ingest.WriteResult(
+    writer.write_records.side_effect = lambda _config, _window, recs: soda_ingest.WriteResult(
         "s3://bucket/incidents",
+        "raw/incidents/records.ndjson",
         len(list(recs)),
         128,
     )
 
-    result = soda_ingest.run(
+    result = soda_ingest.extract_to_raw(
         INCIDENTS_CONFIG,
-        date(2024, 4, 5),
-        since,
+        window,
         client=client,
         writer=writer,
     )
 
-    assert result.s3_path == "s3://bucket/incidents"
-    assert result.max_watermark == datetime(2024, 4, 1)
+    assert result.raw_path == "s3://bucket/incidents"
+    assert result.raw_key == "raw/incidents/records.ndjson"
+    assert result.max_loaded_at == datetime(2024, 4, 1, tzinfo=timezone.utc)
     assert result.records_fetched == 3

@@ -1,6 +1,7 @@
-"""Extract SF eviction notices from the DataSF SODA API and land them as raw JSON.
+"""Dataset config and CLI entry point for SF eviction-notice raw extracts.
 
-Writes to s3://$AWS_S3_BUCKET/raw/evictions/YYYY/MM/DD/evictions.json.
+Input:    DataSF SODA resource 5cei-gny5, filtered by data_loaded_at.
+Output:   Raw interval NDJSON under s3://$AWS_S3_BUCKET/raw/evictions/.
 """
 from __future__ import annotations
 

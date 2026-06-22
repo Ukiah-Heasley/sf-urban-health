@@ -1,7 +1,7 @@
-"""Daily ingestion of SF Police Department incident reports into the warehouse.
+"""Daily raw ingestion of SF Police Department incident reports.
 
-Extract:   DataSF SODA API by Airflow data interval
-Load:      S3 raw interval object -> Snowflake RAW.INCIDENTS via COPY INTO
+Input:    DataSF SODA API, queried by Airflow data interval.
+Output:   Raw NDJSON in s3://$AWS_S3_BUCKET/raw/incidents/... plus ingest asset.
 """
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from scripts.incident_reports import INCIDENTS_CONFIG
 
 dag = make_ingest_dag(DagConfig(
     dataset=INCIDENTS_CONFIG,
-    snowflake_table="RAW.INCIDENTS",
     schedule="0 6 * * *",
     start_date=datetime(2026, 4, 30),
     tags=["sf-civic", "incidents", "daily"],

@@ -1,4 +1,15 @@
-"""Generic SODA API ingestion: paginate a DataSF endpoint -> S3 raw NDJSON."""
+"""Generic DataSF SODA API extraction into immutable raw NDJSON on S3.
+
+This module owns the source-system side of ingestion only:
+
+1. Build a half-open extraction window from Airflow or CLI input.
+2. Page through a DataSF SODA endpoint in a stable order.
+3. Stream each record into one newline-delimited JSON raw object in S3.
+4. Return run metadata that the DAG can expose through XCom.
+
+It deliberately stops at the raw layer. Bronze Parquet promotion and dbt
+transform work belong downstream of the ingest asset.
+"""
 from __future__ import annotations
 
 import json
@@ -20,6 +31,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class DatasetConfig:
+    """Static metadata for one DataSF dataset.
+
+    Inputs:
+    - ``name`` is this project's short dataset slug and raw S3 namespace.
+    - ``dataset_id`` is the Socrata resource identifier in the DataSF URL.
+    - ``date_field`` is the source timestamp used for interval filtering.
+    - ``order_field`` is a stable tie-breaker used while paginating.
+    - ``epoch`` is the earliest sensible default for CLI backfills.
+    - ``page_size`` controls how many records each SODA request asks for.
+
+    Output:
+    - ``endpoint`` derives the HTTPS JSON API URL used by ``SodaClient``.
+    """
+
     name: str
     dataset_id: str
     date_field: str
@@ -34,7 +59,18 @@ class DatasetConfig:
 
 @dataclass(frozen=True)
 class ExtractWindow:
-    """Half-open DataSF extraction interval: [effective_start, data_interval_end)."""
+    """Half-open source extraction interval for one Airflow run.
+
+    Inputs:
+    - ``data_interval_start`` is the scheduled interval's inclusive start.
+    - ``data_interval_end`` is the scheduled interval's exclusive end.
+    - ``lookback`` optionally widens the lower bound for late-arriving data.
+
+    Outputs:
+    - ``effective_start`` is the actual inclusive lower bound sent to SODA.
+    - Stored datetimes are normalized to timezone-aware UTC so comparisons and
+      query formatting use one convention.
+    """
 
     data_interval_start: datetime
     data_interval_end: datetime
@@ -62,7 +98,17 @@ class ExtractWindow:
 
 @dataclass
 class ExtractAccumulator:
-    """Track metadata while records stream from SODA to the raw writer."""
+    """Collect extract metadata without materializing the whole response.
+
+    Input:
+    - Receives one source record at a time from ``SodaClient.fetch_records``.
+
+    Outputs:
+    - ``records_fetched`` counts records observed in the stream.
+    - ``max_loaded_at`` records the largest source timestamp observed. In this
+      interval design it is descriptive metadata, not the state that controls
+      the next run.
+    """
 
     records_fetched: int = 0
     max_loaded_at: datetime | None = None
@@ -78,7 +124,7 @@ class ExtractAccumulator:
         config: DatasetConfig,
         records: Iterable[dict],
     ) -> Iterator[dict]:
-        """Yield the same records onward while capturing extract metadata."""
+        """Yield input records unchanged while updating extract metadata."""
         for record in records:
             self.observe(config, record)
             yield record
@@ -86,6 +132,14 @@ class ExtractAccumulator:
 
 @dataclass(frozen=True)
 class ExtractResult:
+    """Summary returned by ``extract_to_raw`` for DAG XCom and logs.
+
+    Inputs are the extraction config, Airflow interval, SODA response stream,
+    and raw writer. Outputs include the raw S3 location when records were
+    written, row and byte counts, timing, interval bounds, and observed source
+    freshness metadata.
+    """
+
     raw_path: str | None
     raw_key: str | None
     records_fetched: int
@@ -99,6 +153,12 @@ class ExtractResult:
 
 @dataclass(frozen=True)
 class WriteResult:
+    """Summary returned by ``S3NdjsonWriter.write_records``.
+
+    Outputs are ``None`` paths for empty extracts, otherwise the S3 URI, object
+    key, record count, and byte count for the uploaded NDJSON object.
+    """
+
     raw_path: str | None
     raw_key: str | None
     records_written: int
@@ -106,7 +166,12 @@ class WriteResult:
 
 
 def _coerce_utc_datetime(value: date | datetime | str) -> datetime:
-    """Normalize date-ish values to timezone-aware UTC datetimes."""
+    """Normalize date-like inputs to timezone-aware UTC datetimes.
+
+    Inputs may come from argparse strings, Airflow pendulum datetimes, Python
+    dates, or SODA timestamp strings. The output is always a ``datetime`` with
+    ``timezone.utc`` attached.
+    """
     if isinstance(value, datetime):
         dt = value
     elif isinstance(value, date):
@@ -128,13 +193,29 @@ def _format_soda_timestamp(value: date | datetime | str) -> str:
 
 
 def _parse_soda_timestamp(value: object) -> datetime:
+    """Parse the configured source timestamp from one SODA record.
+
+    Input is the raw field value pulled from a JSON record. Output is a
+    timezone-aware UTC ``datetime``. Missing timestamps fail the extract because
+    the run metadata would otherwise be misleading.
+    """
+
     if value is None:
         raise ValueError("SODA record is missing the configured timestamp field")
     return _coerce_utc_datetime(str(value))
 
 
 def build_soda_session() -> requests.Session:
-    """Build the side-effectful default HTTP session at the app boundary."""
+    """Build the default HTTP session at the Airflow or CLI boundary.
+
+    Inputs come from environment variables: ``DATASF_APP_TOKEN`` is optional
+    and, when present, is attached as the SODA app token header.
+
+    Output is a configured ``requests.Session`` with retries for transient API
+    failures. Core extraction receives this session through ``SodaClient`` so
+    tests can inject a fake session instead.
+    """
+
     session = requests.Session()
     retry = Retry(
         total=5,
@@ -150,15 +231,29 @@ def build_soda_session() -> requests.Session:
 
 
 class SodaClient:
-    """Small SODA API client for stable, timestamp-windowed pagination."""
+    """SODA API client for stable, interval-bounded pagination.
+
+    Input:
+    - A caller-provided ``requests.Session`` plus a request timeout.
+
+    Output:
+    - ``fetch_records`` yields dictionaries from the DataSF JSON API one record
+      at a time, while keeping only one API page in memory.
+    """
 
     def __init__(self, session: requests.Session, timeout: int = 60) -> None:
-        # Session is injected so tests can use a fake and callers control side effects.
         self._session = session
         self._timeout = timeout
 
     @staticmethod
     def where_clause(config: DatasetConfig, window: ExtractWindow) -> str:
+        """
+        Build the SODA $where SQL predicate for the extraction interval.
+        Input is dataset metadata plus the Airflow window. Output is a
+        half-open timestamp predicate:
+        date_field >= effective_start AND date_field < data_interval_end.
+        """
+
         return (
             f"`{config.date_field}` >= "
             f"'{_format_soda_timestamp(window.effective_start)}' "
@@ -168,6 +263,12 @@ class SodaClient:
 
     @staticmethod
     def order_clause(config: DatasetConfig) -> str:
+        """Build the SODA ``$order`` clause used for deterministic pagination.
+
+        The timestamp field comes first so interval scans are stable. The
+        dataset-specific tie-breaker follows unless it is the same field.
+        """
+
         if config.order_field == config.date_field:
             return f"`{config.date_field}`"
         return f"`{config.date_field}`, `{config.order_field}`"
@@ -177,7 +278,19 @@ class SodaClient:
         config: DatasetConfig,
         window: ExtractWindow,
     ) -> Iterator[dict]:
-        """Yield records in the extraction window, paginated with a stable order."""
+        """Yield all source records inside ``window``.
+
+        Inputs:
+        - ``config`` supplies the DataSF endpoint, page size, timestamp field,
+          and ordering fields.
+        - ``window`` supplies the inclusive lower bound and exclusive upper
+          bound.
+
+        Output:
+        - An iterator of record dictionaries. The caller can stream this
+          directly into a writer without loading the full extract into memory.
+        """
+
         offset = 0
         params = {
             "$where": self.where_clause(config, window),
@@ -202,7 +315,13 @@ class SodaClient:
 
 
 def _raw_s3_key(config: DatasetConfig, window: ExtractWindow) -> str:
-    """Build the deterministic raw object key for a dataset interval rerun."""
+    """Build the raw S3 object key for one dataset interval.
+
+    Inputs are the dataset slug and normalized interval bounds. Output is a
+    deterministic key, so a retry of the same Airflow interval overwrites the
+    same object instead of creating duplicate raw files.
+    """
+
     window_start = window.data_interval_start.strftime("%Y%m%dT%H%M%SZ")
     window_end = window.data_interval_end.strftime("%Y%m%dT%H%M%SZ")
     return (
@@ -214,16 +333,30 @@ def _raw_s3_key(config: DatasetConfig, window: ExtractWindow) -> str:
 
 
 class S3NdjsonWriter:
-    """Stream records through a temp NDJSON file, then upload once to S3."""
+    """Write a record stream as one raw newline-delimited JSON object in S3.
+
+    Inputs:
+    - ``bucket`` is the destination raw bucket.
+    - ``s3_client`` is an injected boto3-compatible client.
+
+    Output:
+    - ``write_records`` returns the raw S3 path, object key, record count, and
+      byte count. Empty extracts return ``None`` paths and do not upload.
+    """
 
     def __init__(self, bucket: str, s3_client) -> None:
-        # The S3 client is injected so tests never accidentally touch AWS.
         self.bucket = bucket
         self._s3 = s3_client
 
     @classmethod
     def from_env(cls) -> S3NdjsonWriter:
-        """Build the side-effectful default S3 writer at the app boundary."""
+        """Build the default S3 writer at the Airflow or CLI boundary.
+
+        Input comes from ``AWS_S3_BUCKET`` plus boto3's normal credential
+        lookup. Output is a writer with a real S3 client. Tests should construct
+        ``S3NdjsonWriter`` directly with a fake client.
+        """
+
         import boto3
 
         bucket = os.environ.get("AWS_S3_BUCKET")
@@ -237,6 +370,17 @@ class S3NdjsonWriter:
         window: ExtractWindow,
         records: Iterable[dict],
     ) -> WriteResult:
+        """Stream records to a temp file, then upload one raw NDJSON object.
+
+        Inputs:
+        - ``config`` and ``window`` determine the raw object key.
+        - ``records`` is consumed exactly once and can be a generator.
+
+        Output:
+        - ``WriteResult`` with the uploaded S3 path and byte/record counts, or
+          ``None`` paths when the input stream is empty.
+        """
+
         key = _raw_s3_key(config, window)
         tmp_path: Path | None = None
         records_written = 0
@@ -279,12 +423,26 @@ def extract_to_raw(
     client: SodaClient,
     writer: S3NdjsonWriter,
 ) -> ExtractResult:
+    """Extract one DataSF interval and land it in the S3 raw layer.
+
+    Inputs:
+    - ``config`` identifies the source dataset and timestamp/order fields.
+    - ``window`` defines the half-open interval to request from DataSF.
+    - ``client`` reads records from SODA.
+    - ``writer`` uploads the streamed records to raw S3.
+
+    Output:
+    - ``ExtractResult`` for Airflow XCom, logging, and downstream metadata.
+
+    The pipeline is intentionally streaming:
+    ``SodaClient.fetch_records`` -> ``ExtractAccumulator.observe_records`` ->
+    ``S3NdjsonWriter.write_records``. Only one API page and one temp file are
+    held at a time.
+    """
 
     t0 = time.monotonic()
     accumulator = ExtractAccumulator()
 
-    # This wrapper is intentionally the only side-channel in the stream: the
-    # writer still consumes records once, while we retain max_loaded_at metadata.
     records = accumulator.observe_records(config, client.fetch_records(config, window))
 
     write_result = writer.write_records(config, window, records)
@@ -320,7 +478,17 @@ def extract_to_raw(
 
 
 def cli(config: DatasetConfig) -> None:
-    """Command-line entry point for a single interval extract."""
+    """Command-line entry point for manually extracting one dataset interval.
+
+    Inputs come from flags:
+    - ``--window-start`` inclusive lower bound, defaulting to the dataset epoch.
+    - ``--window-end`` exclusive upper bound, defaulting to now.
+    - ``--lookback-hours`` optional widening of the lower bound.
+
+    Output is the same raw S3 object and logs that the Airflow task would
+    produce. This is useful for local backfills and smoke tests.
+    """
+
     import argparse
     import logging
 
