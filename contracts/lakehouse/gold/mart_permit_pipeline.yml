@@ -1,0 +1,60 @@
+version: 1
+layer: gold
+name: mart_permit_pipeline
+owner: analytics-engineering
+description: >-
+  Daily snapshot of in-flight residential permits grouped by neighborhood,
+  district, lifecycle stage, and age bucket.
+grain:
+  - neighborhood
+  - supervisor_district
+  - lifecycle_stage
+  - age_bucket
+path_template: lake/parquet/gold/mart_permit_pipeline/build_date={build_date}/
+partition_columns:
+  - build_date
+columns:
+  - name: neighborhood
+    type: string
+    nullable: false
+    description: Normalized neighborhood name.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Board of Supervisors district.
+  - name: lifecycle_stage
+    type: string
+    nullable: false
+    description: Current stage of filed or issued.
+  - name: age_bucket
+    type: string
+    nullable: false
+    description: Time since filing bucket.
+  - name: snapshot_date
+    type: date
+    nullable: false
+    description: Date this snapshot was computed.
+  - name: permit_count
+    type: integer
+    nullable: false
+    description: Number of in-flight permits in this bucket.
+  - name: proposed_units
+    type: integer
+    nullable: true
+    description: Sum of proposed residential units across in-flight permits.
+  - name: avg_days_in_stage
+    type: double
+    nullable: true
+    description: Average calendar days since filing for permits in this bucket.
+quality:
+  checks:
+    - name: unique_grain
+      type: unique
+      columns:
+        - neighborhood
+        - supervisor_district
+        - lifecycle_stage
+        - age_bucket
+compatibility:
+  additive: true
+  version_policy: semver

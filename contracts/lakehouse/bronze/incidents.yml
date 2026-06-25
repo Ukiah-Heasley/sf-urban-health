@@ -1,0 +1,168 @@
+version: 1
+layer: bronze
+name: incidents
+owner: data-platform
+description: >-
+  Immutable interval-scoped police incident records materialized from raw S3
+  NDJSON with typed source fields and full extract lineage metadata.
+grain:
+  - _ingest_run_id
+  - row_id
+  - _data_interval_start
+  - _data_interval_end
+path_template: lake/parquet/bronze/incidents/data_interval_start={data_interval_start}/data_interval_end={data_interval_end}/
+partition_columns:
+  - data_interval_start
+  - data_interval_end
+natural_key:
+  - row_id
+columns:
+  - name: _ingest_run_id
+    type: string
+    nullable: false
+    description: Airflow run identifier for the extract that produced this row.
+  - name: _raw_s3_path
+    type: string
+    nullable: false
+    description: Full S3 URI of the source raw NDJSON object.
+  - name: _raw_s3_key
+    type: string
+    nullable: false
+    description: Object key of the source raw NDJSON object.
+  - name: _data_interval_start
+    type: timestamp
+    nullable: false
+    description: Airflow data interval start (UTC, inclusive).
+  - name: _data_interval_end
+    type: timestamp
+    nullable: false
+    description: Airflow data interval end (UTC, exclusive).
+  - name: _effective_start
+    type: timestamp
+    nullable: false
+    description: Half-open extract lower bound after configured lookback.
+  - name: _loaded_at
+    type: timestamp
+    nullable: false
+    description: Source data_loaded_at timestamp observed on the record.
+  - name: _extracted_at
+    type: timestamp
+    nullable: false
+    description: UTC timestamp when the extract task materialized this row.
+  - name: _source_dataset_id
+    type: string
+    nullable: false
+    description: DataSF SODA resource identifier for the dataset.
+  - name: _record_hash
+    type: string
+    nullable: false
+    description: Deterministic hash of the canonical raw JSON payload.
+  - name: _raw_payload
+    type: string
+    nullable: false
+    description: Source-faithful JSON object for the record.
+  - name: row_id
+    type: string
+    nullable: false
+    description: DataSF unique row identifier from the source payload.
+  - name: incident_id
+    type: string
+    nullable: true
+    description: DataSF incident identifier shared across rows of the same incident.
+  - name: incident_number
+    type: string
+    nullable: true
+    description: SFPD report number.
+  - name: cad_number
+    type: string
+    nullable: true
+    description: Computer-Aided Dispatch number when applicable.
+  - name: report_type_code
+    type: string
+    nullable: true
+    description: Code for how the report was filed.
+  - name: report_type
+    type: string
+    nullable: true
+    description: Human-readable report type description.
+  - name: filed_online
+    type: boolean
+    nullable: true
+    description: True if the report was filed online by the public.
+  - name: incident_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the incident occurred.
+  - name: incident_date
+    type: date
+    nullable: true
+    description: Date the incident occurred.
+  - name: incident_time
+    type: string
+    nullable: true
+    description: Time-of-day the incident occurred.
+  - name: incident_year
+    type: integer
+    nullable: true
+    description: Year the incident occurred.
+  - name: incident_day_of_week
+    type: string
+    nullable: true
+    description: Day of week the incident occurred.
+  - name: reported_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the incident was reported to SFPD.
+  - name: incident_code
+    type: string
+    nullable: true
+    description: Granular SFPD incident code.
+  - name: incident_category
+    type: string
+    nullable: true
+    description: Top-level incident category.
+  - name: incident_subcategory
+    type: string
+    nullable: true
+    description: More specific classification within the category.
+  - name: incident_description
+    type: string
+    nullable: true
+    description: Free-text description of the incident code.
+  - name: resolution
+    type: string
+    nullable: true
+    description: Case resolution status.
+  - name: intersection
+    type: string
+    nullable: true
+    description: Nearest intersection to the incident location.
+  - name: police_district
+    type: string
+    nullable: true
+    description: SFPD district where the incident occurred.
+  - name: neighborhood
+    type: string
+    nullable: true
+    description: Neighborhood from DataSF analysis boundaries.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district where the incident occurred.
+  - name: latitude
+    type: double
+    nullable: true
+    description: WGS84 latitude of the incident location.
+  - name: longitude
+    type: double
+    nullable: true
+    description: WGS84 longitude of the incident location.
+quality:
+  checks:
+    - name: not_null_row_id
+      type: not_null
+      columns:
+        - row_id
+compatibility:
+  additive: true
+  version_policy: semver

@@ -1,0 +1,88 @@
+version: 1
+layer: gold
+name: mart_housing_production
+owner: analytics-engineering
+description: >-
+  Monthly housing permit activity by neighborhood and supervisor district for
+  residential permits, aligned with the current mart_housing_production grain.
+grain:
+  - filed_month
+  - neighborhood
+  - supervisor_district
+  - use_transition
+path_template: lake/parquet/gold/mart_housing_production/build_date={build_date}/
+partition_columns:
+  - build_date
+columns:
+  - name: filed_month
+    type: date
+    nullable: false
+    description: First day of the month the permits were filed.
+  - name: neighborhood
+    type: string
+    nullable: false
+    description: Normalized neighborhood name.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district.
+  - name: use_transition
+    type: string
+    nullable: true
+    description: Type of structural change from existing to proposed use.
+  - name: permits_filed
+    type: integer
+    nullable: false
+    description: Count of permits filed in the group.
+  - name: permits_issued
+    type: integer
+    nullable: true
+    description: Count of permits issued in the group.
+  - name: permits_completed
+    type: integer
+    nullable: true
+    description: Count of permits completed in the group.
+  - name: permits_expired
+    type: integer
+    nullable: true
+    description: Count of permits expired in the group.
+  - name: proposed_units
+    type: integer
+    nullable: true
+    description: Sum of proposed residential units.
+  - name: net_units_added
+    type: integer
+    nullable: true
+    description: Net residential units added across permits in the group.
+  - name: total_project_cost
+    type: decimal
+    nullable: true
+    description: Sum of project cost across permits in the group.
+  - name: avg_days_to_issue
+    type: double
+    nullable: true
+    description: Average calendar days from filing to issue.
+  - name: median_days_to_issue
+    type: double
+    nullable: true
+    description: Median calendar days from filing to issue.
+  - name: avg_cost_per_unit
+    type: double
+    nullable: true
+    description: Average project cost per net unit added.
+  - name: median_cost_per_unit
+    type: double
+    nullable: true
+    description: Median project cost per net unit added.
+quality:
+  checks:
+    - name: unique_grain
+      type: unique
+      columns:
+        - filed_month
+        - neighborhood
+        - supervisor_district
+        - use_transition
+compatibility:
+  additive: true
+  version_policy: semver

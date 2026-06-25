@@ -1,0 +1,130 @@
+version: 1
+layer: silver
+name: evictions_current
+owner: analytics-engineering
+description: >-
+  Latest typed eviction notice per eviction_id, deduplicated from bronze using
+  _loaded_at descending order.
+grain:
+  - eviction_id
+path_template: lake/parquet/silver/evictions_current/build_id={build_id}/
+partition_columns:
+  - build_id
+columns:
+  - name: eviction_id
+    type: string
+    nullable: false
+    description: Rent Board internal case record identifier. Grain of this model.
+  - name: filed_at
+    type: date
+    nullable: false
+    description: Date the eviction notice was filed with the Rent Board.
+  - name: address
+    type: string
+    nullable: true
+    description: Block-level address where the notice was issued.
+  - name: zipcode
+    type: string
+    nullable: true
+    description: Zip code of the eviction address.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district assigned from geocoding.
+  - name: neighborhood
+    type: string
+    nullable: true
+    description: Analysis Boundaries neighborhood from DataSF.
+  - name: eviction_type
+    type: string
+    nullable: false
+    description: Derived classification of no_fault or at_fault.
+  - name: non_payment
+    type: boolean
+    nullable: false
+    description: Non-payment of rent was cited as grounds for eviction.
+  - name: breach
+    type: boolean
+    nullable: false
+    description: Breach of lease was cited.
+  - name: nuisance
+    type: boolean
+    nullable: false
+    description: Nuisance was cited.
+  - name: illegal_use
+    type: boolean
+    nullable: false
+    description: Illegal use of the unit was cited.
+  - name: failure_to_sign_renewal
+    type: boolean
+    nullable: false
+    description: Failure to sign lease renewal was cited.
+  - name: access_denial
+    type: boolean
+    nullable: false
+    description: Unlawful denial of access was cited.
+  - name: unapproved_subtenant
+    type: boolean
+    nullable: false
+    description: Unapproved subtenant was cited.
+  - name: late_payments
+    type: boolean
+    nullable: false
+    description: Habitual late payment was cited.
+  - name: roommate_same_unit
+    type: boolean
+    nullable: false
+    description: Eviction of a roommate in the same unit was cited.
+  - name: other_cause
+    type: boolean
+    nullable: false
+    description: Other cause not covered by the admin code was cited.
+  - name: owner_move_in
+    type: boolean
+    nullable: false
+    description: Owner move-in was cited (no-fault).
+  - name: demolition
+    type: boolean
+    nullable: false
+    description: Demolition of the property was cited (no-fault).
+  - name: capital_improvement
+    type: boolean
+    nullable: false
+    description: Capital improvement was cited (no-fault).
+  - name: substantial_rehab
+    type: boolean
+    nullable: false
+    description: Substantial rehabilitation was cited (no-fault).
+  - name: ellis_act_withdrawal
+    type: boolean
+    nullable: false
+    description: Ellis Act withdrawal was cited (no-fault).
+  - name: condo_conversion
+    type: boolean
+    nullable: false
+    description: Condo conversion was cited (no-fault).
+  - name: lead_remediation
+    type: boolean
+    nullable: false
+    description: Lead remediation was cited (no-fault).
+  - name: development
+    type: boolean
+    nullable: false
+    description: Development agreement was cited (no-fault).
+  - name: good_samaritan_ends
+    type: boolean
+    nullable: false
+    description: End of Good Samaritan period was cited (no-fault).
+  - name: _loaded_at
+    type: timestamp
+    nullable: false
+    description: Latest source data_loaded_at used for deduplication.
+quality:
+  checks:
+    - name: unique_eviction_id
+      type: unique
+      columns:
+        - eviction_id
+compatibility:
+  additive: true
+  version_policy: semver

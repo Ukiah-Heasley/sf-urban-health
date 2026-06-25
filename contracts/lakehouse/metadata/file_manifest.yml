@@ -1,0 +1,66 @@
+version: 1
+layer: metadata
+name: file_manifest
+owner: data-platform
+description: >-
+  Manifest of parquet objects written to the lake, supporting idempotent
+  interval processing and downstream file discovery.
+grain:
+  - manifest_id
+path_template: lake/parquet/metadata/file_manifest/manifest_date={manifest_date}/
+partition_columns:
+  - manifest_date
+columns:
+  - name: manifest_id
+    type: string
+    nullable: false
+    description: Stable identifier for one manifest row.
+  - name: layer
+    type: string
+    nullable: false
+    description: Medallion layer of the referenced table.
+  - name: table_name
+    type: string
+    nullable: false
+    description: Logical table name from the contract registry.
+  - name: s3_path
+    type: string
+    nullable: false
+    description: Full S3 URI of the parquet object or prefix root.
+  - name: s3_key
+    type: string
+    nullable: false
+    description: Object key relative to the bucket root.
+  - name: data_interval_start
+    type: timestamp
+    nullable: true
+    description: Interval start when the file represents interval-scoped data.
+  - name: data_interval_end
+    type: timestamp
+    nullable: true
+    description: Interval end when the file represents interval-scoped data.
+  - name: record_count
+    type: integer
+    nullable: false
+    description: Number of data rows contained in the file.
+  - name: file_size_bytes
+    type: integer
+    nullable: false
+    description: On-disk size of the parquet object in bytes.
+  - name: content_hash
+    type: string
+    nullable: false
+    description: Deterministic hash of file contents for deduplication checks.
+  - name: written_at
+    type: timestamp
+    nullable: false
+    description: UTC timestamp when the file was committed to object storage.
+quality:
+  checks:
+    - name: unique_manifest_id
+      type: unique
+      columns:
+        - manifest_id
+compatibility:
+  additive: true
+  version_policy: semver

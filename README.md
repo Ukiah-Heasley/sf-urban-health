@@ -80,6 +80,7 @@ See [Architecture](docs/ARCHITECTURE.md) for the complete current-state flow.
 
 ```text
 airflow/                 Astro project, DAGs, extractors, and SQL helpers
+contracts/lakehouse/     YAML contracts for parquet lake table layouts
 dbt/                     Canonical Snowflake dbt project
 dashboard/               Six-page Plotly Dash application
 reports/                 Static Evidence site and Parquet snapshot tooling
@@ -155,7 +156,9 @@ The checked-in dbt project defines:
 - Airflow/dbt observability marts used by the engineering and trust pages.
 
 The model contracts and grains are documented in
-[Data Model](docs/DATA_MODEL.md).
+[Data Model](docs/DATA_MODEL.md). Lakehouse parquet table contracts live under
+`contracts/lakehouse/` and are validated by
+`airflow/include/scripts/lakehouse_contracts.py`.
 
 ## Dashboards
 

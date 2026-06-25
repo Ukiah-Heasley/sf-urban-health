@@ -1,0 +1,82 @@
+version: 1
+layer: metadata
+name: ingest_runs
+owner: data-platform
+description: >-
+  One row per successful or attempted dataset extract run with interval bounds,
+  raw object location, and observed source freshness metadata.
+grain:
+  - ingest_run_id
+path_template: lake/parquet/metadata/ingest_runs/ingest_date={ingest_date}/
+partition_columns:
+  - ingest_date
+columns:
+  - name: ingest_run_id
+    type: string
+    nullable: false
+    description: Stable identifier for the extract run, typically the Airflow run id.
+  - name: dag_id
+    type: string
+    nullable: false
+    description: Airflow DAG that executed the extract.
+  - name: dataset_name
+    type: string
+    nullable: false
+    description: Logical dataset slug such as permits, evictions, or incidents.
+  - name: data_interval_start
+    type: timestamp
+    nullable: false
+    description: Airflow data interval start (UTC, inclusive).
+  - name: data_interval_end
+    type: timestamp
+    nullable: false
+    description: Airflow data interval end (UTC, exclusive).
+  - name: effective_start
+    type: timestamp
+    nullable: false
+    description: Half-open extract lower bound after configured lookback.
+  - name: raw_s3_path
+    type: string
+    nullable: true
+    description: Full S3 URI of the raw NDJSON object when records were written.
+  - name: raw_s3_key
+    type: string
+    nullable: true
+    description: Object key of the raw NDJSON object when records were written.
+  - name: records_fetched
+    type: integer
+    nullable: false
+    description: Number of source records fetched for the interval.
+  - name: max_loaded_at
+    type: timestamp
+    nullable: true
+    description: Maximum observed source data_loaded_at in the interval.
+  - name: bytes_written
+    type: integer
+    nullable: true
+    description: Bytes written to the raw object when present.
+  - name: duration_seconds
+    type: double
+    nullable: true
+    description: Wall-clock duration of the extract task.
+  - name: status
+    type: string
+    nullable: false
+    description: Terminal run status such as success, empty, or failed.
+  - name: started_at
+    type: timestamp
+    nullable: false
+    description: UTC timestamp when the extract started.
+  - name: completed_at
+    type: timestamp
+    nullable: true
+    description: UTC timestamp when the extract completed.
+quality:
+  checks:
+    - name: unique_ingest_run_id
+      type: unique
+      columns:
+        - ingest_run_id
+compatibility:
+  additive: true
+  version_policy: semver

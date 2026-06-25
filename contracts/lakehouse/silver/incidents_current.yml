@@ -1,0 +1,122 @@
+version: 1
+layer: silver
+name: incidents_current
+owner: analytics-engineering
+description: >-
+  Latest typed incident report per row_id, deduplicated from bronze using
+  _loaded_at descending order.
+grain:
+  - row_id
+path_template: lake/parquet/silver/incidents_current/build_id={build_id}/
+partition_columns:
+  - build_id
+columns:
+  - name: row_id
+    type: string
+    nullable: false
+    description: DataSF unique row identifier. Grain of this model.
+  - name: incident_id
+    type: string
+    nullable: true
+    description: DataSF incident identifier shared across rows of the same incident.
+  - name: incident_number
+    type: string
+    nullable: false
+    description: SFPD report number.
+  - name: cad_number
+    type: string
+    nullable: true
+    description: Computer-Aided Dispatch number when applicable.
+  - name: report_type_code
+    type: string
+    nullable: true
+    description: Code for how the report was filed.
+  - name: report_type
+    type: string
+    nullable: true
+    description: Human-readable report type description.
+  - name: filed_online
+    type: boolean
+    nullable: true
+    description: True if the report was filed online by the public.
+  - name: incident_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the incident occurred.
+  - name: incident_date
+    type: date
+    nullable: true
+    description: Date the incident occurred.
+  - name: incident_time
+    type: string
+    nullable: true
+    description: Time-of-day the incident occurred.
+  - name: incident_year
+    type: integer
+    nullable: true
+    description: Year the incident occurred.
+  - name: incident_day_of_week
+    type: string
+    nullable: true
+    description: Day of week the incident occurred.
+  - name: reported_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the incident was reported to SFPD.
+  - name: incident_code
+    type: string
+    nullable: true
+    description: Granular SFPD incident code.
+  - name: incident_category
+    type: string
+    nullable: true
+    description: Top-level incident category.
+  - name: incident_subcategory
+    type: string
+    nullable: true
+    description: More specific classification within the category.
+  - name: incident_description
+    type: string
+    nullable: true
+    description: Free-text description of the incident code.
+  - name: resolution
+    type: string
+    nullable: true
+    description: Case resolution status.
+  - name: intersection
+    type: string
+    nullable: true
+    description: Nearest intersection to the incident location.
+  - name: police_district
+    type: string
+    nullable: true
+    description: SFPD district where the incident occurred.
+  - name: neighborhood
+    type: string
+    nullable: true
+    description: Neighborhood from DataSF analysis boundaries.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district where the incident occurred.
+  - name: latitude
+    type: double
+    nullable: true
+    description: WGS84 latitude of the incident location.
+  - name: longitude
+    type: double
+    nullable: true
+    description: WGS84 longitude of the incident location.
+  - name: _loaded_at
+    type: timestamp
+    nullable: false
+    description: Latest source data_loaded_at used for deduplication.
+quality:
+  checks:
+    - name: unique_row_id
+      type: unique
+      columns:
+        - row_id
+compatibility:
+  additive: true
+  version_policy: semver

@@ -14,6 +14,23 @@ extractor does not add columns to the record itself.
 Raw object identity is the dataset plus normalized interval bounds. Retrying the
 same interval overwrites the same key.
 
+## Lakehouse contract registry
+
+The repository defines YAML contracts under `contracts/lakehouse/` for parquet
+table layouts in bronze, silver, gold, and metadata layers. Each contract
+declares grain, partition columns, column types, quality checks, and an S3 path
+template under `lake/parquet/{layer}/{name}/`.
+
+The loader and validator live in
+`airflow/include/scripts/lakehouse_contracts.py`. It is checked in for future
+loaders, dbt models, and tests; it does not write parquet or replace the
+current Snowflake path.
+
+Bronze contracts require shared lineage metadata columns (`_ingest_run_id`,
+`_raw_s3_path`, `_raw_s3_key`, interval bounds, `_loaded_at`, `_extracted_at`,
+`_source_dataset_id`, `_record_hash`, `_raw_payload`) plus the dataset natural
+key. Gold contract grains match the analytical marts documented below.
+
 ## Snowflake dbt sources
 
 The current dbt project declares three `SF_URBAN_HEALTH.RAW` tables containing
