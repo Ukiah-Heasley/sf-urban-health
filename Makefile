@@ -25,6 +25,7 @@ help:
 	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
 	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
+	@echo "  make docs-check     Validate current-state documentation"
 	@echo "  make test           Run pytest"
 
 .PHONY: check-env
@@ -89,6 +90,10 @@ dashboard-docker:
 .PHONY: lint
 lint:
 	uv run --group dev ruff check .
+
+.PHONY: docs-check
+docs-check:
+	uv run --group dev python .codex/skills/maintain-project-docs/scripts/audit_docs.py
 
 .PHONY: yamllint
 yamllint:

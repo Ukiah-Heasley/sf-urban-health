@@ -53,6 +53,13 @@ repos:
   # (activate .venv before running manual hooks locally).
   - repo: local
     hooks:
+      - id: docs-check
+        name: current-state documentation audit
+        entry: uv run --group dev python .codex/skills/maintain-project-docs/scripts/audit_docs.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: dbt-parse
         name: dbt parse (refresh manifest)
         entry: bash -c 'cd dbt && uv run --group dbt dbt parse --profiles-dir .'

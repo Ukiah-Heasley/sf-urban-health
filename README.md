@@ -1,272 +1,178 @@
-# SF Urban Health Pipeline — Phase 1
+# SF Urban Health Pipeline
 
 [![CI](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/ci.yml/badge.svg)](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/ci.yml)
 [![dbt CI](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/dbt-ci.yml/badge.svg)](https://github.com/Ukiah-Heasley/sf-urban-health/actions/workflows/dbt-ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
-![dbt](https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white)
-![Snowflake](https://img.shields.io/badge/Snowflake-warehouse-29B5E8?logo=snowflake&logoColor=white)
-![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)
-![SQLFluff](https://img.shields.io/badge/sql-sqlfluff-25D366)
+![Airflow](https://img.shields.io/badge/Airflow-3.0-017CEE?logo=apacheairflow&logoColor=white)
+![AWS S3](https://img.shields.io/badge/AWS-S3-569A31?logo=amazons3&logoColor=white)
 [![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-2ea44f)](https://ukiah-heasley.github.io/sf-urban-health/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-style daily ELT pipeline that ingests SF civic datasets (building permits, eviction notices, police incidents) from the DataSF SODA API, lands raw JSON in S3, loads into Snowflake, and transforms through a dbt staging → intermediate → mart layer on an Airflow schedule. Phase 1 of a larger SF Civic Intelligence Platform.
+SF Urban Health ingests three DataSF civic datasets—building permits,
+eviction notices, and police incident reports—and supports housing, public
+safety, eviction, pipeline-health, and data-trust analysis.
 
-**What this demonstrates:** watermark-driven incremental ingestion to a durable S3 raw lake; ELT into Snowflake with dbt (staging → intermediate → marts) plus data-quality tests and source freshness; an Airflow-native observability loop (DAG / test health → composite trust score); a Plotly Dash app; and a static [Evidence](https://evidence.dev) snapshot published to GitHub Pages (**[live demo](https://ukiah-heasley.github.io/sf-urban-health/)**).
+The current ingest path uses Airflow data intervals to stream DataSF responses
+into durable newline-delimited JSON objects in S3. The repository also contains
+a Snowflake/dbt transformation project, a Snowflake-backed Plotly Dash app, and
+an Evidence site built from Parquet snapshots.
 
-## Architecture
+## Current runtime boundary
 
-```
-DataSF SODA API (permits / evictions / incidents)
-      │
-      ▼
-Python extractor  (airflow/include/scripts/{permits,evictions,incident_reports}.py)
-      │
-      ▼
-S3  raw/{dataset}/YYYY/MM/DD/{dataset}.json
-      │
-      ▼
-Snowflake RAW.{PERMITS|EVICTIONS|INCIDENTS}  (COPY INTO, orchestrated by Airflow)
-      │
-      ▼
-METADATA.INGEST_WATERMARKS  (high-water mark per dataset)
-      │
-      ▼
-Airflow Asset updates  (one per completed ingest)
-      │
-      ▼
-dbt  staging → intermediate → marts  (asset-triggered transform_all DAG)
+The codebase currently has two distinct boundaries:
+
+```text
+DataSF SODA API
+    → Airflow ingest DAGs
+    → S3 raw interval NDJSON
+    → ingest-complete Airflow assets
+
+Existing Snowflake source tables
+    → asset-triggered transform_all DAG
+    → dbt staging / intermediate / marts
+    → Plotly Dash and Parquet exports for Evidence
 ```
 
-| Stage         | Tool                              |
-|---------------|-----------------------------------|
-| Orchestration | Apache Airflow (Astro Runtime)    |
-| Ingestion     | Python 3.11 + `requests`          |
-| Raw lake      | AWS S3                            |
-| Warehouse     | Snowflake                         |
-| Transform     | dbt-core + dbt-snowflake          |
-| Tests         | dbt generic tests + `dbt_utils`   |
+The ingest DAGs do **not** currently copy their new S3 raw objects into
+Snowflake. `transform_all` and the dashboards still operate against the
+existing Snowflake sources. This distinction matters when running the project
+from a clean environment.
 
-## DAG architecture
+## Ingest behavior
 
-The pipeline uses **five Airflow DAGs** with a clear separation of concerns:
+Three generated DAGs run daily at 06:00 UTC:
 
-**Three ingest DAGs** (one per dataset, run at 06:00 UTC daily):
-```
-extract_{dataset}_to_s3 → choose_load_path ─┬─► load_s3_to_snowflake → update_watermark ─┐
-                                            └─► no_new_records                           ├─► ingest_complete asset
-                                                                                          ┘
+```text
+extract_{dataset}_to_raw → ingest_complete
 ```
 
-**One shared transform DAG** (`transform_all`, scheduled by Airflow Assets):
-```
-permits_ingest asset   ─┐
-evictions_ingest asset ─┼─► dbt_deps ─► dbt_run ─► dbt_test
-incidents_ingest asset ─┘
+Each extractor:
+
+- queries a half-open Airflow interval,
+  `[data_interval_start, data_interval_end)`;
+- paginates in timestamp plus source-key order;
+- streams records through a temporary NDJSON file;
+- uploads a deterministic S3 object; and
+- returns row, byte, timing, interval, and observed maximum-timestamp metadata.
+
+Raw objects use this shape:
+
+```text
+raw/{dataset}/
+  data_interval_start=YYYYMMDDTHHMMSSZ/
+  data_interval_end=YYYYMMDDTHHMMSSZ/
+  records.ndjson
 ```
 
-Each ingest DAG emits an Airflow asset from `ingest_complete` after either a
-successful load + watermark update or a successful no-new-records branch.
-`transform_all` runs once all three ingest assets have updated, avoiding a
-sensor fan-in and making manual/ad-hoc ingests behave the same as scheduled
-runs.
+An empty interval is successful, uploads no object, and still emits its ingest
+asset.
 
-**One observability DAG** (`ingest_pipeline_metadata`, daily at 07:00 UTC):
-```
-collect_pipeline_metadata
-```
+## Other Airflow DAGs
 
-A single `collect_pipeline_metadata` task pulls Airflow's REST API for DAG-run + task-instance state and writes to `METADATA.AIRFLOW_DAG_RUNS` / `METADATA.AIRFLOW_TASK_INSTANCES`, where dbt builds the four observability marts that drive the Pipeline Health, Eng Health, and Data Trust dashboard pages.
+- `transform_all` waits for all three ingest assets and runs `dbt deps`,
+  `dbt run`, and `dbt test` against the Snowflake `prod` target.
+- `ingest_pipeline_metadata` runs at 07:00 UTC, reads Airflow run/task/XCom
+  metadata through the REST API, and upserts it into Snowflake metadata tables.
+
+See [Architecture](docs/ARCHITECTURE.md) for the complete current-state flow.
 
 ## Repository layout
 
-```
-.
-├── dbt/                              dbt project — canonical location, edit here
-│   ├── dbt_project.yml
-│   ├── packages.yml                  installs dbt_utils + elementary
-│   ├── profiles.yml                  env-var-driven; safe to commit
-│   ├── macros/
-│   └── models/{staging,intermediate,marts,metadata}/
-├── airflow/                          Astro CLI project root
-│   ├── Dockerfile                    Astro Runtime image (Airflow 3)
-│   ├── dags/
-│   │   ├── dag_factory.py            Factory for ingest DAGs
-│   │   ├── ingest_permits.py         Permits ingest DAG
-│   │   ├── ingest_evictions.py       Evictions ingest DAG
-│   │   ├── ingest_incidents.py       Incidents ingest DAG
-│   │   ├── transform_all.py          Shared dbt transform DAG
-│   │   └── ingest_pipeline_metadata.py  Airflow → Snowflake observability
-│   ├── include/scripts/
-│   │   ├── soda_ingest.py            Generic SODA API engine
-│   │   ├── permits.py / evictions.py / incident_reports.py
-│   │   └── airflow_rest_client.py    Airflow REST API → Snowflake
-│   ├── include/sql/                  SQL templates loaded by Airflow operators
-│   ├── include/dbt/                  Mirror of dbt/ (gitignored, refreshed by `make sync-dbt`)
-│   ├── requirements.txt              Python deps inside the Airflow image
-│   └── .env.example                  Snowflake / AWS / DataSF credentials template
-├── dashboard/                        Plotly Dash multi-page app (6 pages, in-memory Polars)
-├── snowflake/                        One-shot bootstrap SQL
-├── tests/                            pytest unit tests (dev group)
-├── wiki/                             Versioned wiki source (synced to GitHub Wiki)
-├── docs/                             Operator-facing docs (architecture, deploy, wiki sync)
-├── .github/workflows/                CI: lint + test + pre-commit + gitleaks + dag-integrity + dbt
-├── .pre-commit-config.yaml           Ruff + yamllint + sqlfluff + dbt-checkpoint
-├── .sqlfluff / .sqlfluffignore       Snowflake-dialect SQL lint config
-├── .yamllint                         YAML lint config
-├── LICENSE                           MIT
-├── Makefile                          One-line entrypoints for every workflow
-├── README.md (this file)
-├── TODO.md                           Tracked follow-ups, including deferred Airflow + dbt audit
-└── pyproject.toml                    uv-managed Python deps
+```text
+airflow/                 Astro project, DAGs, extractors, and SQL helpers
+dbt/                     Canonical Snowflake dbt project
+dashboard/               Six-page Plotly Dash application
+reports/                 Static Evidence site and Parquet snapshot tooling
+snowflake/               Existing Snowflake bootstrap and maintenance SQL
+tests/                   Extractor, DAG, and dashboard import tests
+docs/                    Current behavior and operator documentation
+.codex/skills/           Repository-specific Codex workflows
 ```
 
-> **Why the dbt mirror?** Astro CLI's Docker build context is `airflow/`, so the image can only `COPY` from inside that directory. To keep `dbt/` as a true top-level peer, `make sync-dbt` rsyncs `dbt/` into `airflow/include/dbt/` before the image is built. `make airflow-up` runs the sync automatically; never edit the mirror by hand.
+`dbt/` is canonical. `make sync-dbt` mirrors it into the gitignored
+`airflow/include/dbt/` directory for the Astro Docker build context.
 
 ## Prerequisites
 
-- Python 3.11 + [uv](https://docs.astral.sh/uv/)
-- Docker Desktop + [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli)
-- Snowflake account ([signup.snowflake.com](https://signup.snowflake.com))
-- AWS account with an S3 bucket
-- Free DataSF app token ([data.sfgov.org/profile/app_tokens](https://data.sfgov.org/profile/app_tokens))
+- Python 3.11 and [uv](https://docs.astral.sh/uv/)
+- AWS credentials and an S3 bucket for extraction
+- Docker Desktop and the Astro CLI for local Airflow
+- A DataSF app token is optional but recommended
+- Snowflake credentials are required only for the dbt, live dashboard,
+  observability, and real-data report-export paths
 
 ## Setup
 
 ```bash
-# 1. Credentials
+uv sync --all-groups
 cp airflow/.env.example airflow/.env
-# fill in Snowflake, AWS, and DataSF values
-
-# 2. Snowflake bootstrap (run once) — creates the database, schemas, S3 stage,
-#    RAW + METADATA tables. See `Snowflake bootstrap` below.
-
-# 3. dbt profile is rendered from airflow/.env via env_var() in
-#    dbt/profiles.yml — no separate profile file needed.
 ```
 
-### Snowflake bootstrap
+Fill in the environment values needed for the component you intend to run.
+The file is gitignored.
 
-Run [`snowflake/bootstrap.sql`](snowflake/bootstrap.sql) once (a Snowflake
-worksheet, or `snow sql -f snowflake/bootstrap.sql`). It is idempotent and
-creates the `SF_URBAN_HEALTH` database, the five schemas (`RAW`, `STAGING`,
-`INTERMEDIATE`, `MARTS`, `METADATA`), the S3 external stage, the three `RAW.*`
-VARIANT landing tables, `METADATA.INGEST_WATERMARKS`, and the two observability
-tables. Fill in the S3 stage credentials at the top of the file first.
-
-The `dbt` package set installed by `make dbt-deps` includes `dbt-labs/dbt_utils` and `elementary-data/elementary` — Elementary writes its observability tables on `dbt run`/`dbt test` (see TODO.md D4 for the on-run-end hook follow-up).
-
-## Running it
-
-Every workflow has a `make` target — `airflow/.env` is loaded automatically.
+## Common commands
 
 ```bash
-make dbt-deps       # install dbt packages (one-time, includes elementary)
-make dbt-build      # run + test all dbt models
-# After first dbt-deps, run elementary once to create its schema:
-# cd dbt && dbt run --select elementary --profiles-dir . --target prod
-make airflow-up     # start the local Airflow stack
+make ingest            # permits: DataSF → raw S3
+make test              # pytest
+make lint              # Ruff
+make yamllint          # YAML lint
+make pre-commit        # all configured hooks
+make docs-check        # documentation consistency checks
+
+make airflow-up        # sync dbt mirror, then start Astro Airflow
 make airflow-down
-make airflow-logs   # tail scheduler logs
-make lint
-make test
+make airflow-logs
+
+make dbt-deps
+make dbt-run           # Snowflake dev target
+make dbt-build         # Snowflake dev target: run + test
+make dbt-test
+
+make dashboard-dev     # http://localhost:8050
+make dashboard-docker
 ```
 
-The Airflow UI runs at [http://localhost:8080](http://localhost:8080) (`admin` / `admin`). Unpause all five DAGs (`ingest_permits`, `ingest_evictions`, `ingest_incidents`, `transform_all`, `ingest_pipeline_metadata`) to enable daily ingests at 06:00 UTC, asset-triggered transforms after all ingests complete, and the observability collector at 07:00 UTC.
-
-### Initial backfill
-
-For first-time setup, run each dataset's extractor via CLI in yearly chunks to keep API calls, S3 objects, and Snowflake loads easy to inspect. The extractor streams NDJSON through a temp file before uploading to S3, so backfills do not accumulate all records in memory:
+For an explicit raw interval:
 
 ```bash
-# Example: backfill permits year by year
-uv run airflow/include/scripts/permits.py --since 2013-01-01 --run-date 2014-01-01
-uv run airflow/include/scripts/permits.py --since 2014-01-01 --run-date 2015-01-01
-# ... continue through to present
+uv run airflow/include/scripts/permits.py \
+  --window-start 2024-01-01T00:00:00Z \
+  --window-end 2024-02-01T00:00:00Z
 ```
 
-After each chunk loads into Snowflake the `METADATA.INGEST_WATERMARKS` row advances automatically on the next DAG run.
+The Airflow UI is available at <http://localhost:8080> with the local
+`admin` / `admin` development credentials.
 
-## Sample mart queries
+## Data products
 
-Top neighborhoods by residential permits in the last year:
+The checked-in dbt project defines:
 
-```sql
-SELECT neighborhood,
-       SUM(permits_filed)   AS permits,
-       SUM(proposed_units)  AS proposed_units,
-       SUM(net_units_added) AS net_units_added
-FROM SF_URBAN_HEALTH.MARTS.MART_HOUSING_PRODUCTION
-WHERE filed_month >= DATEADD(year, -1, CURRENT_DATE())
-GROUP BY neighborhood
-ORDER BY permits DESC
-LIMIT 10;
-```
+- source-cleaning staging models for permits, evictions, and incidents;
+- permit and incident intermediate timelines;
+- housing, eviction, public-safety, and permit-pipeline marts; and
+- Airflow/dbt observability marts used by the engineering and trust pages.
 
-Average days from filing to issuance, by supervisor district:
+The model contracts and grains are documented in
+[Data Model](docs/DATA_MODEL.md).
 
-```sql
-SELECT supervisor_district,
-       ROUND(AVG(avg_days_to_issue), 1)    AS avg_days_to_issue,
-       ROUND(AVG(median_days_to_issue), 1) AS median_days_to_issue
-FROM SF_URBAN_HEALTH.MARTS.MART_HOUSING_PRODUCTION
-WHERE filed_month >= DATEADD(year, -1, CURRENT_DATE())
-GROUP BY supervisor_district
-ORDER BY supervisor_district;
-```
+## Dashboards
 
-Status mix per month:
+- [Plotly Dash](dashboard/README.md) loads Snowflake marts into Polars frames at
+  process startup and serves six interactive pages.
+- [Evidence](reports/README.md) reads local Parquet snapshots with DuckDB and is
+  published to [GitHub Pages](https://ukiah-heasley.github.io/sf-urban-health/).
 
-```sql
-SELECT filed_month,
-       SUM(permits_filed)     AS filed,
-       SUM(permits_issued)    AS issued,
-       SUM(permits_completed) AS completed,
-       SUM(permits_expired)   AS expired
-FROM SF_URBAN_HEALTH.MARTS.MART_HOUSING_PRODUCTION
-GROUP BY filed_month
-ORDER BY filed_month DESC;
-```
+## Documentation
 
-## Design decisions
-
-- **S3 is the durable raw layer.** Raw JSON lives in S3 permanently; Snowflake `RAW.*` tables are loading targets. To reprocess, replay from S3 — never re-hit DataSF.
-- **Watermark-driven incremental loads.** Each dataset's high-water mark (`MAX(data_loaded_at)` from the last successful load) is stored as a `TIMESTAMP_NTZ` in `METADATA.INGEST_WATERMARKS`. The next run queries DataSF with a strict `data_loaded_at > watermark` predicate. The watermark only advances after `load_s3_to_snowflake` succeeds, so a failed load automatically causes the next run to re-fetch the gap. First runs fall back to `config.epoch` at midnight and include that boundary.
-- **Newline-delimited JSON + `STRIP_OUTER_ARRAY = FALSE`.** One record per line; the COPY reads records independently.
-- **No-new-record days are successful.** If DataSF returns zero rows, the DAG skips COPY and watermark update, emits the dataset's ingest-complete asset, and lets dbt rebuild against unchanged source data.
-- **Ingest and transform are separate DAGs.** The three ingest DAGs own extract → load → watermark → asset emission. `transform_all` is scheduled by the three ingest assets and runs dbt once after all datasets have checked in. dbt failures don't block ingestion, and dbt can be re-run independently without re-hitting the API.
-- **Staging/intermediate are views; marts are tables.** Upstream always reflects the latest raw; marts materialize once per run so BI hits precomputed data.
-- **Residential filter sits in the mart, not staging.** `stg_permits` is source-of-truth for all permits. The residential lens (rows with existing or proposed unit counts) is a reporting concern owned by `mart_housing_production`.
-- **`normalize_neighborhood` macro.** Collapses DataSF's null/empty/"unknown" spellings into a single `'Unknown'` and `initcap`s the rest. Any mart that groups by neighborhood uses this macro.
-- **Mart grain enforced by test.** `mart_housing_production`'s `(filed_month, neighborhood, supervisor_district, use_transition)` uniqueness is verified by `dbt_utils.unique_combination_of_columns`. Staging PK `permit_number` has `not_null` + `unique`.
-- **dbt dev/prod isolation.** Two profile targets in [dbt/profiles.yml](dbt/profiles.yml). The Airflow DAG runs with `--target prod`. Local `make dbt-build` runs with `--target dev` and writes to a personal sandbox — the [generate_schema_name](dbt/macros/generate_schema_name.sql) macro adds the prefix. Set `DBT_DEV_SCHEMA` in `airflow/.env`.
-
-## Why two dependency files
-
-- [pyproject.toml](pyproject.toml) — Python deps for **local** work (`uv run` invokes the extractor, dbt, ruff, pytest).
-- [airflow/requirements.txt](airflow/requirements.txt) — Python deps installed **inside the Airflow image** by `astro dev start`. Astro Runtime ships Airflow itself, so this file only adds providers and project-specific libs.
-
-## CI
-
-Two GitHub Actions workflows gate every PR:
-
-| Workflow | Job | Triggers on | What it does |
-|---|---|---|---|
-| [`ci.yml`](.github/workflows/ci.yml) | `lint-and-test` | every PR + pushes to `main` | Ruff + yamllint + pytest (dev group, mocks the SODA API) |
-| | `pre-commit` | same | All `pre-commit` hooks across the tree |
-| | `secrets-scan` | same | `gitleaks` over the full git history |
-| | `dag-integrity` | same | DAG-bag import + factory tests with the airflow group installed |
-| [`dbt-ci.yml`](.github/workflows/dbt-ci.yml) | `dbt-compile` | PRs touching `dbt/**` | `dbt deps` + `dbt parse` + `dbt compile` against Snowflake — validates SQL renders with live source metadata; no models run, no data written |
-
-`dbt-ci.yml` requires these GitHub repository secrets (Settings → Secrets and variables → Actions):
-`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_WAREHOUSE`.
-
-Test runs against `dbt build` (with `--select` filters) are intentionally **not** part of `dbt-ci.yml` until the project-wide `+severity: warn` block in `dbt/dbt_project.yml` is removed (TODO.md item D1) — adding `dbt test` while severity is `warn` would always produce a falsely-green check.
-
-## What's next (Phase 2+)
-
-Phase 1 is a vertical slice: three data sources wired all the way through. Subsequent phases will add additional civic datasets (e.g. 311 service requests), a cross-domain mart joining them by neighborhood-month, a BI dashboard, and a RAG layer over Board of Supervisors meeting minutes.
+- [Documentation index](docs/README.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Data model](docs/DATA_MODEL.md)
+- [Edge cases](docs/EDGE_CASES.md)
+- [Development](docs/DEVELOPMENT.md)
+- [Deployment](docs/DEPLOY.md)
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [LICENSE](LICENSE).

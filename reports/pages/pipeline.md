@@ -3,7 +3,7 @@ title: Pipeline Health & Data Trust
 ---
 
 <Alert status=info>
-Demo built from a committed <strong>sample snapshot</strong>. The Airflow observability loop writes DAG/test metadata to Snowflake; dbt rolls it into the trust marts shown here.
+This static page reads committed Parquet snapshots exported from the Snowflake observability marts when credentials are available, with sample data as the build fallback.
 </Alert>
 
 ## Data trust by dataset

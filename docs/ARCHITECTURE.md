@@ -1,24 +1,81 @@
 # Architecture
 
-The full architecture write-up lives in the wiki:
+The checked-in code has a raw S3 ingestion path and retained Snowflake-backed
+transformation and consumer paths.
 
-**→ [wiki/Architecture.md](../wiki/Architecture.md)**
+## Raw ingestion
 
-This file exists so links from `README.md` to `docs/ARCHITECTURE.md`
-stay stable; the wiki page is the working copy.
-
-## TL;DR
-
+```text
+DataSF SODA API
+    │  paginated HTTPS; half-open Airflow data interval
+    ▼
+airflow/include/scripts/soda_ingest.py
+    │  streaming compact NDJSON
+    ▼
+S3 raw/{dataset}/data_interval_start=.../data_interval_end=.../records.ndjson
+    │
+    ▼
+Airflow ingest-complete asset
 ```
-DataSF SODA API → S3 (NDJSON) → Snowflake RAW → dbt → MARTS / METADATA → Plotly Dash
-                       │                                    │
-                       └─── orchestrated by 5 Airflow DAGs ─┘
+
+The three generated ingest DAGs are:
+
+| DAG | Schedule | Tasks |
+| --- | --- | --- |
+| `ingest_permits` | `0 6 * * *` | `extract_permits_to_raw -> ingest_complete` |
+| `ingest_evictions` | `0 6 * * *` | `extract_evictions_to_raw -> ingest_complete` |
+| `ingest_incidents` | `0 6 * * *` | `extract_incidents_to_raw -> ingest_complete` |
+
+`dag_factory.py` builds all three from `DatasetConfig` and `DagConfig` values.
+Each successful extract task pushes raw location, counts, timing, interval, and
+observed maximum source timestamp through XCom. Empty intervals return null raw
+paths and still emit the asset.
+
+The retained SQL files under `airflow/include/sql/` are not referenced by the
+current ingest DAG factory. In particular, raw S3 objects are not currently
+copied into Snowflake by these DAGs.
+
+## Snowflake transformation path
+
+```text
+permits ingest asset   ─┐
+evictions ingest asset ─┼─> transform_all
+incidents ingest asset ─┘      │
+                               ├─> dbt deps
+Existing Snowflake RAW sources ├─> dbt run --target prod
+                               └─> dbt test --target prod
 ```
 
-- **5 DAGs:** 3 scheduled ingests (permits, evictions, incidents) + 1 asset-triggered transform_all + 1 ingest_pipeline_metadata.
-- **Timestamp watermark-driven incremental** loads; `METADATA.INGEST_WATERMARKS` is the checkpoint of record.
-- **dbt:** views (staging, intermediate) → tables (marts), with a separate observability project under `dbt/models/metadata/`.
-- **Dashboard:** Plotly Dash, six pages, in-memory Polars caching at boot.
+The dbt project expects `SF_URBAN_HEALTH.RAW` source tables populated outside
+the current raw ingest DAG. It builds:
 
-See the wiki for the layered diagram, mart grain table, and the
-observability story.
+```text
+RAW sources -> staging views -> intermediate views -> mart tables
+```
+
+`dbt/` is the canonical project. `make sync-dbt` mirrors it into
+`airflow/include/dbt/` for the Astro Docker build.
+
+## Pipeline metadata path
+
+```text
+Airflow REST API
+    -> ingest_pipeline_metadata (07:00 UTC)
+    -> Snowflake METADATA.AIRFLOW_DAG_RUNS / AIRFLOW_TASK_INSTANCES
+    -> dbt observability marts
+```
+
+The collector enriches extract task instances with selected XCom values before
+upserting them. The checked-in collector asks for `max_watermark`, while the
+current extract DAG publishes `max_loaded_at`; the maximum timestamp therefore
+does not currently populate that Snowflake field.
+
+## Consumers
+
+- Plotly Dash reads Snowflake mart and metadata schemas into Polars frames when
+  the process starts.
+- Evidence reads local Parquet snapshots with DuckDB during its static build.
+  The Pages workflow first attempts a Snowflake-to-Parquet export and otherwise
+  uses the checked-in sample snapshot.
+
+These paths are separate processes; neither dashboard is part of an ingest DAG.

@@ -25,6 +25,9 @@ jobs:
       - name: yamllint
         run: uv run --group dev yamllint .
 
+      - name: Documentation audit
+        run: make docs-check
+
       - name: Pytest (dev group)
         run: uv run --group dev pytest -v
 

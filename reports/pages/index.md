@@ -3,7 +3,7 @@ title: SF Housing Production
 ---
 
 <Alert status=info>
-Demo built from a committed <strong>sample snapshot</strong> so the page renders without a warehouse. The scheduled GitHub Action refreshes these tables from Snowflake — see <a href="https://github.com/Ukiah-Heasley/sf-urban-health">the repo</a>.
+This static page reads a committed Parquet snapshot. The Pages workflow replaces it from Snowflake when repository credentials are available and otherwise keeps the sample data.
 </Alert>
 
 Monthly residential building-permit activity across San Francisco, from the `mart_housing_production` mart.

@@ -1,78 +1,99 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Repository guidance for coding agents working on SF Urban Health.
 
 ## Commands
 
-All workflows go through the root `Makefile`, which auto-loads `airflow/.env`.
+Use root `Makefile` targets; it loads `airflow/.env` when present.
 
 ```bash
-make ingest         # DataSF -> S3 (uv run airflow/include/scripts/permits.py)
-make dbt-deps       # one-time: install dbt packages (dbt_utils, elementary)
-make dbt-build      # dbt run + test against Snowflake
-make dbt-test
-make airflow-up     # astro dev start (UI at http://localhost:8080, admin/admin)
+make ingest            # permits: DataSF -> S3 raw NDJSON
+make dbt-deps          # install dbt packages
+make dbt-run           # Snowflake dev target, models only
+make dbt-run-prod      # Snowflake prod target, models only
+make dbt-build         # Snowflake dev target, run + test
+make dbt-test          # Snowflake dev target, tests only
+make sync-dbt          # mirror dbt/ into airflow/include/dbt/
+make airflow-up        # sync dbt, then astro dev start
 make airflow-down
-make airflow-logs   # tail scheduler
-make dashboard-dev  # python -m dashboard.app on http://localhost:8050
-make lint           # uv run ruff check .
-make yamllint       # uv run yamllint .
-make pre-commit     # uv run pre-commit run --all-files
-make test           # uv run pytest
+make airflow-logs
+make dashboard-dev     # http://localhost:8050
+make dashboard-docker
+make lint
+make yamllint
+make pre-commit
+make docs-check
+make test
 ```
 
-For ad-hoc dbt selectors not covered by a target, run from `dbt/` after sourcing `airflow/.env`:
-`uv run --group dbt dbt run --select stg_permits --profiles-dir .`
+For an ad-hoc dbt selector, run from `dbt/` with `--profiles-dir .`.
 
-## Architecture
+## Current architecture
 
+The checked-in runtime is split:
+
+```text
+DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON -> Airflow assets
+
+Existing Snowflake sources -> dbt staging/intermediate/marts -> Dash/exports
+Airflow REST API -> Snowflake metadata tables -> observability marts
 ```
-DataSF SODA API → airflow/include/scripts/soda_ingest.py → S3 raw/<dataset>/YYYY/MM/DD/<dataset>.json
-S3 → Snowflake RAW.<DATASET>  (COPY INTO via SQLExecuteQueryOperator)
-RAW.<DATASET> → METADATA.INGEST_WATERMARKS  (per-dataset high-water mark)
-Snowflake RAW → dbt staging → intermediate → marts (transform_all DAG)
-Airflow REST API → METADATA.AIRFLOW_DAG_RUNS / AIRFLOW_TASK_INSTANCES → observability marts
-```
 
-Five DAGs orchestrate this:
-- Three ingest DAGs (one per dataset, factory'd in `airflow/dags/dag_factory.py`), daily at 06:00 UTC.
-- `transform_all` runs `dbt build` once after the three ingests succeed.
-- `ingest_pipeline_metadata` polls the Airflow REST API daily at 07:00 UTC for the observability marts.
+The current ingest DAG factory contains only
+`extract_<dataset>_to_raw -> ingest_complete`; it does not execute the retained
+Snowflake `COPY INTO` or watermark SQL. Do not describe S3-to-Snowflake loading
+as active behavior.
 
-## Key design decisions
+Three ingest DAGs run at 06:00 UTC. `transform_all` is asset-triggered and runs
+the Snowflake dbt project. `ingest_pipeline_metadata` runs at 07:00 UTC and
+writes Airflow metadata to Snowflake.
 
-**S3 is the durable raw layer.** Raw NDJSON lives in S3 permanently. Snowflake `RAW.*` is a `COPY INTO` target. To reprocess, replay from S3 — never re-hit the DataSF API.
+## Extraction invariants
 
-**Watermark-driven incremental loads.** Each ingest reads its last watermark from `METADATA.INGEST_WATERMARKS` (epoch fallback per `DatasetConfig.epoch`), fetches `where data_loaded_at >= <wm>`, and writes the new watermark via Snowflake `MERGE` after a successful load. Failed loads cause the next run to re-fetch the gap automatically. (A known boundary-overlap quirk on the `>=` predicate is tracked in TODO.md item H1.)
+- Airflow data intervals are the extraction boundary. `ExtractWindow` uses a
+  half-open `[effective_start, data_interval_end)` predicate.
+- Normalize all internal timestamps to timezone-aware UTC.
+- Page in configured timestamp order with the dataset key as a stable
+  tie-breaker.
+- Stream records; do not materialize a complete API response in memory.
+- Raw files are NDJSON: one compact JSON object per line, no outer array.
+- Raw keys encode both interval bounds and end in `records.ndjson`.
+- Empty extracts are successful and upload no raw object.
+- Raw records remain source-faithful. Reporting filters belong downstream.
+- `max_loaded_at` is descriptive metadata; it does not control the next
+  scheduled interval.
 
-**Newline-delimited JSON.** `_write_s3` emits one JSON object per line. The COPY uses `STRIP_OUTER_ARRAY = FALSE` — do not change this to array format.
+## dbt contracts
 
-**dbt materialization policy.** Staging and intermediate are views (always fresh, cheap). Marts are tables (fast for BI). Defined in `dbt/dbt_project.yml`.
+- `dbt/` is canonical; never edit the generated `airflow/include/dbt/` mirror.
+- Staging and intermediate models are views; marts are tables under the current
+  Snowflake project configuration.
+- Staging preserves the source population and deduplicates by source primary
+  key using `_loaded_at`.
+- The residential filter belongs in `mart_housing_production`, not staging.
+- Every mart that groups by neighborhood uses `normalize_neighborhood`.
+- Preserve each documented model grain and its uniqueness test.
 
-**Residential filter sits in the mart, not staging.** `stg_permits` is source-of-truth for all permits. The residential lens (`existing_units IS NOT NULL OR proposed_units IS NOT NULL`) is a reporting concern owned by `mart_housing_production`.
+## Airflow import boundary
 
-**`normalize_neighborhood` macro.** Collapses DataSF's null/empty/"unknown" neighborhood spellings into `'Unknown'` and `initcap`s the rest. Any future mart that groups by neighborhood must use this macro.
+Astro mounts `airflow/include/` at `/usr/local/airflow/include/`. The Dockerfile
+adds that directory to `PYTHONPATH`, so DAGs import project modules as
+`from scripts ...` and `from pipeline_assets ...`.
 
-## SQL templating: bind params vs Jinja
+## Dependency boundaries
 
-`SQLExecuteQueryOperator` accepts both `params=` (Jinja-templated render) and `parameters=` (driver bind). The convention in this repo:
-- **Identifiers and stage-path components** → `params={...}` (Jinja). Snowflake bind parameters cannot bind table identifiers or stage paths. See `airflow/include/sql/copy_into.sql`.
-- **Values** (dataset names, timestamps, IDs) → `parameters={...}` (driver bind). Eliminates SQL injection surface even when inputs come from XCom. See `airflow/include/sql/update_watermark.sql` and `upsert_dag_runs.sql`.
+- `pyproject.toml` controls local uv environments.
+- `airflow/requirements.txt` controls additional packages in the Astro image.
+- Dashboard imports may be skipped locally with `SKIP_DASHBOARD_TESTS=1` when
+  platform wheels cannot load. Linux CI exercises the import.
 
-## Airflow → scripts import path
+## Documentation maintenance
 
-Scripts live in `airflow/include/scripts/`. Astro auto-mounts `include/` at `/usr/local/airflow/include/` in all containers; the Dockerfile sets `PYTHONPATH` to include that directory so `from scripts import permits` resolves. No `COPY` step is needed — changes to scripts are picked up automatically on `astro dev restart` without a full image rebuild.
+Use `$maintain-project-docs` before handing off a change that affects commands,
+architecture, configuration, schemas, DAGs, storage, deployment, or
+user-visible behavior.
 
-## dbt grain and tests
-
-The `mart_housing_production` grain is `(filed_month, neighborhood, supervisor_district, use_transition)` — declared via a `dbt_utils.unique_combination_of_columns` test. Staging PK is `permit_number` with `not_null` + `unique`. **Important caveat:** the project-level `tests: +severity: warn` block in `dbt/dbt_project.yml` neuters every test today; removing that block (TODO.md D1) is the next blocker for true grain enforcement.
-
-Do not introduce aggregations in staging or intermediate that would break these constraints.
-
-## Where deferred work lives
-
-`TODO.md` has two sections, "Airflow code quality (deferred audit)" and "dbt code quality (deferred audit)", that capture every blocker / high finding from the May 2026 polish review with file/line citations. When making changes to `airflow/dags/`, `airflow/include/`, or `dbt/`, check those sections first — many "obvious" bugs are already known and intentionally deferred to a follow-up pass.
-
-## Testing the dashboard locally
-
-`make test` runs the dev-only test subset by default. The dashboard import probe uses subprocess + skipif to handle wheel-loadability issues on bleeding-edge platforms — set `SKIP_DASHBOARD_TESTS=1` if your local pyarrow / polars / snowflake-connector-python wheels can't load (e.g. very recent macOS arm64). CI on Linux x86_64 always exercises the import.
+Public documentation must describe checked-in behavior only. Do not publish
+roadmaps, target-state diagrams, proposed designs, or private learning notes.
+Run `make docs-check` before handoff. If documentation does not need a change,
+state the reason in the handoff.
