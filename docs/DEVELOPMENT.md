@@ -17,8 +17,12 @@ cp airflow/.env.example airflow/.env
 ```
 
 `airflow/.env` is gitignored and loaded by the root Makefile. The extractor
-requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Snowflake consumers use
-the `SNOWFLAKE_*` variables documented in the example file.
+requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Set `LAKE_LOCAL_ROOT`
+for local lakehouse smoke tests without AWS. `transform_lakehouse` reads
+`LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and optional
+`LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
+S3 JSON ingest metadata events. Snowflake consumers use the `SNOWFLAKE_*` variables documented
+in the example file.
 
 ## Commands
 
@@ -27,6 +31,7 @@ the `SNOWFLAKE_*` variables documented in the example file.
 | Show available targets | `make` |
 | Extract permits to raw S3 | `make ingest` |
 | Run Python tests | `make test` |
+| Promote fixture NDJSON locally | `make lakehouse-smoke` |
 | Lint Python | `make lint` |
 | Lint YAML | `make yamllint` |
 | Run pre-commit hooks | `make pre-commit` |

@@ -149,6 +149,8 @@ class ExtractResult:
     data_interval_start: datetime
     data_interval_end: datetime
     effective_start: datetime
+    started_at: datetime
+    completed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -441,12 +443,14 @@ def extract_to_raw(
     """
 
     t0 = time.monotonic()
+    started_at = datetime.now(timezone.utc)
     accumulator = ExtractAccumulator()
 
     records = accumulator.observe_records(config, client.fetch_records(config, window))
 
     write_result = writer.write_records(config, window, records)
     duration_seconds = time.monotonic() - t0
+    completed_at = datetime.now(timezone.utc)
 
     if write_result.records_written != accumulator.records_fetched:
         raise RuntimeError(
@@ -474,6 +478,8 @@ def extract_to_raw(
         data_interval_start=window.data_interval_start,
         data_interval_end=window.data_interval_end,
         effective_start=window.effective_start,
+        started_at=started_at,
+        completed_at=completed_at,
     )
 
 

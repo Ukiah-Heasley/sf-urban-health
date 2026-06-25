@@ -3,10 +3,13 @@ layer: metadata
 name: ingest_runs
 owner: data-platform
 description: >-
-  One row per successful or attempted dataset extract run with interval bounds,
-  raw object location, and observed source freshness metadata.
+  One row per dataset extract interval reflecting the current successful or
+  attempted extract state for that interval. `ingest_run_id` is descriptive
+  lineage for the latest extract, not the table grain.
 grain:
-  - ingest_run_id
+  - dataset_name
+  - data_interval_start
+  - data_interval_end
 path_template: lake/parquet/metadata/ingest_runs/ingest_date={ingest_date}/
 partition_columns:
   - ingest_date
@@ -73,10 +76,12 @@ columns:
     description: UTC timestamp when the extract completed.
 quality:
   checks:
-    - name: unique_ingest_run_id
+    - name: unique_dataset_interval
       type: unique
       columns:
-        - ingest_run_id
+        - dataset_name
+        - data_interval_start
+        - data_interval_end
 compatibility:
   additive: true
   version_policy: semver

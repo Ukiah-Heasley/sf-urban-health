@@ -35,12 +35,16 @@ def test_make_ingest_dag_extracts_raw_and_emits_asset():
     task_ids = [t.task_id for t in dag.tasks]
     assert task_ids == [
         "extract_permits_to_raw",
+        "record_permits_extract_metadata",
         "ingest_complete",
     ]
 
     extract = dag.get_task("extract_permits_to_raw")
+    record_metadata = dag.get_task("record_permits_extract_metadata")
     complete = dag.get_task("ingest_complete")
 
-    assert complete.upstream_task_ids == {"extract_permits_to_raw"}
-    assert extract.downstream_task_ids == {"ingest_complete"}
+    assert record_metadata.upstream_task_ids == {"extract_permits_to_raw"}
+    assert complete.upstream_task_ids == {"record_permits_extract_metadata"}
+    assert extract.downstream_task_ids == {"record_permits_extract_metadata"}
+    assert record_metadata.downstream_task_ids == {"ingest_complete"}
     assert complete.outlets == [PERMITS_INGEST_ASSET]

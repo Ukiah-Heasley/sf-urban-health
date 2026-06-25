@@ -27,6 +27,7 @@ help:
 	@echo "  make lint           Ruff lint"
 	@echo "  make docs-check     Validate current-state documentation"
 	@echo "  make test           Run pytest"
+	@echo "  make lakehouse-smoke Promote fixture NDJSON locally without AWS"
 
 .PHONY: check-env
 check-env:
@@ -106,3 +107,7 @@ pre-commit:
 .PHONY: test
 test:
 	uv run --group dev pytest
+
+.PHONY: lakehouse-smoke
+lakehouse-smoke:
+	PYTHONPATH=airflow/include uv run python airflow/include/scripts/lakehouse_smoke.py

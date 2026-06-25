@@ -24,8 +24,13 @@ The codebase currently has two distinct boundaries:
 ```text
 DataSF SODA API
     → Airflow ingest DAGs
-    → S3 raw interval NDJSON
-    → ingest-complete Airflow assets
+    → S3 raw interval NDJSON + S3 ingest metadata events
+    → ingest Airflow assets
+
+Airflow ingest assets
+    → transform_lakehouse (plans intervals from S3 JSON metadata events)
+    → bronze Parquet + S3 file-manifest events
+    → compacted metadata Parquet
 
 Existing Snowflake source tables
     → asset-triggered transform_all DAG
@@ -43,7 +48,7 @@ from a clean environment.
 Three generated DAGs run daily at 06:00 UTC:
 
 ```text
-extract_{dataset}_to_raw → ingest_complete
+extract_{dataset}_to_raw → record_{dataset}_extract_metadata → ingest_complete
 ```
 
 Each extractor:
@@ -64,8 +69,21 @@ raw/{dataset}/
   records.ndjson
 ```
 
-An empty interval is successful, uploads no object, and still emits its ingest
-asset.
+An empty interval is successful, uploads no raw object, still writes an ingest
+metadata event, and emits its ingest asset.
+
+`transform_lakehouse` runs after all three ingest assets update. It selects
+the oldest pending complete interval from current S3 ingest metadata events
+(default `LAKEHOUSE_PLAN_MODE=pending`, `LAKEHOUSE_PLAN_LIMIT=1`), promotes that
+interval to bronze Parquet, writes file-manifest metadata events, compacts
+current metadata events into contract-compatible Parquet, and emits a lakehouse
+transform asset. When no interval is selected, the DAG branches to a no-op path
+that emits no bronze or lakehouse transform assets. Set
+`LAKEHOUSE_PLAN_MODE=refresh` with optional start/end bounds to reprocess
+intervals without a separate code path. Current JSON metadata events are the
+promotion source of truth; attempt audit events and compacted metadata Parquet
+are not planner inputs. Snowflake `transform_all` remains triggered only by
+ingest assets.
 
 ## Other Airflow DAGs
 
@@ -117,6 +135,7 @@ The file is gitignored.
 ```bash
 make ingest            # permits: DataSF → raw S3
 make test              # pytest
+make lakehouse-smoke   # promote fixture NDJSON locally without AWS
 make lint              # Ruff
 make yamllint          # YAML lint
 make pre-commit        # all configured hooks
@@ -158,7 +177,9 @@ The checked-in dbt project defines:
 The model contracts and grains are documented in
 [Data Model](docs/DATA_MODEL.md). Lakehouse parquet table contracts live under
 `contracts/lakehouse/` and are validated by
-`airflow/include/scripts/lakehouse_contracts.py`.
+`airflow/include/scripts/lakehouse_contracts.py`. Bronze promotion lives in
+`airflow/include/scripts/lakehouse_load.py`. Immutable metadata events and
+compaction live in `airflow/include/scripts/lakehouse_metadata.py`.
 
 ## Dashboards
 

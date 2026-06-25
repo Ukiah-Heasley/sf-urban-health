@@ -24,6 +24,7 @@ make yamllint
 make pre-commit
 make docs-check
 make test
+make lakehouse-smoke
 ```
 
 For an ad-hoc dbt selector, run from `dbt/` with `--profiles-dir .`.
@@ -33,20 +34,38 @@ For an ad-hoc dbt selector, run from `dbt/` with `--profiles-dir .`.
 The checked-in runtime is split:
 
 ```text
-DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON -> Airflow assets
+DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON
+    -> lakehouse_metadata.py current + attempt ingest events -> ingest assets
+
+ingest assets -> transform_lakehouse -> bronze Parquet + metadata events
+    -> compact metadata Parquet -> lakehouse transform asset (when planned)
 
 Existing Snowflake sources -> dbt staging/intermediate/marts -> Dash/exports
 Airflow REST API -> Snowflake metadata tables -> observability marts
 ```
 
-The current ingest DAG factory contains only
-`extract_<dataset>_to_raw -> ingest_complete`; it does not execute the retained
-Snowflake `COPY INTO` or watermark SQL. Do not describe S3-to-Snowflake loading
-as active behavior.
+`transform_lakehouse` plans intervals from current S3 JSON ingest metadata
+events (default: oldest pending complete interval, one interval per DAG run).
+Compacted metadata Parquet is a query/reporting layer, not promotion control
+flow; each compaction fully rebuilds it from JSON. Attempt audit events do not
+drive the planner.
 
-Three ingest DAGs run at 06:00 UTC. `transform_all` is asset-triggered and runs
-the Snowflake dbt project. `ingest_pipeline_metadata` runs at 07:00 UTC and
-writes Airflow metadata to Snowflake.
+Dataset ingest DAGs contain
+`extract_<dataset>_to_raw -> record_<dataset>_extract_metadata -> ingest_complete`.
+`transform_lakehouse` promotes raw intervals to bronze and compacts metadata.
+It reads `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and
+optional start/end bounds. `max_active_runs=1` prevents concurrent runs from
+selecting the same global interval. When no interval is selected, promotion and
+lakehouse asset emission are skipped. `transform_all` still runs Snowflake dbt
+from ingest assets only.
+
+The ingest DAG factory does not execute the retained Snowflake `COPY INTO` or
+watermark SQL. Do not describe S3-to-Snowflake loading as active behavior.
+
+Three ingest DAGs run at 06:00 UTC. `transform_lakehouse` is asset-triggered by
+all three ingest assets. `transform_all` is asset-triggered and runs the
+Snowflake dbt project. `ingest_pipeline_metadata` runs at 07:00 UTC and writes
+Airflow metadata to Snowflake.
 
 ## Extraction invariants
 
@@ -62,6 +81,7 @@ writes Airflow metadata to Snowflake.
 - Raw records remain source-faithful. Reporting filters belong downstream.
 - `max_loaded_at` is descriptive metadata; it does not control the next
   scheduled interval.
+- Extract `started_at` and `completed_at` are captured inside `extract_to_raw`.
 
 ## dbt contracts
 
