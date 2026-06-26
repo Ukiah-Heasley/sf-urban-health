@@ -14,8 +14,10 @@ make spark-up            # local MinIO + Spark Thrift Server
 make spark-down
 make dbt-lakehouse-debug
 make dbt-lakehouse-smoke
-make lakehouse-prepare-permits-fixture  # destructive local MinIO reset + permits fixture
+make lakehouse-prepare-fixtures       # destructive local MinIO reset + all dataset fixtures
+make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
+make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg
 make dashboard-dev       # http://localhost:8050
 make dashboard-docker
 make lint
@@ -38,7 +40,7 @@ ingest assets -> transform_lakehouse -> bronze Parquet + metadata events
   -> compact metadata Parquet -> lakehouse transform asset (when planned)
 
 lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg
-  -> fixture prep -> bronze Parquet in MinIO -> dbt permits_current silver Iceberg
+  -> fixture prep -> bronze Parquet in MinIO -> dbt bronze/silver/gold Iceberg
   -> dbt smoke Iceberg model (local dev only)
 
 Plotly Dash and Evidence remain consumer shells over empty frames or committed
@@ -82,10 +84,13 @@ all three ingest assets.
 
 - `dbt/` is canonical; never edit the generated `airflow/include/dbt/` mirror.
 - Local lakehouse dev uses the `lakehouse` uv group (`dbt-core`, `dbt-spark`).
+- Use medallion dbt folders (`bronze/`, `silver/`, `gold/`). Do not mix
+  `staging/`, `intermediate/`, `stg_*`, `int_*`, or `mart_*` in the lakehouse slice.
 - `smoke_iceberg` is the harmless Iceberg proof model.
-- `permits_current` is the first domain silver Iceberg model; it reads bronze
-  permits through the ephemeral dbt staging model `stg_bronze_permits` over
-  MinIO Parquet.
+- Bronze dbt models (`bronze_permits`, `bronze_evictions`, `bronze_incidents`) are
+  ephemeral read adapters over Python-promoted MinIO Parquet.
+- Silver Iceberg models: `permits_current`, `evictions_current`, `incidents_current`.
+- Gold Iceberg models: `housing_production`, `permit_pipeline`, `evictions`, `public_safety`.
 
 ## Airflow import boundary
 

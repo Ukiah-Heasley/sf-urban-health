@@ -1,18 +1,19 @@
 version: 1
 layer: gold
-name: mart_permit_pipeline
+name: permit_pipeline
 owner: analytics-engineering
 description: >-
   Daily snapshot of in-flight residential permits grouped by neighborhood,
   district, lifecycle stage, and age bucket.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: permit_pipeline
 grain:
   - neighborhood
   - supervisor_district
   - lifecycle_stage
   - age_bucket
-path_template: lake/parquet/gold/mart_permit_pipeline/build_date={build_date}/
-partition_columns:
-  - build_date
+partition_columns: []
 columns:
   - name: neighborhood
     type: string

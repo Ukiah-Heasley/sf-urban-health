@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Reset the local MinIO lakehouse sandbox and seed permits fixture data for dbt."""
+"""Reset the local MinIO lakehouse sandbox and seed fixture data for dbt."""
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,12 +28,44 @@ _INTERVAL_START = datetime(2024, 3, 15, 6, 0, tzinfo=timezone.utc)
 _INTERVAL_END = datetime(2024, 3, 16, 6, 0, tzinfo=timezone.utc)
 _STARTED_AT = datetime(2024, 3, 16, 6, 0, tzinfo=timezone.utc)
 _COMPLETED_AT = datetime(2024, 3, 16, 6, 4, tzinfo=timezone.utc)
-_PERMITS_DATASET_ID = "i98e-djp9"
-_RAW_KEY = (
-    "raw/permits/"
-    "data_interval_start=20240315T060000Z/"
-    "data_interval_end=20240316T060000Z/"
-    "records.ndjson"
+
+
+@dataclass(frozen=True)
+class FixtureDataset:
+    dataset_name: str
+    fixture_filename: str
+    dataset_id: str
+    dag_id: str
+
+    @property
+    def raw_key(self) -> str:
+        return (
+            f"raw/{self.dataset_name}/"
+            "data_interval_start=20240315T060000Z/"
+            "data_interval_end=20240316T060000Z/"
+            "records.ndjson"
+        )
+
+
+FIXTURE_DATASETS: tuple[FixtureDataset, ...] = (
+    FixtureDataset(
+        dataset_name="permits",
+        fixture_filename="permits.ndjson",
+        dataset_id="i98e-djp9",
+        dag_id="ingest_permits",
+    ),
+    FixtureDataset(
+        dataset_name="evictions",
+        fixture_filename="evictions.ndjson",
+        dataset_id="5cei-gny5",
+        dag_id="ingest_evictions",
+    ),
+    FixtureDataset(
+        dataset_name="incidents",
+        fixture_filename="incidents.ndjson",
+        dataset_id="wg3w-h783",
+        dag_id="ingest_incidents",
+    ),
 )
 
 
@@ -55,25 +88,25 @@ def _max_loaded_at_from_fixture(path: Path) -> datetime:
     return max_loaded_at
 
 
-def prepare_permits_fixture() -> None:
-    load_lakehouse_env()
-    storage = require_local_lakehouse_stack()
-    assert storage.bucket is not None
-
-    deleted = reset_lakehouse_bucket(storage)
-    print(f"reset local lakehouse bucket {storage.bucket!r}; deleted {deleted} object(s)")
-
-    fixture_path = _FIXTURES / "permits.ndjson"
+def _seed_and_promote_dataset(
+    *,
+    dataset: FixtureDataset,
+    storage,
+) -> None:
+    fixture_path = _FIXTURES / dataset.fixture_filename
     records_fetched = _count_fixture_records(fixture_path)
     max_loaded_at = _max_loaded_at_from_fixture(fixture_path)
     payload = fixture_path.read_bytes()
-    bytes_written = storage.write_bytes(_RAW_KEY, payload)
-    raw_path = storage.uri_for_key(_RAW_KEY)
-    print(f"seeded raw permits fixture at {raw_path} ({records_fetched} record(s))")
+    bytes_written = storage.write_bytes(dataset.raw_key, payload)
+    raw_path = storage.uri_for_key(dataset.raw_key)
+    print(
+        f"seeded raw {dataset.dataset_name} fixture at {raw_path} "
+        f"({records_fetched} record(s))"
+    )
 
     extract_result = ExtractResult(
         raw_path=raw_path,
-        raw_key=_RAW_KEY,
+        raw_key=dataset.raw_key,
         records_fetched=records_fetched,
         max_loaded_at=max_loaded_at,
         bytes_written=bytes_written,
@@ -88,34 +121,54 @@ def prepare_permits_fixture() -> None:
         storage,
         ingest_run_event_from_extract(
             extract_result=extract_result,
-            ingest_run_id="fixture-permits",
-            dag_id="ingest_permits",
-            dataset_name="permits",
+            ingest_run_id=f"fixture-{dataset.dataset_name}",
+            dag_id=dataset.dag_id,
+            dataset_name=dataset.dataset_name,
         ),
     )
     ingest_event = load_ingest_run_event_for_interval(
         storage,
-        dataset_name="permits",
+        dataset_name=dataset.dataset_name,
         data_interval_start=_INTERVAL_START,
         data_interval_end=_INTERVAL_END,
     )
     result = promote_raw_to_bronze(
-        dataset_name="permits",
-        dataset_id=_PERMITS_DATASET_ID,
+        dataset_name=dataset.dataset_name,
+        dataset_id=dataset.dataset_id,
         ingest_event=ingest_event,
         storage=storage,
     )
     assert result.bronze_path is not None
-    assert result.records_promoted == records_fetched
-    print(f"promoted bronze permits to {result.bronze_path}")
+    assert result.records_promoted == records_fetched, (
+        f"{dataset.dataset_name}: promoted {result.records_promoted} rows, "
+        f"expected {records_fetched}"
+    )
+    print(f"promoted bronze {dataset.dataset_name} to {result.bronze_path}")
+
+
+def prepare_lakehouse_fixtures() -> None:
+    load_lakehouse_env()
+    storage = require_local_lakehouse_stack()
+    assert storage.bucket is not None
+
+    deleted = reset_lakehouse_bucket(storage)
+    print(f"reset local lakehouse bucket {storage.bucket!r}; deleted {deleted} object(s)")
+
+    for dataset in FIXTURE_DATASETS:
+        _seed_and_promote_dataset(dataset=dataset, storage=storage)
 
     refresh_spark_catalog_after_bucket_reset()
     print("refreshed Spark catalog after local bucket reset")
 
 
+def prepare_permits_fixture() -> None:
+    """Compatibility alias for the all-dataset fixture preparation flow."""
+    prepare_lakehouse_fixtures()
+
+
 def main() -> None:
-    prepare_permits_fixture()
-    print("local permits fixture preparation complete")
+    prepare_lakehouse_fixtures()
+    print("local lakehouse fixture preparation complete")
 
 
 if __name__ == "__main__":

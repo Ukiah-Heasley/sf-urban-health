@@ -10,8 +10,10 @@ help:
 	@echo "  make spark-down     Stop local lakehouse Docker stack"
 	@echo "  make dbt-lakehouse-debug  Verify dbt Spark profile against Thrift Server"
 	@echo "  make dbt-lakehouse-smoke  Run dbt smoke Iceberg model (requires spark-up)"
-	@echo "  make lakehouse-prepare-permits-fixture  DESTRUCTIVE: reset local MinIO sandbox, seed permits fixture, promote bronze (requires spark-up)"
+	@echo "  make lakehouse-prepare-fixtures  DESTRUCTIVE: reset local MinIO sandbox, seed all dataset fixtures, promote bronze (requires spark-up)"
+	@echo "  make lakehouse-prepare-permits-fixture  Alias for lakehouse-prepare-fixtures"
 	@echo "  make dbt-lakehouse-permits  Build and test permits_current silver Iceberg model (requires spark-up + fixture prep)"
+	@echo "  make dbt-lakehouse-gold     Build and test all lakehouse bronze/silver/gold Iceberg models (requires spark-up + fixture prep)"
 	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
 	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
@@ -102,13 +104,20 @@ pre-commit:
 test:
 	uv run --group dev pytest
 
-.PHONY: lakehouse-prepare-permits-fixture
-lakehouse-prepare-permits-fixture: $(LAKEHOUSE_ENV)
+.PHONY: lakehouse-prepare-fixtures
+lakehouse-prepare-fixtures: $(LAKEHOUSE_ENV)
 	PYTHONPATH=airflow/include uv run --group lakehouse python airflow/include/scripts/lakehouse_fixture_prepare.py
+
+.PHONY: lakehouse-prepare-permits-fixture
+lakehouse-prepare-permits-fixture: lakehouse-prepare-fixtures
 
 .PHONY: dbt-lakehouse-permits
 dbt-lakehouse-permits: $(LAKEHOUSE_ENV)
 	cd $(DBT_DIR) && uv run --group lakehouse dbt build --select +permits_current --profiles-dir .
+
+.PHONY: dbt-lakehouse-gold
+dbt-lakehouse-gold: $(LAKEHOUSE_ENV)
+	cd $(DBT_DIR) && uv run --group lakehouse dbt build --select tag:lakehouse --profiles-dir .
 
 .PHONY: lakehouse-smoke
 lakehouse-smoke:

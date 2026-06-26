@@ -91,26 +91,26 @@ BRONZE_NATURAL_KEYS: dict[str, str] = {
 }
 
 DOCUMENTED_GOLD_GRAINS: dict[str, tuple[str, ...]] = {
-    "mart_housing_production": (
+    "housing_production": (
         "filed_month",
         "neighborhood",
         "supervisor_district",
         "use_transition",
     ),
-    "mart_evictions": (
+    "evictions": (
         "filed_month",
         "neighborhood",
         "supervisor_district",
         "eviction_type",
     ),
-    "mart_public_safety": (
+    "public_safety": (
         "incident_month",
         "neighborhood",
         "supervisor_district",
         "police_district",
         "incident_category",
     ),
-    "mart_permit_pipeline": (
+    "permit_pipeline": (
         "neighborhood",
         "supervisor_district",
         "lifecycle_stage",

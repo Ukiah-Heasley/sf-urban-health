@@ -93,23 +93,27 @@ warehouse data is stored under `s3a://lakehouse/warehouse/` in the local bucket.
 `dbt/profiles.yml` connects to Spark Thrift with the `lakehouse` uv dependency
 group. Bronze remains Parquet in MinIO.
 
-Local fixture preparation uses `make lakehouse-prepare-permits-fixture`, which
-destructively resets the local MinIO bucket, seeds fixture raw NDJSON, promotes
-bronze Parquet through the existing Python promotion code, and restarts Spark
-Thrift so catalog namespaces are rebuilt. dbt reads bronze through
-`stg_bronze_permits`, an ephemeral staging model over MinIO Parquet. `permits_current` materializes
-as silver Iceberg through Spark/dbt. The `smoke_iceberg` model remains a harmless catalog
+Local fixture preparation uses `make lakehouse-prepare-fixtures`, which
+destructively resets the local MinIO bucket, seeds fixture raw NDJSON for
+permits, evictions, and incidents, promotes bronze Parquet through the existing
+Python promotion code, and restarts Spark Thrift so catalog namespaces are
+rebuilt. dbt reads bronze through ephemeral `bronze_*` models over MinIO Parquet.
+Silver `*_current` models and gold analytical models materialize as Iceberg
+through Spark/dbt. The `smoke_iceberg` model remains a harmless catalog
 connectivity check.
 
 ```text
 make spark-up
-make lakehouse-prepare-permits-fixture
+make lakehouse-prepare-fixtures
     → destructive MinIO reset
-    → raw permits fixture NDJSON in MinIO
+    → raw fixture NDJSON for permits, evictions, incidents in MinIO
     → bronze Parquet promotion + Spark catalog refresh
 
+make dbt-lakehouse-gold
+    → bronze_* (ephemeral) + silver/gold Iceberg tables
+
 make dbt-lakehouse-permits
-    → stg_bronze_permits (ephemeral) + permits_current Iceberg table
+    → bronze_permits (ephemeral) + permits_current Iceberg table
 
 make dbt-lakehouse-smoke
     → dbt-spark → Thrift → smoke_iceberg Iceberg table

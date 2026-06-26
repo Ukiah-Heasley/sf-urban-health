@@ -20,9 +20,13 @@ models:
       +tags: [smoke]
       +materialized: table
       +file_format: iceberg
-    staging:
+    bronze:
       +tags: [lakehouse, bronze]
     silver:
       +tags: [lakehouse, silver]
+      +materialized: table
+      +file_format: iceberg
+    gold:
+      +tags: [lakehouse, gold]
       +materialized: table
       +file_format: iceberg

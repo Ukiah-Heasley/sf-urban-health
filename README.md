@@ -129,10 +129,12 @@ make docs-check        # documentation consistency checks
 
 make spark-up          # local MinIO + Spark Thrift Server
 make spark-down
-make lakehouse-prepare-permits-fixture  # destructive: reset MinIO, seed permits fixture, promote bronze
+make lakehouse-prepare-fixtures       # destructive: reset MinIO, seed all fixtures, promote bronze
+make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
 make dbt-lakehouse-debug
 make dbt-lakehouse-smoke
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
+make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg models
 
 make airflow-up        # sync dbt mirror, then start Astro Airflow
 make airflow-down
@@ -163,36 +165,47 @@ the local bucket.
 
 ```bash
 make spark-up
-make lakehouse-prepare-permits-fixture  # destructive local-only reset + bronze fixture
+make lakehouse-prepare-fixtures         # destructive local-only reset + bronze fixtures (all datasets)
 make dbt-lakehouse-debug
 make dbt-lakehouse-permits
+make dbt-lakehouse-gold
 make dbt-lakehouse-smoke
 make spark-down
 ```
 
-`lakehouse-prepare-permits-fixture` deletes every object in the local
-`lakehouse` MinIO bucket, seeds `tests/fixtures/lakehouse/permits.ndjson` as raw
-NDJSON under the production interval key shape, writes the ingest metadata event,
-promotes bronze Parquet through the existing Python promotion code, and restarts
-Spark Thrift so catalog namespaces are rebuilt after the bucket wipe. dbt reads
-bronze through the ephemeral dbt staging model `stg_bronze_permits` over MinIO Parquet.
-This target is local-only and requires `make spark-up`.
+`lakehouse-prepare-fixtures` deletes every object in the local `lakehouse` MinIO
+bucket, seeds `tests/fixtures/lakehouse/{permits,evictions,incidents}.ndjson` as
+raw NDJSON under the production interval key shape, writes ingest metadata events,
+promotes bronze Parquet for all three datasets through the existing Python
+promotion code, and restarts Spark Thrift so catalog namespaces are rebuilt after
+the bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
+dbt reads bronze through ephemeral `bronze_*` models over MinIO Parquet. This
+target is local-only and requires `make spark-up`.
+
+The dbt project uses medallion folder names (`bronze/`, `silver/`, `gold/`) and
+does not mix `staging/`, `intermediate/`, or `mart_*` model names in the
+lakehouse path. Gold tables are business-facing analytical relations; the `gold`
+layer carries that meaning without a `mart_` prefix.
 
 `dbt/profiles.yml` connects to Spark Thrift on `localhost:10000` by default.
 `SPARK_THRIFT_PORT` in `lakehouse/.env` sets the host port exposed by Compose; the
 container always listens on port `10000`. Override `DBT_SPARK_HOST`, `DBT_SPARK_PORT`
 (to match `SPARK_THRIFT_PORT`), and `DBT_SPARK_SCHEMA` when needed.
 The `lakehouse` uv dependency group installs `dbt-core` and `dbt-spark`. Bronze
-remains Parquet in MinIO. dbt materializes `permits_current` as a silver Iceberg
-table from bronze through Spark Thrift. The `smoke_iceberg` model is tagged
+remains Parquet in MinIO. dbt materializes silver and gold models as Iceberg
+catalog tables through Spark Thrift. Silver current models deduplicate bronze by
+natural key; gold models aggregate silver for housing production, permit
+pipeline, evictions, and public safety. The `smoke_iceberg` model is tagged
 `smoke` and remains a harmless Iceberg connectivity check.
 
 ## Lakehouse contracts
 
 Lakehouse table contracts live under `contracts/lakehouse/` and are validated by
 `airflow/include/scripts/lakehouse_contracts.py`. Bronze promotion lives in
-`airflow/include/scripts/lakehouse_load.py`. Silver `permits_current` is an
-Iceberg catalog relation contract. Immutable metadata events and compaction live
+`airflow/include/scripts/lakehouse_load.py`. Silver and gold lakehouse models
+(`permits_current`, `evictions_current`, `incidents_current`, `housing_production`,
+`permit_pipeline`, `evictions`, `public_safety`) are Iceberg catalog relation
+contracts. Immutable metadata events and compaction live
 in `airflow/include/scripts/lakehouse_metadata.py`.
 
 ## Dashboards

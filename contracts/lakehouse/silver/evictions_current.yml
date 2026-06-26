@@ -4,12 +4,14 @@ name: evictions_current
 owner: analytics-engineering
 description: >-
   Latest typed eviction notice per eviction_id, deduplicated from bronze using
-  _loaded_at descending order.
+  _loaded_at descending order. Materialized as an Iceberg table in the Spark
+  catalog for local lakehouse development.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: evictions_current
 grain:
   - eviction_id
-path_template: lake/parquet/silver/evictions_current/build_id={build_id}/
-partition_columns:
-  - build_id
+partition_columns: []
 columns:
   - name: eviction_id
     type: string
@@ -125,6 +127,14 @@ quality:
       type: unique
       columns:
         - eviction_id
+    - name: not_null_eviction_id
+      type: not_null
+      columns:
+        - eviction_id
+    - name: not_null_loaded_at
+      type: not_null
+      columns:
+        - _loaded_at
 compatibility:
   additive: true
   version_policy: semver

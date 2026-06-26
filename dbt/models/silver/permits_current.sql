@@ -1,5 +1,5 @@
 with bronze as (
-    select * from {{ ref('stg_bronze_permits') }}
+    select * from {{ ref('bronze_permits') }}
 ),
 
 ranked as (

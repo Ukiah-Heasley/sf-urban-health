@@ -19,9 +19,9 @@ same interval overwrites the same key.
 The repository defines YAML contracts under `contracts/lakehouse/` for bronze
 Parquet layouts and silver/gold relation semantics. Parquet contracts declare
 grain, partition columns, column types, quality checks, and an S3 path template
-under `lake/parquet/{layer}/{name}/`. Iceberg silver contracts such as
-`permits_current` declare `table_format: iceberg` plus Spark catalog schema/name
-instead of a Parquet path template.
+under `lake/parquet/{layer}/{name}/`. Iceberg silver and gold contracts declare
+`table_format: iceberg` plus Spark catalog schema/name instead of a Parquet path
+template.
 
 `airflow/include/scripts/lakehouse_contracts.py` loads and validates those
 contracts. `airflow/include/scripts/lakehouse_load.py` promotes raw NDJSON into
@@ -35,7 +35,8 @@ contracts require shared lineage metadata columns (`_ingest_run_id`,
 `_raw_s3_path`, `_raw_s3_key`, `_data_interval_start`, `_data_interval_end`,
 `_effective_start`, `_loaded_at`, `_extracted_at`, `_source_dataset_id`,
 `_record_hash`, `_raw_payload`) plus the dataset natural key. Gold contract
-grains describe the analytical marts the lakehouse path is designed to support.
+grains describe the business-facing analytical tables the lakehouse path
+materializes in the `gold/` dbt layer.
 
 | Bronze table | Natural key | Partition columns |
 | --- | --- | --- |
@@ -68,29 +69,51 @@ fresh metadata Parquet under `lake/parquet/metadata/`. Metadata export files are
 not self-manifested. DuckDB is used only inside that single compaction task as
 an in-memory engine.
 
-## Local silver development (dbt + Spark + Iceberg)
+## Medallion naming (dbt + contracts)
+
+The lakehouse dbt project uses medallion vocabulary consistently:
+
+| Layer | Role | dbt folder | Examples |
+| --- | --- | --- | --- |
+| Bronze | Source-faithful records plus lineage (Python promotion; dbt read adapters) | `dbt/models/bronze/` | `bronze_permits`, `bronze_evictions`, `bronze_incidents` |
+| Silver | Cleaned, validated, deduped entity tables (Iceberg) | `dbt/models/silver/` | `permits_current`, `evictions_current`, `incidents_current` |
+| Gold | Business-facing analytical tables (Iceberg) | `dbt/models/gold/` | `housing_production`, `permit_pipeline`, `evictions`, `public_safety` |
+
+Do not mix dbt `staging/`, `intermediate/`, `stg_*`, `int_*`, or `mart_*`
+model names with this lakehouse slice. Gold tables do not use a `mart_` prefix
+because the `gold` layer already denotes business-facing marts.
+
+## Local lakehouse development (dbt + Spark + Iceberg)
 
 The `lakehouse/` Compose stack provides MinIO, deterministic bucket creation,
 and Spark Thrift Server with pinned Iceberg and S3A dependencies. dbt connects
 through `dbt/profiles.yml`.
 
-Local fixture preparation (`make lakehouse-prepare-permits-fixture`) is
-destructive to the local MinIO bucket. It seeds
-`tests/fixtures/lakehouse/permits.ndjson` as raw NDJSON under
-`raw/permits/data_interval_start=20240315T060000Z/data_interval_end=20240316T060000Z/records.ndjson`,
-writes the ingest metadata event, promotes bronze Parquet to
-`lake/parquet/bronze/permits/.../records.parquet`, and restarts Spark Thrift so
-catalog namespaces are rebuilt after the bucket wipe.
+Local fixture preparation (`make lakehouse-prepare-fixtures`) is destructive to
+the local MinIO bucket. It seeds
+`tests/fixtures/lakehouse/{permits,evictions,incidents}.ndjson` as raw NDJSON
+under production-shaped interval keys, writes ingest metadata events, promotes
+bronze Parquet for all three datasets, and restarts Spark Thrift after the
+bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
 
-`stg_bronze_permits` is an ephemeral dbt staging model over the bronze Parquet
-prefix in MinIO. It is inlined into `permits_current` because the Iceberg
-catalog does not support persisted views.
-`permits_current` reads that staging relation, deduplicates to one latest row per `permit_number`
-using `_loaded_at desc` with deterministic tie-breakers, derives
+`bronze_*` models are ephemeral dbt read adapters over bronze Parquet prefixes
+in MinIO. They are inlined into downstream models because the Iceberg catalog
+does not support persisted views.
+
+Silver `*_current` models deduplicate bronze to one latest row per natural key
+using `_loaded_at desc` with deterministic tie-breakers (`_extracted_at`,
+`_data_interval_end`, `_record_hash`). `permits_current` derives
 `current_status = lower(status)` and `completed_at` from `status_date` when
-status is complete, filters only null `permit_number`, and materializes as an
-Iceberg table in `sf_urban_health`. The `smoke_iceberg` model remains a harmless
-local connectivity check and does not read bronze.
+status is complete. `evictions_current` coerces nullable boolean cause flags to
+false and derives `eviction_type` as `no_fault` when any no-fault flag is true,
+otherwise `at_fault`. All three silver models materialize as Iceberg tables in
+`sf_urban_health`.
+
+Gold models aggregate silver for monthly housing production, in-flight permit
+pipeline snapshots, monthly eviction counts, and monthly public-safety incident
+counts. They materialize as Iceberg tables in `sf_urban_health`. The
+`smoke_iceberg` model remains a harmless local connectivity check and does not
+read bronze.
 
 ## Consumer snapshot shapes
 
@@ -100,6 +123,10 @@ tables:
 - `mart_housing_production`
 - `mart_pipeline_health`
 - `mart_data_trust`
+
+These snapshot names predate the lakehouse gold rename and remain committed
+sample data for the static Evidence build. Dash and Evidence are not wired to
+live Spark/Iceberg gold tables.
 
 `reports/scripts/make_sample_data.py` regenerates deterministic sample rows with
 the same column shapes so the static site builds without a warehouse.

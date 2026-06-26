@@ -1,19 +1,19 @@
 version: 1
 layer: gold
-name: mart_public_safety
+name: public_safety
 owner: analytics-engineering
 description: >-
-  Monthly incident counts by neighborhood, district, and category, aligned with
-  the current mart_public_safety grain.
+  Monthly incident counts by neighborhood, district, and category.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: public_safety
 grain:
   - incident_month
   - neighborhood
   - supervisor_district
   - police_district
   - incident_category
-path_template: lake/parquet/gold/mart_public_safety/build_date={build_date}/
-partition_columns:
-  - build_date
+partition_columns: []
 columns:
   - name: incident_month
     type: date

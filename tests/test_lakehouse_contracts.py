@@ -197,17 +197,18 @@ def _invalid_contract(name: str) -> str:
         """
         version: 1
         layer: gold
-        name: mart_housing_production
+        name: housing_production
         owner: analytics-engineering
         description: sample gold contract
+        table_format: iceberg
+        catalog_schema: sf_urban_health
+        catalog_name: housing_production
         grain:
           - filed_month
           - neighborhood
           - supervisor_district
           - use_transition
-        path_template: lake/parquet/gold/mart_housing_production/build_date={build_date}/
-        partition_columns:
-          - build_date
+        partition_columns: []
         columns:
           - name: filed_month
             type: date

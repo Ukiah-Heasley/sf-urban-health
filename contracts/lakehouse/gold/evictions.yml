@@ -1,18 +1,19 @@
 version: 1
 layer: gold
-name: mart_evictions
+name: evictions
 owner: analytics-engineering
 description: >-
   Monthly eviction notice counts by neighborhood, supervisor district, and
-  eviction type, aligned with the current mart_evictions grain.
+  eviction type.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: evictions
 grain:
   - filed_month
   - neighborhood
   - supervisor_district
   - eviction_type
-path_template: lake/parquet/gold/mart_evictions/build_date={build_date}/
-partition_columns:
-  - build_date
+partition_columns: []
 columns:
   - name: filed_month
     type: date
