@@ -14,6 +14,8 @@ make spark-up            # local MinIO + Spark Thrift Server
 make spark-down
 make dbt-lakehouse-debug
 make dbt-lakehouse-smoke
+make lakehouse-prepare-permits-fixture  # destructive local MinIO reset + permits fixture
+make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dashboard-dev       # http://localhost:8050
 make dashboard-docker
 make lint
@@ -36,6 +38,7 @@ ingest assets -> transform_lakehouse -> bronze Parquet + metadata events
   -> compact metadata Parquet -> lakehouse transform asset (when planned)
 
 lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg
+  -> fixture prep -> bronze Parquet in MinIO -> dbt permits_current silver Iceberg
   -> dbt smoke Iceberg model (local dev only)
 
 Plotly Dash and Evidence remain consumer shells over empty frames or committed
@@ -79,8 +82,10 @@ all three ingest assets.
 
 - `dbt/` is canonical; never edit the generated `airflow/include/dbt/` mirror.
 - Local lakehouse dev uses the `lakehouse` uv group (`dbt-core`, `dbt-spark`).
-- `smoke_iceberg` is the harmless Iceberg proof model; domain silver models are
-  added after the local foundation works.
+- `smoke_iceberg` is the harmless Iceberg proof model.
+- `permits_current` is the first domain silver Iceberg model; it reads bronze
+  permits through the ephemeral dbt staging model `stg_bronze_permits` over
+  MinIO Parquet.
 
 ## Airflow import boundary
 

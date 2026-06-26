@@ -26,7 +26,7 @@ _DATASETS = {
     "permits": {
         "dataset_id": "i98e-djp9",
         "fixture": "permits.ndjson",
-        "records": 2,
+        "records": 5,
     },
     "evictions": {
         "dataset_id": "5cei-gny5",

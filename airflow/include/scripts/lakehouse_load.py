@@ -457,6 +457,46 @@ def hash_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def s3_endpoint_url() -> str | None:
+    """Return a custom S3 endpoint when configured for local MinIO or other S3-compatible stores."""
+    return os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT_URL") or None
+
+
+def local_minio_host() -> str:
+    return os.environ.get("MINIO_HOST", "localhost")
+
+
+def local_minio_api_port() -> int:
+    return int(os.environ.get("MINIO_API_PORT", "9000"))
+
+
+def local_minio_endpoint_url() -> str:
+    """Resolve the local MinIO API endpoint from env, honoring explicit S3 overrides first."""
+    explicit = s3_endpoint_url()
+    if explicit:
+        return explicit
+    return f"http://{local_minio_host()}:{local_minio_api_port()}"
+
+
+def build_s3_client(
+    *,
+    endpoint_url: str | None = None,
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+) -> Any:
+    import boto3
+
+    kwargs: dict[str, Any] = {}
+    resolved_endpoint = endpoint_url if endpoint_url is not None else s3_endpoint_url()
+    if resolved_endpoint:
+        kwargs["endpoint_url"] = resolved_endpoint
+    if aws_access_key_id is not None:
+        kwargs["aws_access_key_id"] = aws_access_key_id
+    if aws_secret_access_key is not None:
+        kwargs["aws_secret_access_key"] = aws_secret_access_key
+    return boto3.client("s3", **kwargs)
+
+
 def storage_from_env() -> StorageConfig:
     local_root = os.environ.get("LAKE_LOCAL_ROOT")
     if local_root:
@@ -464,9 +504,29 @@ def storage_from_env() -> StorageConfig:
     bucket = os.environ.get("AWS_S3_BUCKET")
     if not bucket:
         raise RuntimeError("AWS_S3_BUCKET or LAKE_LOCAL_ROOT must be set")
-    import boto3
+    return StorageConfig(bucket=bucket, local_root=None, s3_client=build_s3_client())
 
-    return StorageConfig(bucket=bucket, local_root=None, s3_client=boto3.client("s3"))
+
+def storage_from_lakehouse_env() -> StorageConfig:
+    """Build an S3-compatible client for the local MinIO lakehouse sandbox."""
+    bucket = os.environ.get("LAKEHOUSE_BUCKET", "lakehouse")
+    access_key = os.environ.get(
+        "MINIO_ROOT_USER",
+        os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
+    )
+    secret_key = os.environ.get(
+        "MINIO_ROOT_PASSWORD",
+        os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin"),
+    )
+    return StorageConfig(
+        bucket=bucket,
+        local_root=None,
+        s3_client=build_s3_client(
+            endpoint_url=local_minio_endpoint_url(),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        ),
+    )
 
 
 def _write_bronze_batches(

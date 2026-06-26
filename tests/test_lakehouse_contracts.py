@@ -75,6 +75,19 @@ def test_get_contract_returns_single_table(contract_root: Path) -> None:
     contract = lc.get_contract("silver", "permits_current", contract_root)
     assert contract.name == "permits_current"
     assert contract.layer == "silver"
+    assert contract.table_format == "iceberg"
+    assert contract.catalog_relation == "sf_urban_health.permits_current"
+    assert contract.path_template == ""
+
+
+def test_permits_current_contract_nullable_lifecycle_fields(contract_root: Path) -> None:
+    contract = lc.get_contract("silver", "permits_current", contract_root)
+    by_name = {column.name: column for column in contract.columns}
+    assert by_name["current_status"].nullable is True
+    assert by_name["filed_at"].nullable is True
+    assert by_name["completed_at"].nullable is True
+    assert by_name["permit_number"].nullable is False
+    assert by_name["_loaded_at"].nullable is False
 
 
 def test_bronze_and_gold_helpers(contract_root: Path) -> None:

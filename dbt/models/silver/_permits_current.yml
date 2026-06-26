@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: permits_current
+    description: >
+      Latest typed permit record per permit_number, deduplicated from bronze
+      using _loaded_at descending order with deterministic tie-breakers.
+    columns:
+      - name: permit_number
+        description: DBI-issued permit identifier. Grain of this model.
+        tests:
+          - not_null
+          - unique
+      - name: current_status
+        description: Latest DBI lifecycle status (lowercased).
+      - name: filed_at
+        description: Timestamp the permit application was filed.
+      - name: completed_at
+        description: Derived from status_date when current_status is complete.
+      - name: _loaded_at
+        description: Latest source data_loaded_at used for deduplication.
+        tests:
+          - not_null

@@ -91,19 +91,29 @@ Local development runs MinIO and a repo-built Spark Thrift Server from
 `lakehouse/docker-compose.yml`. Spark is configured with Iceberg and S3A so
 warehouse data is stored under `s3a://lakehouse/warehouse/` in the local bucket.
 `dbt/profiles.yml` connects to Spark Thrift with the `lakehouse` uv dependency
-group. The `smoke_iceberg` model is tagged `smoke` and materializes a harmless
-Iceberg table to prove the path.
+group. Bronze remains Parquet in MinIO.
+
+Local fixture preparation uses `make lakehouse-prepare-permits-fixture`, which
+destructively resets the local MinIO bucket, seeds fixture raw NDJSON, promotes
+bronze Parquet through the existing Python promotion code, and restarts Spark
+Thrift so catalog namespaces are rebuilt. dbt reads bronze through
+`stg_bronze_permits`, an ephemeral staging model over MinIO Parquet. `permits_current` materializes
+as silver Iceberg through Spark/dbt. The `smoke_iceberg` model remains a harmless catalog
+connectivity check.
 
 ```text
 make spark-up
-    → MinIO + bucket init + Spark Thrift Server (Iceberg catalog on S3A)
+make lakehouse-prepare-permits-fixture
+    → destructive MinIO reset
+    → raw permits fixture NDJSON in MinIO
+    → bronze Parquet promotion + Spark catalog refresh
+
+make dbt-lakehouse-permits
+    → stg_bronze_permits (ephemeral) + permits_current Iceberg table
 
 make dbt-lakehouse-smoke
-    → dbt-spark → Thrift → Iceberg table in MinIO warehouse
+    → dbt-spark → Thrift → smoke_iceberg Iceberg table
 ```
-
-Bronze promotion remains Parquet in S3 and is not exposed through this local
-Spark stack.
 
 ## Consumers
 

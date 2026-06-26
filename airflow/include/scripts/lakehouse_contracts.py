@@ -160,11 +160,20 @@ class TableContract:
     quality: QualityContract
     compatibility: CompatibilityContract
     natural_key: tuple[str, ...] = ()
+    table_format: str = "parquet"
+    catalog_schema: str | None = None
+    catalog_name: str | None = None
     source_path: Path | None = None
 
     @property
     def column_names(self) -> frozenset[str]:
         return frozenset(column.name for column in self.columns)
+
+    @property
+    def catalog_relation(self) -> str | None:
+        if self.catalog_schema and self.catalog_name:
+            return f"{self.catalog_schema}.{self.catalog_name}"
+        return None
 
 
 @dataclass
@@ -237,6 +246,7 @@ def _parse_column(raw: Any, *, source: str) -> ColumnContract:
 
 
 def _parse_contract(raw: Mapping[str, Any], *, source: Path) -> TableContract:
+    table_format = str(raw.get("table_format", "parquet"))
     required = (
         "version",
         "layer",
@@ -244,12 +254,13 @@ def _parse_contract(raw: Mapping[str, Any], *, source: Path) -> TableContract:
         "owner",
         "description",
         "grain",
-        "path_template",
         "partition_columns",
         "columns",
         "quality",
         "compatibility",
     )
+    if table_format != "iceberg":
+        required = (*required, "path_template")
     missing = [key for key in required if key not in raw]
     if missing:
         raise ContractValidationError(
@@ -290,7 +301,7 @@ def _parse_contract(raw: Mapping[str, Any], *, source: Path) -> TableContract:
         owner=str(raw["owner"]),
         description=str(raw["description"]),
         grain=tuple(str(value) for value in grain),
-        path_template=str(raw["path_template"]),
+        path_template=str(raw.get("path_template", "")),
         partition_columns=tuple(str(value) for value in partition_columns),
         columns=columns,
         quality=QualityContract(
@@ -314,6 +325,9 @@ def _parse_contract(raw: Mapping[str, Any], *, source: Path) -> TableContract:
             version_policy=str(compatibility_raw.get("version_policy", "semver")),
         ),
         natural_key=tuple(str(value) for value in natural_key_raw),
+        table_format=table_format,
+        catalog_schema=str(raw["catalog_schema"]) if raw.get("catalog_schema") else None,
+        catalog_name=str(raw["catalog_name"]) if raw.get("catalog_name") else None,
         source_path=source,
     )
 
@@ -323,6 +337,8 @@ def _scan_contract_paths(root: Path) -> list[Path]:
 
 
 def _assert_path_template(contract: TableContract) -> None:
+    if contract.table_format == "iceberg":
+        return
     normalized = contract.path_template if contract.path_template.startswith("/") else f"/{contract.path_template}"
     match = PATH_LAYER_NAME_RE.search(normalized.replace("\\", "/"))
     if match is None:
@@ -335,6 +351,20 @@ def _assert_path_template(contract: TableContract) -> None:
             f"{contract.source_path}: path_template layer/name "
             f"({match.group('layer')}/{match.group('name')}) "
             f"does not match contract ({contract.layer}/{contract.name})"
+        )
+
+
+def _assert_iceberg_catalog(contract: TableContract) -> None:
+    if contract.table_format != "iceberg":
+        return
+    if not contract.catalog_schema or not contract.catalog_name:
+        raise ContractValidationError(
+            f"{contract.source_path}: iceberg contracts require catalog_schema and catalog_name"
+        )
+    if contract.catalog_name != contract.name:
+        raise ContractValidationError(
+            f"{contract.source_path}: catalog_name must match contract name "
+            f"({contract.catalog_name!r} != {contract.name!r})"
         )
 
 
@@ -405,6 +435,7 @@ def validate_contract(contract: TableContract) -> None:
             f"{contract.source_path}: duplicate column names are not allowed"
         )
     _assert_path_template(contract)
+    _assert_iceberg_catalog(contract)
     if contract.layer == "bronze":
         _assert_bronze_metadata(contract)
         _assert_bronze_natural_key(contract)
@@ -509,6 +540,9 @@ def contracts_as_dicts(registry: ContractRegistry) -> list[dict[str, Any]]:
                 "owner": contract.owner,
                 "grain": list(contract.grain),
                 "path_template": contract.path_template,
+                "table_format": contract.table_format,
+                "catalog_schema": contract.catalog_schema,
+                "catalog_name": contract.catalog_name,
                 "natural_key": list(contract.natural_key),
                 "columns": [
                     {

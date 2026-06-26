@@ -4,12 +4,14 @@ name: permits_current
 owner: analytics-engineering
 description: >-
   Latest typed permit record per permit_number, deduplicated from bronze using
-  _loaded_at descending order.
+  _loaded_at descending order. Materialized as an Iceberg table in the Spark
+  catalog for local lakehouse development.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: permits_current
 grain:
   - permit_number
-path_template: lake/parquet/silver/permits_current/build_id={build_id}/
-partition_columns:
-  - build_id
+partition_columns: []
 columns:
   - name: permit_number
     type: string
@@ -25,11 +27,11 @@ columns:
     description: Human-readable permit type definition.
   - name: current_status
     type: string
-    nullable: false
+    nullable: true
     description: Latest DBI lifecycle status (lowercased).
   - name: filed_at
     type: timestamp
-    nullable: false
+    nullable: true
     description: Timestamp the permit application was filed.
   - name: issued_at
     type: timestamp
@@ -38,7 +40,9 @@ columns:
   - name: completed_at
     type: timestamp
     nullable: true
-    description: Timestamp the permit reached complete status.
+    description: >-
+      Derived from status_date when lower(current_status) = 'complete';
+      otherwise null.
   - name: current_status_at
     type: timestamp
     nullable: true
@@ -121,6 +125,10 @@ quality:
       type: not_null
       columns:
         - permit_number
+    - name: not_null_loaded_at
+      type: not_null
+      columns:
+        - _loaded_at
 compatibility:
   additive: true
   version_policy: semver

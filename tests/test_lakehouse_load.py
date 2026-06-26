@@ -264,7 +264,6 @@ def test_typed_mappings_for_datasets(
         assert row["status"] == "issued"
         assert row["_extracted_at"] == _COMPLETED_AT
 
-
 def test_required_bronze_metadata_columns(contract_root: Path, storage: StorageConfig) -> None:
     contract = lc.get_contract("bronze", "permits", contract_root)
     raw_path, raw_key, _ = _seed_raw(storage, "permits", "permits.ndjson")
@@ -499,7 +498,7 @@ def test_row_count_mismatch_fails_without_manifest_event(
         dag_id="ingest_permits",
         dataset_name="permits",
     )
-    with pytest.raises(LakehouseLoadError, match="promoted 2 rows but expected 3"):
+    with pytest.raises(LakehouseLoadError, match="promoted 5 rows but expected 3"):
         promote_raw_to_bronze(
             dataset_name="permits",
             dataset_id="i98e-djp9",
@@ -618,7 +617,7 @@ def test_promotion_batches_without_full_interval_accumulation(
         contract_root=contract_root,
         batch_size=1,
     )
-    assert writer_calls == [1, 1]
+    assert writer_calls == [1, 1, 1, 1, 1]
     assert sum(writer_calls) == records
 
 
@@ -823,7 +822,7 @@ def test_storage_streams_raw_reads(storage: StorageConfig, monkeypatch: pytest.M
     monkeypatch.setattr(Path, "open", _tracked_open)
     lines = list(storage.read_text_lines(raw_key))
     assert read_calls == ["opened"]
-    assert len(lines) == 2
+    assert len(lines) == 5
 
 
 def test_storage_write_file_uploads_local_copy(storage: StorageConfig, tmp_path: Path) -> None:
@@ -904,7 +903,7 @@ def test_promotion_uses_selected_ingest_event_key(
         contract_root=contract_root,
     )
     assert result.bronze_path is not None
-    assert result.records_promoted == 2
+    assert result.records_promoted == 5
 
 
 def _write_ingest_event_with_completed_at(

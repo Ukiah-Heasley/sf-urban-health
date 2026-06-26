@@ -1,0 +1,9 @@
+version: 2
+
+models:
+  - name: stg_bronze_permits
+    description: >
+      Ephemeral staging relation over typed permits bronze Parquet in MinIO.
+      Inlined into downstream silver models because the Iceberg catalog does not
+      support persisted views. Requires fixture bronze data from
+      `make lakehouse-prepare-permits-fixture`.

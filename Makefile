@@ -10,6 +10,8 @@ help:
 	@echo "  make spark-down     Stop local lakehouse Docker stack"
 	@echo "  make dbt-lakehouse-debug  Verify dbt Spark profile against Thrift Server"
 	@echo "  make dbt-lakehouse-smoke  Run dbt smoke Iceberg model (requires spark-up)"
+	@echo "  make lakehouse-prepare-permits-fixture  DESTRUCTIVE: reset local MinIO sandbox, seed permits fixture, promote bronze (requires spark-up)"
+	@echo "  make dbt-lakehouse-permits  Build and test permits_current silver Iceberg model (requires spark-up + fixture prep)"
 	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
 	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
@@ -28,6 +30,15 @@ LAKEHOUSE_ENV_EXAMPLE := $(LAKEHOUSE_DIR)/.env.example
 ifneq (,$(wildcard $(ENV_FILE)))
 include $(ENV_FILE)
 export
+endif
+
+ifneq (,$(wildcard $(LAKEHOUSE_ENV)))
+include $(LAKEHOUSE_ENV)
+export
+endif
+
+ifndef DBT_SPARK_PORT
+export DBT_SPARK_PORT := $(if $(SPARK_THRIFT_PORT),$(SPARK_THRIFT_PORT),10000)
 endif
 
 .DEFAULT_GOAL := help
@@ -91,6 +102,14 @@ pre-commit:
 test:
 	uv run --group dev pytest
 
+.PHONY: lakehouse-prepare-permits-fixture
+lakehouse-prepare-permits-fixture: $(LAKEHOUSE_ENV)
+	PYTHONPATH=airflow/include uv run --group lakehouse python airflow/include/scripts/lakehouse_fixture_prepare.py
+
+.PHONY: dbt-lakehouse-permits
+dbt-lakehouse-permits: $(LAKEHOUSE_ENV)
+	cd $(DBT_DIR) && uv run --group lakehouse dbt build --select +permits_current --profiles-dir .
+
 .PHONY: lakehouse-smoke
 lakehouse-smoke:
 	PYTHONPATH=airflow/include uv run python airflow/include/scripts/lakehouse_smoke.py
@@ -112,9 +131,9 @@ spark-down:
 	fi
 
 .PHONY: dbt-lakehouse-debug
-dbt-lakehouse-debug:
+dbt-lakehouse-debug: $(LAKEHOUSE_ENV)
 	cd $(DBT_DIR) && uv run --group lakehouse dbt debug --profiles-dir .
 
 .PHONY: dbt-lakehouse-smoke
-dbt-lakehouse-smoke:
+dbt-lakehouse-smoke: $(LAKEHOUSE_ENV)
 	cd $(DBT_DIR) && uv run --group lakehouse dbt run --select tag:smoke --profiles-dir .

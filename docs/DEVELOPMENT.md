@@ -24,10 +24,13 @@ for local lakehouse smoke tests without AWS. `transform_lakehouse` reads
 `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
 S3 JSON ingest metadata events.
 
-`lakehouse/.env` configures local MinIO and Spark Thrift host ports. `make spark-up`
-creates it from `lakehouse/.env.example` when missing. Spark Thrift always listens
-on container port `10000`; `SPARK_THRIFT_PORT` selects the host port mapped by
-Compose. dbt reads `DBT_SPARK_HOST`, `DBT_SPARK_PORT` (match `SPARK_THRIFT_PORT`),
+`lakehouse/.env` configures local MinIO and Spark Thrift host ports. The root
+Makefile loads it for `spark-up`, fixture prep, and lakehouse dbt targets.
+`make spark-up` creates the file from `lakehouse/.env.example` when missing.
+Spark Thrift always listens on container port `10000`; `SPARK_THRIFT_PORT` selects
+the host port mapped by Compose. When `DBT_SPARK_PORT` is unset, the Makefile
+exports it from `SPARK_THRIFT_PORT`, or `10000` when that is also unset. dbt also
+reads `DBT_SPARK_HOST`,
 `DBT_SPARK_USER`, and `DBT_SPARK_SCHEMA` from the environment. The checked-in
 profile uses `auth: NOSASL` to match the local Thrift Server configuration.
 
@@ -39,6 +42,8 @@ profile uses `auth: NOSASL` to match the local Thrift Server configuration.
 | Extract permits to raw S3 | `make ingest` |
 | Run Python tests | `make test` |
 | Promote fixture NDJSON locally | `make lakehouse-smoke` |
+| Reset local MinIO and seed permits fixture to bronze | `make lakehouse-prepare-permits-fixture` (destructive; requires `spark-up`) |
+| Build/test permits silver Iceberg model | `make dbt-lakehouse-permits` |
 | Start local MinIO + Spark Thrift | `make spark-up` |
 | Stop local lakehouse stack | `make spark-down` |
 | Verify dbt Spark profile | `make dbt-lakehouse-debug` |
@@ -93,6 +98,12 @@ gitignored, and replaced by `make sync-dbt`.
 
 Local silver development uses the `lakehouse` uv dependency group (`dbt-core`,
 `dbt-spark`). Start the Compose stack with `make spark-up`, then run
-`make dbt-lakehouse-debug` or `make dbt-lakehouse-smoke`. The smoke model is
-tagged `smoke`, materializes as Iceberg, and stores warehouse data in the local
-MinIO bucket through Spark S3A.
+`make lakehouse-prepare-permits-fixture` to reset the local MinIO sandbox and
+promote fixture permits bronze Parquet. That target deletes every object in the
+local `lakehouse` bucket before reseeding fixture data and restarting Spark
+Thrift so catalog namespaces are rebuilt. Run
+`make dbt-lakehouse-debug`, `make dbt-lakehouse-permits`, or
+`make dbt-lakehouse-smoke` as needed. Bronze remains Parquet in MinIO.
+`permits_current` materializes as silver Iceberg through Spark/dbt. The smoke
+model is tagged `smoke`, materializes as Iceberg, and stores warehouse data in
+the local MinIO bucket through Spark S3A without reading bronze.

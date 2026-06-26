@@ -16,10 +16,12 @@ same interval overwrites the same key.
 
 ## Lakehouse contract registry
 
-The repository defines YAML contracts under `contracts/lakehouse/` for parquet
-table layouts in bronze, silver, gold, and metadata layers. Each contract
-declares grain, partition columns, column types, quality checks, and an S3 path
-template under `lake/parquet/{layer}/{name}/`.
+The repository defines YAML contracts under `contracts/lakehouse/` for bronze
+Parquet layouts and silver/gold relation semantics. Parquet contracts declare
+grain, partition columns, column types, quality checks, and an S3 path template
+under `lake/parquet/{layer}/{name}/`. Iceberg silver contracts such as
+`permits_current` declare `table_format: iceberg` plus Spark catalog schema/name
+instead of a Parquet path template.
 
 `airflow/include/scripts/lakehouse_contracts.py` loads and validates those
 contracts. `airflow/include/scripts/lakehouse_load.py` promotes raw NDJSON into
@@ -66,13 +68,29 @@ fresh metadata Parquet under `lake/parquet/metadata/`. Metadata export files are
 not self-manifested. DuckDB is used only inside that single compaction task as
 an in-memory engine.
 
-## Local silver smoke (dbt + Spark + Iceberg)
+## Local silver development (dbt + Spark + Iceberg)
 
 The `lakehouse/` Compose stack provides MinIO, deterministic bucket creation,
 and Spark Thrift Server with pinned Iceberg and S3A dependencies. dbt connects
-through `dbt/profiles.yml` and materializes the `smoke_iceberg` model as an
-Iceberg table in the `sf_urban_health` schema. This path is local-only and does
-not read bronze Parquet.
+through `dbt/profiles.yml`.
+
+Local fixture preparation (`make lakehouse-prepare-permits-fixture`) is
+destructive to the local MinIO bucket. It seeds
+`tests/fixtures/lakehouse/permits.ndjson` as raw NDJSON under
+`raw/permits/data_interval_start=20240315T060000Z/data_interval_end=20240316T060000Z/records.ndjson`,
+writes the ingest metadata event, promotes bronze Parquet to
+`lake/parquet/bronze/permits/.../records.parquet`, and restarts Spark Thrift so
+catalog namespaces are rebuilt after the bucket wipe.
+
+`stg_bronze_permits` is an ephemeral dbt staging model over the bronze Parquet
+prefix in MinIO. It is inlined into `permits_current` because the Iceberg
+catalog does not support persisted views.
+`permits_current` reads that staging relation, deduplicates to one latest row per `permit_number`
+using `_loaded_at desc` with deterministic tie-breakers, derives
+`current_status = lower(status)` and `completed_at` from `status_date` when
+status is complete, filters only null `permit_number`, and materializes as an
+Iceberg table in `sf_urban_health`. The `smoke_iceberg` model remains a harmless
+local connectivity check and does not read bronze.
 
 ## Consumer snapshot shapes
 
