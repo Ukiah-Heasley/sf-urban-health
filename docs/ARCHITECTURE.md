@@ -1,7 +1,7 @@
 # Architecture
 
-The checked-in code has a raw S3 ingestion path, a lakehouse bronze path, and
-retained Snowflake-backed transformation and consumer paths.
+The checked-in runtime is a raw S3 ingestion path, a lakehouse bronze path, and
+retained dashboard/report consumer shells.
 
 ## Raw ingestion
 
@@ -82,51 +82,17 @@ attempt audit events do not. Compacted metadata Parquet reflects the current
 ingest interval grain, is fully rebuilt from JSON on each compaction, and is a
 queryable export, not a planner input.
 
-The retained SQL files under `airflow/include/sql/` are not referenced by the
-current ingest DAG factory. Raw S3 objects are not copied into Snowflake by
-these DAGs.
+## dbt skeleton
 
-## Snowflake transformation path
-
-```text
-permits ingest asset   ─┐
-evictions ingest asset ─┼─> transform_all
-incidents ingest asset ─┘      │
-                               ├─> dbt deps
-Existing Snowflake RAW sources ├─> dbt run --target prod
-                               └─> dbt test --target prod
-```
-
-The dbt project expects `SF_URBAN_HEALTH.RAW` source tables populated outside
-the current raw ingest DAG. It builds:
-
-```text
-RAW sources -> staging views -> intermediate views -> mart tables
-```
-
-`dbt/` is the canonical project. `make sync-dbt` mirrors it into
-`airflow/include/dbt/` for the Astro Docker build.
-
-## Pipeline metadata path
-
-```text
-Airflow REST API
-    -> ingest_pipeline_metadata (07:00 UTC)
-    -> Snowflake METADATA.AIRFLOW_DAG_RUNS / AIRFLOW_TASK_INSTANCES
-    -> dbt observability marts
-```
-
-The collector enriches extract task instances with selected XCom values before
-upserting them. The checked-in collector asks for `max_watermark`, while the
-current extract DAG publishes `max_loaded_at`; the maximum timestamp therefore
-does not currently populate that Snowflake field.
+`dbt/` is a minimal lakehouse-first project skeleton with no active models.
+`make sync-dbt` mirrors it into `airflow/include/dbt/` for the Astro Docker
+build context.
 
 ## Consumers
 
-- Plotly Dash reads Snowflake mart and metadata schemas into Polars frames when
-  the process starts.
-- Evidence reads local Parquet snapshots with DuckDB during its static build.
-  The Pages workflow first attempts a Snowflake-to-Parquet export and otherwise
-  uses the checked-in sample snapshot.
+- Plotly Dash keeps six pages as a consumer shell. Live warehouse loading is
+  disabled; startup cache calls fail closed to empty Polars frames.
+- Evidence reads committed local Parquet snapshots with DuckDB during its static
+  build. The Pages workflow builds from those snapshots only.
 
 These paths are separate processes; neither dashboard is part of an ingest DAG.

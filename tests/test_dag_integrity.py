@@ -17,6 +17,13 @@ pytest.importorskip("airflow.models", reason="airflow not installed; install --g
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DAGS_DIR = _REPO_ROOT / "airflow" / "dags"
 
+_EXPECTED_DAG_IDS = {
+    "ingest_permits",
+    "ingest_evictions",
+    "ingest_incidents",
+    "transform_lakehouse",
+}
+
 
 def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
     """Every DAG file in airflow/dags/ must parse without raising."""
@@ -37,8 +44,8 @@ def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
         pytest.fail(f"DAG import errors:\n{formatted}")
 
     assert dag_bag.dags, "DagBag is empty — no DAGs were discovered"
+    assert set(dag_bag.dags) == _EXPECTED_DAG_IDS
 
-    transform = dag_bag.dags.get("transform_all")
-    assert transform is not None
-    assert [task.task_id for task in transform.tasks] == ["dbt_deps", "dbt_run", "dbt_test"]
-    assert all(task.task_type != "ExternalTaskSensor" for task in transform.tasks)
+    lakehouse = dag_bag.dags["transform_lakehouse"]
+    assert lakehouse.max_active_runs == 1
+    assert "select_lakehouse_interval" in {task.task_id for task in lakehouse.tasks}

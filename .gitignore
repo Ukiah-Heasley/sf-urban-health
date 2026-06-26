@@ -36,3 +36,6 @@ astro
 # Private working notes. Public documentation must describe implemented behavior only.
 /ROADMAP.md
 /learning/
+
+# Local scratch for archived legacy dbt/metadata reference (never commit).
+/tmp/dbt-legacy-reference/

@@ -15,12 +15,7 @@ dependencies = [
 airflow = [
     # Pin matches the Astro Runtime image used in airflow/Dockerfile (Airflow 3.x).
     "apache-airflow==3.0.2",
-    "apache-airflow-providers-snowflake==6.0.0",
     "apache-airflow-providers-amazon==9.1.0",
-]
-dbt = [
-    "dbt-core==1.9.0",
-    "dbt-snowflake==1.9.0",
 ]
 dashboard = [
     "dash==2.18.1",
@@ -28,15 +23,12 @@ dashboard = [
     "plotly==5.24.1",
     "polars==1.12.0",
     "pyarrow==17.0.0",
-    "snowflake-connector-python[pandas]==3.12.3",
     "gunicorn==23.0.0",
 ]
 dev = [
     "pytest==8.3.2",
     "ruff==0.5.6",
     "pre-commit==4.0.1",
-    "sqlfluff==3.2.5",
-    "sqlfluff-templater-dbt==3.2.5",
     "yamllint==1.35.1",
 ]
 

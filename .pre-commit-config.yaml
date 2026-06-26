@@ -2,15 +2,6 @@
 #
 # CI runs the same hooks (`pre-commit run --all-files`) — keep this file as
 # the single source of truth for lint/format scope and args.
-#
-# Stages:
-#   default (runs on `git commit`): fast mechanical checks only.
-#   manual: dbt-parse + dbt-checkpoint conventions — opt-in; warn-only in CI.
-#
-# Performance notes:
-#   - SQLFluff uses the dbt templater (slow); lint-only on commit, no fix hook.
-#     Run `sqlfluff fix dbt/models` locally when you want auto-fixes.
-#   - dbt-checkpoint is manual-only so it never blocks commits or slows CI lint.
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -38,19 +29,6 @@ repos:
     hooks:
       - id: yamllint
 
-  - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.2.5
-    hooks:
-      - id: sqlfluff-lint
-        additional_dependencies:
-          - dbt-core==1.9.0
-          - dbt-snowflake==1.9.0
-          - sqlfluff-templater-dbt==3.2.5
-        files: ^dbt/(models|tests|analyses)/.*\.sql$
-
-  # dbt-parse regenerates target/manifest.json so dbt-checkpoint hooks see
-  # the latest model graph. Uses the project's venv via `language: system`
-  # (activate .venv before running manual hooks locally).
   - repo: local
     hooks:
       - id: docs-check
@@ -59,33 +37,3 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-
-      - id: dbt-parse
-        name: dbt parse (refresh manifest)
-        entry: bash -c 'cd dbt && uv run --group dbt dbt parse --profiles-dir .'
-        language: system
-        pass_filenames: false
-        stages: [manual]
-        always_run: true
-
-  - repo: https://github.com/dbt-checkpoint/dbt-checkpoint
-    rev: v2.0.9
-    hooks:
-      - id: check-model-has-description
-        stages: [manual]
-      - id: check-model-columns-have-desc
-        stages: [manual]
-      - id: check-script-semicolon
-        stages: [manual]
-      - id: check-script-has-no-table-name
-        stages: [manual]
-      - id: check-source-has-description
-        stages: [manual]
-      - id: check-source-columns-have-desc
-        stages: [manual]
-      - id: check-model-has-tests
-        args: [--test-cnt, "1"]
-        stages: [manual]
-      - id: check-model-has-tests-by-type
-        args: [--tests, "schema=1"]
-        stages: [manual]

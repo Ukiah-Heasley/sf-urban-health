@@ -52,10 +52,6 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
-      # Run only the fast default-stage hooks here. dbt-checkpoint hooks live
-      # under stages: [manual] in .pre-commit-config.yaml and are run on demand
-      # via `make pre-commit` locally; they need a compiled dbt manifest, which
-      # we don't compile in this job to keep PR feedback under a minute.
       - name: pre-commit run --all-files
         run: uv run --group dev pre-commit run --all-files --show-diff-on-failure
 
@@ -64,21 +60,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # gitleaks needs the full history to scan rewritten/reverted commits.
           fetch-depth: 0
 
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Free for public repos; remove this var if running against a private fork.
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
   dag-integrity:
-    # Heavier job — installs Airflow + Snowflake/Amazon providers — so it runs
-    # in parallel with the lighter jobs rather than gating them. It runs on
-    # every PR (no path filter): a path-filtered required check stays "pending"
-    # on unrelated PRs and blocks merge, so we accept the extra minute instead.
+    # Installs Airflow + Amazon providers for DAG import tests.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

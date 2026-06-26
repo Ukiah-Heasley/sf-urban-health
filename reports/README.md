@@ -9,16 +9,14 @@ Evidence queries three local Parquet snapshots through DuckDB:
 - `mart_pipeline_health`
 - `mart_data_trust`
 
-The Pages workflow runs `scripts/export_marts.py` before the build. With a
-complete Snowflake environment it replaces the snapshots from current marts.
-Without those credentials the script leaves the committed sample data in place.
+The Pages workflow builds from the committed sample snapshots only.
 
 ## Develop
 
 From the repository root:
 
 ```bash
-uv run --group dashboard python reports/scripts/make_sample_data.py
+uv run python reports/scripts/make_sample_data.py
 
 cd reports
 npm ci
@@ -35,8 +33,7 @@ local build uses `npm run build && npm run preview`.
 reports/
   pages/                         Evidence pages
   sources/sf_urban_health/       DuckDB connection and source queries
-    data/                        committed sample/current Parquet snapshots
-  scripts/export_marts.py        Snowflake mart export
+    data/                        committed sample Parquet snapshots
   scripts/make_sample_data.py    deterministic-shape synthetic data
 ```
 

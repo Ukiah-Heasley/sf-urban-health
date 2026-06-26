@@ -1,16 +1,16 @@
-"""Verify the dashboard package imports cleanly without a live Snowflake.
+"""Verify the dashboard package imports cleanly without a live warehouse.
 
 `dashboard/data/cache.py` wraps each `query_arrow` call in try/except and
 falls back to an empty DataFrame, so module import succeeds even when
-Snowflake credentials are missing — exactly what we want at CI time.
+warehouse credentials are missing — exactly what we want at CI time.
 
 Implementation notes
 --------------------
-* The dashboard pulls in `pyarrow`, `polars`, and `snowflake-connector-python`,
-  whose precompiled wheels can be platform-fragile (e.g. native macOS 26
-  arm64 binaries lag behind the Linux ones). We therefore run the import
-  inside a subprocess so a wheel-level crash surfaces as a test failure
-  rather than killing the entire pytest collection phase.
+* The dashboard pulls in `pyarrow` and `polars`, whose precompiled wheels can
+  be platform-fragile (e.g. native macOS 26 arm64 binaries lag behind the Linux
+  ones). We therefore run the import inside a subprocess so a wheel-level crash
+  surfaces as a test failure rather than killing the entire pytest collection
+  phase.
 * Set `SKIP_DASHBOARD_TESTS=1` to skip these locally on a known-bad venv.
 * Skipped automatically when the heavy dashboard deps aren't installed
   (the import probe at the top of each test handles it).
@@ -26,7 +26,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
-_DASHBOARD_DEPS = ("dash", "snowflake.connector", "polars", "pyarrow")
+_DASHBOARD_DEPS = ("dash", "polars", "pyarrow")
 
 
 def _skip_unless_dashboard_deps_present() -> None:
@@ -62,7 +62,7 @@ def _run(snippet: str) -> subprocess.CompletedProcess[bytes]:
     )
 
 
-def test_dashboard_app_imports_without_snowflake():
+def test_dashboard_app_imports_without_warehouse():
     _skip_unless_dashboard_deps_present()
     result = _run(
         "import dashboard.app as m; "

@@ -1,16 +1,15 @@
 # Build the Evidence static snapshot and publish it to GitHub Pages.
 #
-# Data: reports/scripts/export_marts.py dumps the Snowflake marts to parquet
-# using the SNOWFLAKE_* repo secrets. If those secrets are absent (e.g. a fork),
-# the export no-ops and the committed sample snapshot in
-# reports/sources/sf_urban_health/data/ is used instead — the site still builds.
+# Data: committed sample Parquet snapshots under
+# reports/sources/sf_urban_health/data/. Regenerate locally with
+# reports/scripts/make_sample_data.py when page shapes change.
 #
 # One-time setup: Settings → Pages → Source = "GitHub Actions".
 name: pages
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # after daily ingests (06:00), asset-triggered transform, and metadata (07:00)
+    - cron: '0 9 * * *'
   workflow_dispatch:
   pull_request:
     paths:
@@ -25,24 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-
-      - name: Pin Python to project version
-        run: uv python install 3.11
-
-      - name: Export marts from Snowflake (falls back to committed sample if no secrets)
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
-          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-        run: uv run --group dashboard python reports/scripts/export_marts.py
 
       - name: Setup Node
         uses: actions/setup-node@v4

@@ -41,19 +41,8 @@ S3 object was uploaded.
 Naive Python datetimes are interpreted as UTC. Aware datetimes are converted to
 UTC before query formatting or comparison.
 
-## Airflow metadata timestamp key
-
-The extract DAG publishes `max_loaded_at`. The retained Airflow REST collector
-requests `max_watermark`; that field is currently missing from collected
-Snowflake task metadata.
-
-## Dashboard startup without Snowflake
+## Dashboard startup without a warehouse
 
 The dashboard cache catches mart-loading errors and substitutes empty Polars
 frames so modules remain importable without credentials. Pages render their
 empty-state behavior rather than preventing application import.
-
-## Remote Airflow credentials
-
-The Airflow REST client rejects the default `admin` password when its base URL
-is not a recognized local host.

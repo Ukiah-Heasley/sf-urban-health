@@ -19,7 +19,7 @@ from dashboard.data.transforms import (
 
 ACCENT = "#ffb300"
 
-# Marts load empty when Snowflake is unavailable (see data/cache.py); guard
+# Marts load empty while consumer wiring is pending (see data/cache.py); guard
 # every module-level column access so the app still imports/boots, matching
 # the evictions and incidents pages.
 _NEIGHBORHOODS = (

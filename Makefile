@@ -1,23 +1,7 @@
-ENV_FILE := airflow/.env
-DBT_DIR  := dbt
-DBT_MIRROR := airflow/include/dbt
-
-ifneq (,$(wildcard $(ENV_FILE)))
-include $(ENV_FILE)
-export
-endif
-
-.DEFAULT_GOAL := help
-
 .PHONY: help
 help:
 	@echo "Targets:"
 	@echo "  make ingest         Run permits extractor (DataSF -> S3)"
-	@echo "  make dbt-deps       Install dbt packages"
-	@echo "  make dbt-run        Run dbt models only (no tests, dev schema)"
-	@echo "  make dbt-run-prod   Run dbt models only (no tests, prod schema)"
-	@echo "  make dbt-build      Run dbt build (run + test) against Snowflake"
-	@echo "  make dbt-test       Run dbt tests only"
 	@echo "  make sync-dbt       Mirror dbt/ into airflow/include/dbt/ for the Airflow image"
 	@echo "  make airflow-up     Start local Airflow stack (Astro CLI), syncing dbt/ first"
 	@echo "  make airflow-down   Stop local Airflow stack"
@@ -29,6 +13,17 @@ help:
 	@echo "  make test           Run pytest"
 	@echo "  make lakehouse-smoke Promote fixture NDJSON locally without AWS"
 
+ENV_FILE := airflow/.env
+DBT_DIR  := dbt
+DBT_MIRROR := airflow/include/dbt
+
+ifneq (,$(wildcard $(ENV_FILE)))
+include $(ENV_FILE)
+export
+endif
+
+.DEFAULT_GOAL := help
+
 .PHONY: check-env
 check-env:
 	@test -f $(ENV_FILE) || (echo "Missing $(ENV_FILE) — copy from $(ENV_FILE).example and fill in credentials." && exit 1)
@@ -36,26 +31,6 @@ check-env:
 .PHONY: ingest
 ingest: check-env
 	uv run python airflow/include/scripts/permits.py
-
-.PHONY: dbt-deps
-dbt-deps: check-env
-	cd $(DBT_DIR) && uv run --group dbt dbt deps --profiles-dir .
-
-.PHONY: dbt-run
-dbt-run: check-env
-	cd $(DBT_DIR) && uv run --group dbt dbt run --profiles-dir .
-
-.PHONY: dbt-run-prod
-dbt-run-prod: check-env
-	cd $(DBT_DIR) && uv run --group dbt dbt run --target prod --profiles-dir .
-
-.PHONY: dbt-build
-dbt-build: check-env
-	cd $(DBT_DIR) && uv run --group dbt dbt build --profiles-dir .
-
-.PHONY: dbt-test
-dbt-test: check-env
-	cd $(DBT_DIR) && uv run --group dbt dbt test --profiles-dir .
 
 # Mirror dbt/ into airflow/include/dbt/ so Astro can bake it into the image.
 # Excludes runtime artifacts; airflow/include/dbt/ is gitignored.

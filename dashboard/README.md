@@ -1,7 +1,8 @@
 # Dashboard
 
-The Plotly Dash application loads eight Snowflake marts into Polars DataFrames
-at process startup and serves six interactive pages from memory.
+The Plotly Dash application keeps six interactive pages as a consumer shell.
+Live warehouse loading is disabled during the lakehouse rebuild; startup cache
+calls fail closed to empty Polars frames.
 
 ## Run locally
 
@@ -16,25 +17,22 @@ development tools; debug mode is off by default.
 
 ```bash
 make dashboard-docker
-docker run --env-file airflow/.env -p 8050:8050 sf-urban-health-dashboard
+docker run -p 8050:8050 sf-urban-health-dashboard
 ```
 
 Gunicorn serves the `server` object exported by `dashboard.app`.
 
 ## Data loading
 
-`dashboard/data/snowflake.py` executes Snowflake queries and returns Arrow
-tables. `dashboard/data/cache.py` converts results to Polars, lowercases column
-names, and stores one module-level frame per mart.
-
-Connection or query failures produce warning logs and empty frames so the app
-can still import. A successful query returning more than
+`dashboard/data/cache.py` attempts to load one module-level Polars frame per
+mart-shaped table. Connection or query failures produce warning logs and empty
+frames so the app can still import. A successful query returning more than
 `DASHBOARD_MAX_ROWS` fails startup rather than silently loading an unexpectedly
-large mart.
+large frame.
 
 ## Pages
 
-| Route | Data |
+| Route | Intended data |
 | --- | --- |
 | `/` | housing production |
 | `/incidents` | public safety |
@@ -47,15 +45,6 @@ large mart.
 
 | Variable | Default | Requirement |
 | --- | --- | --- |
-| `SNOWFLAKE_ACCOUNT` | none | required |
-| `SNOWFLAKE_USER` | none | required |
-| `SNOWFLAKE_PASSWORD` | none | required |
-| `SNOWFLAKE_WAREHOUSE` | none | required |
-| `SNOWFLAKE_ROLE` | `SYSADMIN` | optional |
-| `SNOWFLAKE_DATABASE` | `SF_URBAN_HEALTH` | optional |
-| `SNOWFLAKE_SCHEMA` | `prod` | optional connection default |
-| `DASHBOARD_MART_SCHEMA` | `MARTS` | analytical marts |
-| `DASHBOARD_METADATA_SCHEMA` | `METADATA` | observability marts |
 | `DASHBOARD_MAX_ROWS` | `200000` | per-mart startup limit |
 | `DASH_DEBUG` | unset | set to `1` for development tools |
 
@@ -64,7 +53,7 @@ large mart.
 ```text
 dashboard/
   app.py          Dash entry point and WSGI server
-  data/           Snowflake client, startup cache, Polars transforms
+  data/           startup cache and Polars transforms
   pages/          six route modules
   components/     figure builders, KPI cards, theme helpers
   assets/         Dash-served CSS and SVG

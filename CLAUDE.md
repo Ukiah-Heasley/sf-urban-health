@@ -1,23 +1,16 @@
-# AGENTS.md
-
-Repository guidance for coding agents working on SF Urban Health.
+# Repository guidance for coding agents working on SF Urban Health.
 
 ## Commands
 
 Use root `Makefile` targets; it loads `airflow/.env` when present.
 
 ```bash
-make ingest            # permits: DataSF -> S3 raw NDJSON
-make dbt-deps          # install dbt packages
-make dbt-run           # Snowflake dev target, models only
-make dbt-run-prod      # Snowflake prod target, models only
-make dbt-build         # Snowflake dev target, run + test
-make dbt-test          # Snowflake dev target, tests only
-make sync-dbt          # mirror dbt/ into airflow/include/dbt/
-make airflow-up        # sync dbt, then astro dev start
+make ingest              # permits: DataSF -> S3 raw NDJSON
+make sync-dbt            # mirror dbt/ into airflow/include/dbt/
+make airflow-up          # sync dbt, then astro dev start
 make airflow-down
 make airflow-logs
-make dashboard-dev     # http://localhost:8050
+make dashboard-dev       # http://localhost:8050
 make dashboard-docker
 make lint
 make yamllint
@@ -27,21 +20,19 @@ make test
 make lakehouse-smoke
 ```
 
-For an ad-hoc dbt selector, run from `dbt/` with `--profiles-dir .`.
-
 ## Current architecture
 
 The checked-in runtime is split:
 
 ```text
 DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON
-    -> lakehouse_metadata.py current + attempt ingest events -> ingest assets
+  -> lakehouse_metadata.py current + attempt ingest events -> ingest assets
 
 ingest assets -> transform_lakehouse -> bronze Parquet + metadata events
-    -> compact metadata Parquet -> lakehouse transform asset (when planned)
+  -> compact metadata Parquet -> lakehouse transform asset (when planned)
 
-Existing Snowflake sources -> dbt staging/intermediate/marts -> Dash/exports
-Airflow REST API -> Snowflake metadata tables -> observability marts
+Plotly Dash and Evidence remain consumer shells over empty frames or committed
+sample Parquet until lakehouse consumer wiring lands.
 ```
 
 `transform_lakehouse` plans intervals from current S3 JSON ingest metadata
@@ -56,16 +47,10 @@ Dataset ingest DAGs contain
 It reads `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and
 optional start/end bounds. `max_active_runs=1` prevents concurrent runs from
 selecting the same global interval. When no interval is selected, promotion and
-lakehouse asset emission are skipped. `transform_all` still runs Snowflake dbt
-from ingest assets only.
-
-The ingest DAG factory does not execute the retained Snowflake `COPY INTO` or
-watermark SQL. Do not describe S3-to-Snowflake loading as active behavior.
+lakehouse asset emission are skipped.
 
 Three ingest DAGs run at 06:00 UTC. `transform_lakehouse` is asset-triggered by
-all three ingest assets. `transform_all` is asset-triggered and runs the
-Snowflake dbt project. `ingest_pipeline_metadata` runs at 07:00 UTC and writes
-Airflow metadata to Snowflake.
+all three ingest assets.
 
 ## Extraction invariants
 
@@ -86,13 +71,7 @@ Airflow metadata to Snowflake.
 ## dbt contracts
 
 - `dbt/` is canonical; never edit the generated `airflow/include/dbt/` mirror.
-- Staging and intermediate models are views; marts are tables under the current
-  Snowflake project configuration.
-- Staging preserves the source population and deduplicates by source primary
-  key using `_loaded_at`.
-- The residential filter belongs in `mart_housing_production`, not staging.
-- Every mart that groups by neighborhood uses `normalize_neighborhood`.
-- Preserve each documented model grain and its uniqueness test.
+- The active project is a minimal lakehouse-first skeleton with no models yet.
 
 ## Airflow import boundary
 

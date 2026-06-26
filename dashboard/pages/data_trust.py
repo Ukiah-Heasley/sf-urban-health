@@ -118,7 +118,10 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
     """Build one card per dataset row from DATA_TRUST."""
     if DATA_TRUST.is_empty():
         return dbc.Row(dbc.Col(
-            dbc.Alert("mart_data_trust not yet loaded. Run make dbt-build.", color="warning"),
+            dbc.Alert(
+                "mart_data_trust not yet loaded. Consumer wiring is pending the lakehouse rebuild.",
+                color="warning",
+            ),
         ))
 
     _DATASET_ORDER = ["Permits", "Evictions", "Incidents"]

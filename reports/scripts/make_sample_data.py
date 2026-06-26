@@ -1,9 +1,8 @@
-"""Generate a small SYNTHETIC snapshot for the Evidence demo build.
+"""Generate a small synthetic snapshot for the Evidence demo build.
 
-Writes the same parquet files as export_marts.py (housing, data-trust, pipeline
-health) so the site builds and the live demo renders without a Snowflake
-connection. The scheduled Pages workflow overwrites these with real data via
-export_marts.py. Values are illustrative only — not real SF civic data.
+Writes parquet files for housing, data-trust, and pipeline-health marts so the
+static site builds without a warehouse. Values are illustrative only — not real
+SF civic data.
 
     uv run --group dashboard python reports/scripts/make_sample_data.py
 """
@@ -67,7 +66,7 @@ def housing() -> pl.DataFrame:
 
 def pipeline_health() -> pl.DataFrame:
     rows = []
-    dags = ["ingest_permits", "ingest_evictions", "ingest_incidents", "transform_all"]
+    dags = ["ingest_permits", "ingest_evictions", "ingest_incidents", "transform_lakehouse"]
     for d in range(30):
         run_date = date.today() - timedelta(days=29 - d)
         for dag in dags:
@@ -84,8 +83,8 @@ def pipeline_health() -> pl.DataFrame:
                 "success_rate_pct": round(success * 100.0 / total, 1),
                 "avg_duration_seconds": round(dur, 1),
                 "p95_duration_seconds": round(dur * 1.2, 1),
-                "total_records_ingested": rng.randint(0, 5000) if dag != "transform_all" else 0,
-                "avg_records_per_run": rng.randint(0, 5000) if dag != "transform_all" else 0,
+                "total_records_ingested": rng.randint(0, 5000) if dag != "transform_lakehouse" else 0,
+                "avg_records_per_run": rng.randint(0, 5000) if dag != "transform_lakehouse" else 0,
             })
     return pl.DataFrame(rows)
 

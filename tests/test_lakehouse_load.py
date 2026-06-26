@@ -713,22 +713,6 @@ def test_transform_lakehouse_dag_depends_on_ingest_assets() -> None:
     assert complete.outlets
 
 
-def test_transform_all_still_uses_ingest_assets_only() -> None:
-    pytest.importorskip("airflow.models", reason="airflow not installed")
-    from transform_all import dag as snowflake_dag
-    from pipeline_assets import (
-        EVICTIONS_INGEST_ASSET,
-        INCIDENTS_INGEST_ASSET,
-        PERMITS_INGEST_ASSET,
-    )
-
-    assert snowflake_dag.schedule == [
-        PERMITS_INGEST_ASSET,
-        EVICTIONS_INGEST_ASSET,
-        INCIDENTS_INGEST_ASSET,
-    ]
-
-
 def test_planner_requires_all_datasets_for_interval(storage: StorageConfig) -> None:
     _write_ingest_event(storage, dataset_name="permits", records_fetched=0)
     _write_ingest_event(storage, dataset_name="evictions", records_fetched=0)

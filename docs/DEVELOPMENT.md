@@ -7,7 +7,6 @@
 - Docker Desktop and Astro CLI for Airflow
 - Node.js 20 for the Evidence site
 - AWS credentials for real extraction
-- Snowflake credentials for dbt, pipeline metadata, Dash, and real report export
 
 ## Environment
 
@@ -21,8 +20,7 @@ requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Set `LAKE_LOCAL_ROOT`
 for local lakehouse smoke tests without AWS. `transform_lakehouse` reads
 `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and optional
 `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
-S3 JSON ingest metadata events. Snowflake consumers use the `SNOWFLAKE_*` variables documented
-in the example file.
+S3 JSON ingest metadata events.
 
 ## Commands
 
@@ -36,15 +34,11 @@ in the example file.
 | Lint YAML | `make yamllint` |
 | Run pre-commit hooks | `make pre-commit` |
 | Check documentation | `make docs-check` |
-| Install dbt packages | `make dbt-deps` |
-| Run dbt dev models | `make dbt-run` |
-| Build and test dbt dev models | `make dbt-build` |
-| Run dbt tests | `make dbt-test` |
 | Mirror dbt into Airflow | `make sync-dbt` |
 | Start local Airflow | `make airflow-up` |
 | Stop local Airflow | `make airflow-down` |
 | Tail scheduler logs | `make airflow-logs` |
-| Run Plotly Dash | `make dashboard-dev` |
+| Run Plotly Dash shell | `make dashboard-dev` |
 | Build the Dash image | `make dashboard-docker` |
 
 ## Targeted extraction
@@ -76,8 +70,8 @@ The default suite mocks HTTP and S3 boundaries. DAG tests skip automatically
 when Airflow is not installed. CI installs the Airflow dependency group for a
 separate DAG-integrity job.
 
-Set `SKIP_DASHBOARD_TESTS=1` when local Arrow/Snowflake wheels cannot load; Linux
-CI still runs the dashboard import probe.
+Set `SKIP_DASHBOARD_TESTS=1` when local Arrow wheels cannot load; Linux CI still
+runs the dashboard import probe.
 
 ## dbt mirror
 
