@@ -26,6 +26,7 @@ from scripts.soda_ingest import (
     build_soda_session,
     extract_to_raw,
 )
+from scripts.time_utils import coerce_utc_datetime
 
 
 @dataclass
@@ -79,7 +80,7 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         return result.raw_path
 
     def _record_extract_metadata(**context) -> str:
-        from scripts.soda_ingest import ExtractResult, _coerce_utc_datetime
+        from scripts.soda_ingest import ExtractResult
 
         ti = context["ti"]
         max_loaded_at_raw = ti.xcom_pull(task_ids=extract_task_id, key="max_loaded_at")
@@ -87,20 +88,20 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             raw_path=ti.xcom_pull(task_ids=extract_task_id, key="raw_path"),
             raw_key=ti.xcom_pull(task_ids=extract_task_id, key="raw_key"),
             records_fetched=ti.xcom_pull(task_ids=extract_task_id, key="records_fetched"),
-            max_loaded_at=_coerce_utc_datetime(max_loaded_at_raw) if max_loaded_at_raw else None,
+            max_loaded_at=coerce_utc_datetime(max_loaded_at_raw) if max_loaded_at_raw else None,
             bytes_written=ti.xcom_pull(task_ids=extract_task_id, key="bytes_written"),
             duration_seconds=ti.xcom_pull(task_ids=extract_task_id, key="duration_seconds"),
-            data_interval_start=_coerce_utc_datetime(
+            data_interval_start=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="data_interval_start")
             ),
-            data_interval_end=_coerce_utc_datetime(
+            data_interval_end=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="data_interval_end")
             ),
-            effective_start=_coerce_utc_datetime(
+            effective_start=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="effective_start")
             ),
-            started_at=_coerce_utc_datetime(ti.xcom_pull(task_ids=extract_task_id, key="started_at")),
-            completed_at=_coerce_utc_datetime(
+            started_at=coerce_utc_datetime(ti.xcom_pull(task_ids=extract_task_id, key="started_at")),
+            completed_at=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="completed_at")
             ),
         )

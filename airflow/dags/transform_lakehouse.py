@@ -27,7 +27,7 @@ from scripts.lakehouse_metadata import (
 )
 from scripts.lakehouse_load import promote_raw_to_bronze, storage_from_env
 from scripts.permits import PERMITS_CONFIG
-from scripts.soda_ingest import _coerce_utc_datetime
+from scripts.time_utils import coerce_utc_datetime
 
 _DATASETS = {
     "permits": PERMITS_CONFIG,
@@ -43,7 +43,7 @@ _NOOP_TASK_ID = "lakehouse_noop"
 def _parse_optional_plan_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
-    return _coerce_utc_datetime(value)
+    return coerce_utc_datetime(value)
 
 
 def _select_lakehouse_interval(**context) -> dict | None:

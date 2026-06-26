@@ -12,7 +12,7 @@ import os
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import date, datetime, time as datetime_time, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping
@@ -25,6 +25,7 @@ from scripts.lakehouse_contracts import (
     get_contract,
     render_path_template,
 )
+from scripts.time_utils import coerce_utc_datetime
 
 if TYPE_CHECKING:
     from scripts.lakehouse_metadata import IngestRunEvent
@@ -178,24 +179,10 @@ def _register_mapper(dataset_name: str):
     return decorator
 
 
-def _coerce_utc_datetime(value: date | datetime | str) -> datetime:
-    if isinstance(value, datetime):
-        dt = value
-    elif isinstance(value, date):
-        dt = datetime.combine(value, datetime_time.min, tzinfo=timezone.utc)
-    elif isinstance(value, str):
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    else:
-        raise TypeError(f"unsupported datetime type: {type(value).__name__}")
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
 def _parse_optional_timestamp(value: object) -> datetime | None:
     if value is None or value == "":
         return None
-    return _coerce_utc_datetime(str(value))
+    return coerce_utc_datetime(str(value))
 
 
 def _parse_optional_date(value: object) -> date | None:
@@ -203,7 +190,7 @@ def _parse_optional_date(value: object) -> date | None:
         return None
     text = str(value)
     if "T" in text:
-        return _coerce_utc_datetime(text).date()
+        return coerce_utc_datetime(text).date()
     return date.fromisoformat(text[:10])
 
 
@@ -252,7 +239,7 @@ def _parse_loaded_at(payload: Mapping[str, Any], *, dataset_name: str) -> dateti
             f"{dataset_name} record is missing required source timestamp data_loaded_at"
         )
     try:
-        return _coerce_utc_datetime(str(value))
+        return coerce_utc_datetime(str(value))
     except (TypeError, ValueError) as exc:
         raise LakehouseLoadError(
             f"{dataset_name} record has invalid data_loaded_at: {value!r}"
@@ -269,7 +256,7 @@ def source_faithful_payload(payload: Mapping[str, Any]) -> str:
 
 
 def format_interval_partition(value: datetime) -> str:
-    return _coerce_utc_datetime(value).strftime("%Y%m%dT%H%M%SZ")
+    return coerce_utc_datetime(value).strftime("%Y%m%dT%H%M%SZ")
 
 
 def bronze_object_key(

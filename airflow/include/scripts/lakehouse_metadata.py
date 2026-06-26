@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time as datetime_time, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
@@ -20,6 +20,7 @@ from scripts.lakehouse_load import (
     pyarrow_schema_for_contract,
     storage_from_env,
 )
+from scripts.time_utils import coerce_utc_datetime
 
 METADATA_EVENTS_PREFIX = "lake/metadata/events"
 INGEST_RUNS_CURRENT_PREFIX = f"{METADATA_EVENTS_PREFIX}/ingest_runs_current"
@@ -78,20 +79,6 @@ class FileManifestEvent:
     written_at: datetime
     promotion_started_at: datetime
     promotion_completed_at: datetime
-
-
-def _coerce_utc_datetime(value: date | datetime | str) -> datetime:
-    if isinstance(value, datetime):
-        dt = value
-    elif isinstance(value, date):
-        dt = datetime.combine(value, datetime_time.min, tzinfo=timezone.utc)
-    elif isinstance(value, str):
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    else:
-        raise TypeError(f"unsupported datetime type: {type(value).__name__}")
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 def run_id_hash(ingest_run_id: str) -> str:
@@ -163,7 +150,7 @@ def event_to_json(event: IngestRunEvent | FileManifestEvent) -> bytes:
 def _parse_event_datetime(value: object) -> datetime | None:
     if value is None:
         return None
-    return _coerce_utc_datetime(str(value))
+    return coerce_utc_datetime(str(value))
 
 
 def parse_ingest_run_event(payload: Mapping[str, Any]) -> IngestRunEvent:
@@ -173,9 +160,9 @@ def parse_ingest_run_event(payload: Mapping[str, Any]) -> IngestRunEvent:
         ingest_run_id=str(payload["ingest_run_id"]),
         dag_id=str(payload["dag_id"]),
         dataset_name=str(payload["dataset_name"]),
-        data_interval_start=_coerce_utc_datetime(payload["data_interval_start"]),
-        data_interval_end=_coerce_utc_datetime(payload["data_interval_end"]),
-        effective_start=_coerce_utc_datetime(payload["effective_start"]),
+        data_interval_start=coerce_utc_datetime(payload["data_interval_start"]),
+        data_interval_end=coerce_utc_datetime(payload["data_interval_end"]),
+        effective_start=coerce_utc_datetime(payload["effective_start"]),
         raw_s3_path=str(payload["raw_s3_path"]) if payload.get("raw_s3_path") else None,
         raw_s3_key=str(payload["raw_s3_key"]) if payload.get("raw_s3_key") else None,
         records_fetched=int(payload["records_fetched"]),
@@ -185,8 +172,8 @@ def parse_ingest_run_event(payload: Mapping[str, Any]) -> IngestRunEvent:
         if payload.get("duration_seconds") is not None
         else None,
         status=str(payload["status"]),
-        started_at=_coerce_utc_datetime(payload["started_at"]),
-        completed_at=_coerce_utc_datetime(payload["completed_at"]),
+        started_at=coerce_utc_datetime(payload["started_at"]),
+        completed_at=coerce_utc_datetime(payload["completed_at"]),
     )
 
 
@@ -204,9 +191,9 @@ def parse_file_manifest_event(payload: Mapping[str, Any]) -> FileManifestEvent:
         record_count=int(payload["record_count"]),
         file_size_bytes=int(payload["file_size_bytes"]),
         content_hash=str(payload["content_hash"]),
-        written_at=_coerce_utc_datetime(payload["written_at"]),
-        promotion_started_at=_coerce_utc_datetime(payload["promotion_started_at"]),
-        promotion_completed_at=_coerce_utc_datetime(payload["promotion_completed_at"]),
+        written_at=coerce_utc_datetime(payload["written_at"]),
+        promotion_started_at=coerce_utc_datetime(payload["promotion_started_at"]),
+        promotion_completed_at=coerce_utc_datetime(payload["promotion_completed_at"]),
     )
 
 
@@ -265,8 +252,8 @@ def lakehouse_interval_plan_to_dict(plan: LakehouseIntervalPlan) -> dict[str, An
 
 def lakehouse_interval_plan_from_dict(payload: Mapping[str, Any]) -> LakehouseIntervalPlan:
     return LakehouseIntervalPlan(
-        data_interval_start=_coerce_utc_datetime(str(payload["data_interval_start"])),
-        data_interval_end=_coerce_utc_datetime(str(payload["data_interval_end"])),
+        data_interval_start=coerce_utc_datetime(str(payload["data_interval_start"])),
+        data_interval_end=coerce_utc_datetime(str(payload["data_interval_end"])),
         ingest_event_keys=dict(payload["ingest_event_keys"]),
         existing_manifest_event_keys=dict(payload.get("existing_manifest_event_keys", {})),
         mode=str(payload["mode"]),

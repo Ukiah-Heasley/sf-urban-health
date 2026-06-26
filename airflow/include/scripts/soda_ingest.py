@@ -26,6 +26,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from scripts.time_utils import coerce_utc_datetime
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,8 +82,8 @@ class ExtractWindow:
         if self.data_interval_start is None or self.data_interval_end is None:
             raise ValueError("data_interval_start and data_interval_end must be set")
 
-        start = _coerce_utc_datetime(self.data_interval_start)
-        end = _coerce_utc_datetime(self.data_interval_end)
+        start = coerce_utc_datetime(self.data_interval_start)
+        end = coerce_utc_datetime(self.data_interval_end)
 
         if start >= end:
             raise ValueError("data_interval_start must be before data_interval_end")
@@ -167,31 +169,9 @@ class WriteResult:
     bytes_written: int
 
 
-def _coerce_utc_datetime(value: date | datetime | str) -> datetime:
-    """Normalize date-like inputs to timezone-aware UTC datetimes.
-
-    Inputs may come from argparse strings, Airflow pendulum datetimes, Python
-    dates, or SODA timestamp strings. The output is always a ``datetime`` with
-    ``timezone.utc`` attached.
-    """
-    if isinstance(value, datetime):
-        dt = value
-    elif isinstance(value, date):
-        dt = datetime.combine(value, datetime_time.min, tzinfo=timezone.utc)
-    elif isinstance(value, str):
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    else:
-        raise TypeError(f"Unsupported datetime type: {type(value).__name__}")
-
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-
-    return dt.astimezone(timezone.utc)
-
-
 def _format_soda_timestamp(value: date | datetime | str) -> str:
     """Format a UTC timestamp for a SODA query literal."""
-    return _coerce_utc_datetime(value).isoformat(timespec="milliseconds")
+    return coerce_utc_datetime(value).isoformat(timespec="milliseconds")
 
 
 def _parse_soda_timestamp(value: object) -> datetime:
@@ -204,7 +184,7 @@ def _parse_soda_timestamp(value: object) -> datetime:
 
     if value is None:
         raise ValueError("SODA record is missing the configured timestamp field")
-    return _coerce_utc_datetime(str(value))
+    return coerce_utc_datetime(str(value))
 
 
 def build_soda_session() -> requests.Session:
@@ -505,13 +485,13 @@ def cli(config: DatasetConfig) -> None:
     )
     parser.add_argument(
         "--window-start",
-        type=_coerce_utc_datetime,
+        type=coerce_utc_datetime,
         default=datetime.combine(config.epoch, datetime_time.min, tzinfo=timezone.utc),
         help="Inclusive extraction window start. Defaults to the dataset epoch.",
     )
     parser.add_argument(
         "--window-end",
-        type=_coerce_utc_datetime,
+        type=coerce_utc_datetime,
         default=datetime.now(timezone.utc),
         help="Exclusive extraction window end. Defaults to now.",
     )
