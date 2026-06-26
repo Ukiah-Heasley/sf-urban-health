@@ -5,6 +5,7 @@
 - Python `>=3.11,<3.12`
 - [uv](https://docs.astral.sh/uv/)
 - Docker Desktop and Astro CLI for Airflow
+- Docker Desktop for the local lakehouse stack
 - Node.js 20 for the Evidence site
 - AWS credentials for real extraction
 
@@ -13,6 +14,7 @@
 ```bash
 uv sync --all-groups
 cp airflow/.env.example airflow/.env
+cp lakehouse/.env.example lakehouse/.env
 ```
 
 `airflow/.env` is gitignored and loaded by the root Makefile. The extractor
@@ -22,6 +24,13 @@ for local lakehouse smoke tests without AWS. `transform_lakehouse` reads
 `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
 S3 JSON ingest metadata events.
 
+`lakehouse/.env` configures local MinIO and Spark Thrift host ports. `make spark-up`
+creates it from `lakehouse/.env.example` when missing. Spark Thrift always listens
+on container port `10000`; `SPARK_THRIFT_PORT` selects the host port mapped by
+Compose. dbt reads `DBT_SPARK_HOST`, `DBT_SPARK_PORT` (match `SPARK_THRIFT_PORT`),
+`DBT_SPARK_USER`, and `DBT_SPARK_SCHEMA` from the environment. The checked-in
+profile uses `auth: NOSASL` to match the local Thrift Server configuration.
+
 ## Commands
 
 | Goal | Command |
@@ -30,6 +39,10 @@ S3 JSON ingest metadata events.
 | Extract permits to raw S3 | `make ingest` |
 | Run Python tests | `make test` |
 | Promote fixture NDJSON locally | `make lakehouse-smoke` |
+| Start local MinIO + Spark Thrift | `make spark-up` |
+| Stop local lakehouse stack | `make spark-down` |
+| Verify dbt Spark profile | `make dbt-lakehouse-debug` |
+| Run dbt smoke Iceberg model | `make dbt-lakehouse-smoke` |
 | Lint Python | `make lint` |
 | Lint YAML | `make yamllint` |
 | Run pre-commit hooks | `make pre-commit` |
@@ -73,7 +86,13 @@ separate DAG-integrity job.
 Set `SKIP_DASHBOARD_TESTS=1` when local Arrow wheels cannot load; Linux CI still
 runs the dashboard import probe.
 
-## dbt mirror
+## dbt and local Spark
 
 Edit only top-level `dbt/`. The mirror under `airflow/include/dbt/` is generated,
 gitignored, and replaced by `make sync-dbt`.
+
+Local silver development uses the `lakehouse` uv dependency group (`dbt-core`,
+`dbt-spark`). Start the Compose stack with `make spark-up`, then run
+`make dbt-lakehouse-debug` or `make dbt-lakehouse-smoke`. The smoke model is
+tagged `smoke`, materializes as Iceberg, and stores warehouse data in the local
+MinIO bucket through Spark S3A.

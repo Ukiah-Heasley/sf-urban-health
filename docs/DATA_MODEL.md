@@ -66,6 +66,14 @@ fresh metadata Parquet under `lake/parquet/metadata/`. Metadata export files are
 not self-manifested. DuckDB is used only inside that single compaction task as
 an in-memory engine.
 
+## Local silver smoke (dbt + Spark + Iceberg)
+
+The `lakehouse/` Compose stack provides MinIO, deterministic bucket creation,
+and Spark Thrift Server with pinned Iceberg and S3A dependencies. dbt connects
+through `dbt/profiles.yml` and materializes the `smoke_iceberg` model as an
+Iceberg table in the `sf_urban_health` schema. This path is local-only and does
+not read bronze Parquet.
+
 ## Consumer snapshot shapes
 
 The Evidence shell reads committed Parquet snapshots for three mart-shaped

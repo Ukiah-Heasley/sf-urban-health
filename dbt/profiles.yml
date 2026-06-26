@@ -1,7 +1,14 @@
-# Warehouse connection outputs are configured in the lakehouse foundation slice.
 sf_urban_health:
   target: dev
   outputs:
     dev:
-      type: duckdb
-      path: target/dev.duckdb
+      type: spark
+      method: thrift
+      host: "{{ env_var('DBT_SPARK_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_SPARK_PORT', '10000') | as_number }}"
+      schema: "{{ env_var('DBT_SPARK_SCHEMA', 'sf_urban_health') }}"
+      user: "{{ env_var('DBT_SPARK_USER', 'spark') }}"
+      auth: NOSASL
+      connect_timeout: 60
+      connect_retries: 5
+      threads: 1

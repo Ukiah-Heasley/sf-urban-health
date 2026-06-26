@@ -1,0 +1,69 @@
+name: sf-urban-health-lakehouse
+
+services:
+  minio:
+    image: minio/minio:${MINIO_IMAGE:-RELEASE.2024-11-07T00-52-20Z}
+    container_name: lakehouse-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:${MINIO_MC_IMAGE:-RELEASE.2024-11-21T17-21-54Z}
+    container_name: lakehouse-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/$${LAKEHOUSE_BUCKET};
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      LAKEHOUSE_BUCKET: ${LAKEHOUSE_BUCKET:-lakehouse}
+
+  spark-thrift:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+      args:
+        SPARK_VERSION: ${SPARK_VERSION:-3.5.4}
+        ICEBERG_VERSION: ${ICEBERG_VERSION:-1.6.1}
+        HADOOP_AWS_VERSION: ${HADOOP_AWS_VERSION:-3.3.4}
+        AWS_SDK_BUNDLE_VERSION: ${AWS_SDK_BUNDLE_VERSION:-1.12.262}
+    container_name: lakehouse-spark-thrift
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      LAKEHOUSE_BUCKET: ${LAKEHOUSE_BUCKET:-lakehouse}
+    ports:
+      - "${SPARK_THRIFT_PORT:-10000}:10000"
+      - "${SPARK_UI_PORT:-4040}:4040"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/10000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+volumes:
+  minio-data:

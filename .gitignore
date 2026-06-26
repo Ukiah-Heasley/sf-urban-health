@@ -39,3 +39,6 @@ astro
 
 # Local scratch for archived legacy dbt/metadata reference (never commit).
 /tmp/dbt-legacy-reference/
+
+# Local lakehouse Docker stack (MinIO data, optional overrides)
+lakehouse/.env

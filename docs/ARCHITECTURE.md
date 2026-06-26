@@ -82,11 +82,28 @@ attempt audit events do not. Compacted metadata Parquet reflects the current
 ingest interval grain, is fully rebuilt from JSON on each compaction, and is a
 queryable export, not a planner input.
 
-## dbt skeleton
+## dbt and local Spark
 
-`dbt/` is a minimal lakehouse-first project skeleton with no active models.
-`make sync-dbt` mirrors it into `airflow/include/dbt/` for the Astro Docker
-build context.
+`dbt/` is the canonical lakehouse-first project. `make sync-dbt` mirrors it into
+`airflow/include/dbt/` for the Astro Docker build context.
+
+Local development runs MinIO and a repo-built Spark Thrift Server from
+`lakehouse/docker-compose.yml`. Spark is configured with Iceberg and S3A so
+warehouse data is stored under `s3a://lakehouse/warehouse/` in the local bucket.
+`dbt/profiles.yml` connects to Spark Thrift with the `lakehouse` uv dependency
+group. The `smoke_iceberg` model is tagged `smoke` and materializes a harmless
+Iceberg table to prove the path.
+
+```text
+make spark-up
+    → MinIO + bucket init + Spark Thrift Server (Iceberg catalog on S3A)
+
+make dbt-lakehouse-smoke
+    → dbt-spark → Thrift → Iceberg table in MinIO warehouse
+```
+
+Bronze promotion remains Parquet in S3 and is not exposed through this local
+Spark stack.
 
 ## Consumers
 

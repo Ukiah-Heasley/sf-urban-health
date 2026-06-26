@@ -31,6 +31,10 @@ dev = [
     "pre-commit==4.0.1",
     "yamllint==1.35.1",
 ]
+lakehouse = [
+    "dbt-core==1.9.3",
+    "dbt-spark[PyHive]==1.9.3",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

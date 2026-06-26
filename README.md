@@ -13,8 +13,9 @@ safety, eviction, pipeline-health, and data-trust analysis.
 
 The active runtime ingests DataSF responses into durable newline-delimited JSON
 in S3, promotes complete intervals to bronze Parquet, and compacts lakehouse
-metadata. The repository also keeps a minimal dbt skeleton, a Plotly Dash
-consumer shell, and an Evidence site built from committed Parquet snapshots.
+metadata. The repository also keeps a lakehouse-first dbt project with a local
+Spark + Iceberg smoke path, a Plotly Dash consumer shell, and an Evidence site
+built from committed Parquet snapshots.
 
 ## Current runtime boundary
 
@@ -82,7 +83,8 @@ See [Architecture](docs/ARCHITECTURE.md) for the complete current-state flow.
 ```text
 airflow/                 Astro project, DAGs, and extractors
 contracts/lakehouse/     YAML contracts for parquet lake table layouts
-dbt/                     Minimal lakehouse-first dbt skeleton
+dbt/                     Lakehouse-first dbt project (Spark + Iceberg locally)
+lakehouse/               Local MinIO and Spark Thrift Server Compose stack
 dashboard/               Six-page Plotly Dash consumer shell
 reports/                 Static Evidence site and sample Parquet snapshots
 tests/                   Extractor, DAG, and dashboard import tests
@@ -98,6 +100,7 @@ docs/                    Current behavior and operator documentation
 - Python 3.11 and [uv](https://docs.astral.sh/uv/)
 - AWS credentials and an S3 bucket for extraction
 - Docker Desktop and the Astro CLI for local Airflow
+- Docker Desktop for the local lakehouse stack (`make spark-up`)
 - A DataSF app token is optional but recommended
 - Node.js 20 for the Evidence site
 
@@ -106,10 +109,12 @@ docs/                    Current behavior and operator documentation
 ```bash
 uv sync --all-groups
 cp airflow/.env.example airflow/.env
+cp lakehouse/.env.example lakehouse/.env
 ```
 
 Fill in the environment values needed for the component you intend to run.
-The file is gitignored.
+The Airflow file is gitignored. `lakehouse/.env` supplies local MinIO and Spark
+ports; `make spark-up` creates it from the example when missing.
 
 ## Common commands
 
@@ -121,6 +126,11 @@ make lint              # Ruff
 make yamllint          # YAML lint
 make pre-commit        # all configured hooks
 make docs-check        # documentation consistency checks
+
+make spark-up          # local MinIO + Spark Thrift Server
+make spark-down
+make dbt-lakehouse-debug
+make dbt-lakehouse-smoke
 
 make airflow-up        # sync dbt mirror, then start Astro Airflow
 make airflow-down
@@ -140,6 +150,29 @@ uv run airflow/include/scripts/permits.py \
 
 The Airflow UI is available at <http://localhost:8080> with the local
 `admin` / `admin` development credentials.
+
+## Local lakehouse (Spark + Iceberg + dbt)
+
+`lakehouse/docker-compose.yml` runs MinIO, a one-shot bucket initializer, and a
+repo-built Spark Thrift Server with Iceberg and S3A enabled. Spark bootstraps
+`default` and `sf_urban_health` namespaces in the MinIO warehouse before Thrift
+starts. Iceberg warehouse data is stored under `s3a://lakehouse/warehouse/` in
+the local bucket.
+
+```bash
+make spark-up
+make dbt-lakehouse-debug
+make dbt-lakehouse-smoke
+make spark-down
+```
+
+`dbt/profiles.yml` connects to Spark Thrift on `localhost:10000` by default.
+`SPARK_THRIFT_PORT` in `lakehouse/.env` sets the host port exposed by Compose; the
+container always listens on port `10000`. Override `DBT_SPARK_HOST`, `DBT_SPARK_PORT`
+(to match `SPARK_THRIFT_PORT`), and `DBT_SPARK_SCHEMA` when needed.
+The `lakehouse` uv dependency group installs `dbt-core` and `dbt-spark`. The
+`smoke_iceberg` model is tagged `smoke` and materializes a harmless Iceberg
+table to prove the local path.
 
 ## Lakehouse contracts
 

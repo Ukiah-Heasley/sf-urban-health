@@ -10,6 +10,10 @@ make sync-dbt            # mirror dbt/ into airflow/include/dbt/
 make airflow-up          # sync dbt, then astro dev start
 make airflow-down
 make airflow-logs
+make spark-up            # local MinIO + Spark Thrift Server
+make spark-down
+make dbt-lakehouse-debug
+make dbt-lakehouse-smoke
 make dashboard-dev       # http://localhost:8050
 make dashboard-docker
 make lint
@@ -30,6 +34,9 @@ DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON
 
 ingest assets -> transform_lakehouse -> bronze Parquet + metadata events
   -> compact metadata Parquet -> lakehouse transform asset (when planned)
+
+lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg
+  -> dbt smoke Iceberg model (local dev only)
 
 Plotly Dash and Evidence remain consumer shells over empty frames or committed
 sample Parquet until lakehouse consumer wiring lands.
@@ -71,7 +78,9 @@ all three ingest assets.
 ## dbt contracts
 
 - `dbt/` is canonical; never edit the generated `airflow/include/dbt/` mirror.
-- The active project is a minimal lakehouse-first skeleton with no models yet.
+- Local lakehouse dev uses the `lakehouse` uv group (`dbt-core`, `dbt-spark`).
+- `smoke_iceberg` is the harmless Iceberg proof model; domain silver models are
+  added after the local foundation works.
 
 ## Airflow import boundary
 

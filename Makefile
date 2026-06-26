@@ -6,6 +6,10 @@ help:
 	@echo "  make airflow-up     Start local Airflow stack (Astro CLI), syncing dbt/ first"
 	@echo "  make airflow-down   Stop local Airflow stack"
 	@echo "  make airflow-logs   Tail Airflow scheduler logs"
+	@echo "  make spark-up       Start local MinIO + Spark Thrift Server (lakehouse dev)"
+	@echo "  make spark-down     Stop local lakehouse Docker stack"
+	@echo "  make dbt-lakehouse-debug  Verify dbt Spark profile against Thrift Server"
+	@echo "  make dbt-lakehouse-smoke  Run dbt smoke Iceberg model (requires spark-up)"
 	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
 	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
@@ -16,6 +20,10 @@ help:
 ENV_FILE := airflow/.env
 DBT_DIR  := dbt
 DBT_MIRROR := airflow/include/dbt
+LAKEHOUSE_DIR := lakehouse
+LAKEHOUSE_COMPOSE := $(LAKEHOUSE_DIR)/docker-compose.yml
+LAKEHOUSE_ENV := $(LAKEHOUSE_DIR)/.env
+LAKEHOUSE_ENV_EXAMPLE := $(LAKEHOUSE_DIR)/.env.example
 
 ifneq (,$(wildcard $(ENV_FILE)))
 include $(ENV_FILE)
@@ -86,3 +94,27 @@ test:
 .PHONY: lakehouse-smoke
 lakehouse-smoke:
 	PYTHONPATH=airflow/include uv run python airflow/include/scripts/lakehouse_smoke.py
+
+$(LAKEHOUSE_ENV):
+	@cp $(LAKEHOUSE_ENV_EXAMPLE) $(LAKEHOUSE_ENV)
+	@echo "created $(LAKEHOUSE_ENV) from $(LAKEHOUSE_ENV_EXAMPLE)"
+
+.PHONY: spark-up
+spark-up: $(LAKEHOUSE_ENV)
+	docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV) up -d --build --wait
+
+.PHONY: spark-down
+spark-down:
+	@if [ -f $(LAKEHOUSE_ENV) ]; then \
+		docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV) down; \
+	else \
+		docker compose -f $(LAKEHOUSE_COMPOSE) down; \
+	fi
+
+.PHONY: dbt-lakehouse-debug
+dbt-lakehouse-debug:
+	cd $(DBT_DIR) && uv run --group lakehouse dbt debug --profiles-dir .
+
+.PHONY: dbt-lakehouse-smoke
+dbt-lakehouse-smoke:
+	cd $(DBT_DIR) && uv run --group lakehouse dbt run --select tag:smoke --profiles-dir .
