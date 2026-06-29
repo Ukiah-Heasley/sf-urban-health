@@ -22,6 +22,7 @@ _EXPECTED_DAG_IDS = {
     "ingest_evictions",
     "ingest_incidents",
     "promote_raw_to_bronze",
+    "build_lakehouse_gold",
 }
 
 
@@ -49,3 +50,21 @@ def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
     bronze = dag_bag.dags["promote_raw_to_bronze"]
     assert bronze.max_active_runs == 1
     assert "select_bronze_interval" in {task.task_id for task in bronze.tasks}
+
+    gold = dag_bag.dags["build_lakehouse_gold"]
+    assert gold.max_active_runs == 1
+    gold_task_ids = {task.task_id for task in gold.tasks}
+    assert gold_task_ids == {"dbt_debug", "dbt_build_lakehouse_gold", "lakehouse_gold_complete"}
+    assert gold.get_task("dbt_debug").do_xcom_push is False
+    assert gold.get_task("dbt_build_lakehouse_gold").do_xcom_push is False
+    assert gold.get_task("dbt_debug").downstream_task_ids == {"dbt_build_lakehouse_gold"}
+    assert gold.get_task("dbt_build_lakehouse_gold").downstream_task_ids == {
+        "lakehouse_gold_complete"
+    }
+
+    from _shared.pipeline_assets import BRONZE_PROMOTION_ASSET, GOLD_TRANSFORM_ASSET
+
+    assert gold.schedule == [BRONZE_PROMOTION_ASSET]
+
+    complete = gold.get_task("lakehouse_gold_complete")
+    assert complete.outlets == [GOLD_TRANSFORM_ASSET]

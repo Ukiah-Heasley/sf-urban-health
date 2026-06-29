@@ -44,4 +44,9 @@ The Astro project can run locally with `make airflow-up` or be packaged through
 the Astro CLI. Configure AWS and DataSF values through the deployment platform.
 
 The ingest DAGs land raw NDJSON in S3 and promote bronze Parquet through
-`promote_raw_to_bronze`.
+`promote_raw_to_bronze`. `build_lakehouse_gold` runs dbt inside the Astro
+image after bronze promotion completes, building lakehouse silver and gold
+Iceberg models. Configure `DBT_SPARK_HOST`, `DBT_SPARK_PORT`, `DBT_SPARK_SCHEMA`,
+and `DBT_SPARK_USER` so Airflow tasks can reach Spark Thrift. The mirrored dbt
+project is synced into `airflow/include/dbt/` by `make sync-dbt` before
+`make airflow-up`.

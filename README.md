@@ -29,6 +29,12 @@ Airflow ingest assets
     → promote_raw_to_bronze (plans intervals from S3 JSON metadata events)
     → bronze Parquet + S3 file-manifest events
     → compacted metadata Parquet
+    → bronze promotion asset
+
+Bronze promotion asset
+    → build_lakehouse_gold (dbt inside Astro Airflow)
+    → silver/gold Iceberg tables
+    → gold transform completion asset
 ```
 
 The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Dashboard
@@ -70,7 +76,11 @@ the oldest pending complete interval from current S3 ingest metadata events
 interval to bronze Parquet, writes file-manifest metadata events, compacts
 current metadata events into contract-compatible Parquet, and emits a bronze
 promotion asset. When no interval is selected, the DAG branches to a no-op path
-that emits no bronze or bronze promotion assets. Set
+that emits no bronze or bronze promotion assets. After bronze promotion completes,
+`build_lakehouse_gold` runs `dbt debug` and `dbt build --select tag:lakehouse`
+inside the Astro Airflow runtime against the mirrored project at
+`airflow/include/dbt/`, materializing silver and gold Iceberg tables through
+Spark Thrift, and emits a gold transform completion asset. Set
 `LAKEHOUSE_PLAN_MODE=refresh` with optional start/end bounds to reprocess
 intervals without a separate code path. Current JSON metadata events are the
 promotion source of truth; attempt audit events and compacted metadata Parquet
@@ -158,6 +168,9 @@ The Airflow UI is available at <http://localhost:8080> with the local
 
 For a local ingest-to-bronze smoke against MinIO instead of AWS S3, see
 [Development — Local MinIO Airflow smoke](docs/DEVELOPMENT.md#local-minio-airflow-smoke).
+For local dbt from Astro Airflow containers, set `DBT_SPARK_HOST=host.docker.internal`
+and `DBT_SPARK_PORT` to the host port published by `make spark-up` (see
+`airflow/.env.example`).
 
 ## Local lakehouse (Spark + Iceberg + dbt)
 

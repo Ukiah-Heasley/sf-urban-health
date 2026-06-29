@@ -24,6 +24,7 @@ BRONZE_ASSETS = {
 }
 
 BRONZE_PROMOTION_ASSET = Asset("sf-urban-health://lakehouse/bronze/promotion_complete")
+GOLD_TRANSFORM_ASSET = Asset("sf-urban-health://lakehouse/gold/transform_complete")
 
 
 def ingest_asset_for(dataset_name: str) -> Asset:

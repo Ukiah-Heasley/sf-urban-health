@@ -35,6 +35,9 @@ exports it from `SPARK_THRIFT_PORT`, or `10000` when that is also unset. dbt als
 reads `DBT_SPARK_HOST`,
 `DBT_SPARK_USER`, and `DBT_SPARK_SCHEMA` from the environment. The checked-in
 profile uses `auth: NOSASL` to match the local Thrift Server configuration.
+For dbt from Astro Airflow containers, set `DBT_SPARK_HOST=host.docker.internal`
+in `airflow/.env` so tasks in `build_lakehouse_gold` can reach the host-published
+Spark Thrift port.
 
 ## Commands
 
@@ -124,6 +127,11 @@ local reseed.
    run). With default `LAKEHOUSE_PLAN_MODE=pending` and no remaining pending
    complete interval, the DAG should branch to `bronze_promotion_noop` and skip bronze
    promotion and compaction.
+8. Set `DBT_SPARK_HOST=host.docker.internal` and `DBT_SPARK_PORT` in
+   `airflow/.env` to match the host port from `make spark-up`. After bronze
+   promotion completes, `build_lakehouse_gold` runs automatically. Confirm
+   `dbt_debug`, `dbt_build_lakehouse_gold`, and `lakehouse_gold_complete`
+   succeed and emit the gold transform completion asset.
 
 ## Testing
 

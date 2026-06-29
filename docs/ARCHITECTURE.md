@@ -38,8 +38,8 @@ current JSON event under `lake/metadata/events/ingest_runs_current/`. Empty
 intervals return null raw paths, still write ingest metadata, and still emit the
 ingest asset.
 
-Ingest DAGs do not promote bronze Parquet. A failure in lakehouse promotion
-does not block raw capture.
+Ingest DAGs do not promote bronze Parquet or run dbt. A failure in lakehouse
+promotion or dbt transforms does not block raw capture.
 
 ## Bronze promotion path
 
@@ -81,6 +81,25 @@ flow. Current ingest events under `ingest_runs_current/` drive the planner;
 attempt audit events do not. Compacted metadata Parquet reflects the current
 ingest interval grain, is fully rebuilt from JSON on each compaction, and is a
 queryable export, not a planner input.
+
+## Gold transform path
+
+```text
+bronze promotion asset
+    → build_lakehouse_gold
+        ├─> dbt_debug
+        ├─> dbt_build_lakehouse_gold
+        └─> lakehouse_gold_complete
+    → gold transform completion asset
+```
+
+`build_lakehouse_gold` is asset-triggered by `BRONZE_PROMOTION_ASSET`. It runs
+`dbt debug` then `dbt build --select tag:lakehouse` inside the Astro Airflow
+runtime through `scripts/dbt_lakehouse.py`, using the mirrored dbt project at
+`airflow/include/dbt/` (synced by `make sync-dbt`). dbt connects to Spark
+Thrift using `dbt/profiles.yml` and `DBT_SPARK_*` environment variables. The
+final task emits `GOLD_TRANSFORM_ASSET`. Evidence Parquet export is not part of
+this DAG.
 
 ## dbt and local Spark
 

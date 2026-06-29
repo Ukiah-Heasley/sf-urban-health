@@ -39,6 +39,9 @@ DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON
 ingest assets -> promote_raw_to_bronze -> bronze Parquet + metadata events
   -> compact metadata Parquet -> bronze promotion asset (when planned)
 
+bronze promotion asset -> build_lakehouse_gold -> dbt silver/gold Iceberg
+  -> gold transform completion asset
+
 lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg
   -> fixture prep -> bronze Parquet in MinIO -> dbt bronze/silver/gold Iceberg
   -> dbt smoke Iceberg model (local dev only)
@@ -62,7 +65,13 @@ selecting the same global interval. When no interval is selected, promotion and
 bronze promotion asset emission are skipped.
 
 Three ingest DAGs run at 06:00 UTC. `promote_raw_to_bronze` is asset-triggered by
-all three ingest assets.
+all three ingest assets. `build_lakehouse_gold` is asset-triggered by
+`BRONZE_PROMOTION_ASSET`, runs `dbt debug` then `dbt build --select tag:lakehouse`
+inside the Astro Airflow runtime against the mirrored project at
+`airflow/include/dbt/`, and emits `GOLD_TRANSFORM_ASSET` when complete. Local
+Airflow containers need `DBT_SPARK_HOST=host.docker.internal` (and matching
+`DBT_SPARK_PORT`) so dbt can reach the host-published Spark Thrift Server from
+`make spark-up`.
 
 ## Extraction invariants
 
@@ -102,7 +111,8 @@ imported as `from _shared ...`.
 ## Dependency boundaries
 
 - `pyproject.toml` controls local uv environments.
-- `airflow/requirements.txt` controls additional packages in the Astro image.
+- `airflow/requirements.txt` controls additional packages in the Astro image,
+  including `dbt-core` and `dbt-spark` for `build_lakehouse_gold`.
 - Dashboard imports may be skipped locally with `SKIP_DASHBOARD_TESTS=1` when
   platform wheels cannot load. Linux CI exercises the import.
 
