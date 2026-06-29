@@ -296,6 +296,22 @@ class SodaClient:
             params["$offset"] = offset
 
 
+def _s3_endpoint_url() -> str | None:
+    """Return a custom S3 endpoint when configured for MinIO or other S3-compatible stores."""
+    return os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT_URL") or None
+
+
+def _build_s3_client():
+    """Build a boto3 S3 client from environment credentials and optional endpoint."""
+    import boto3
+
+    kwargs: dict[str, str] = {}
+    endpoint = _s3_endpoint_url()
+    if endpoint:
+        kwargs["endpoint_url"] = endpoint
+    return boto3.client("s3", **kwargs)
+
+
 def _raw_s3_key(config: DatasetConfig, window: ExtractWindow) -> str:
     """Build the raw S3 object key for one dataset interval.
 
@@ -334,17 +350,16 @@ class S3NdjsonWriter:
     def from_env(cls) -> S3NdjsonWriter:
         """Build the default S3 writer at the Airflow or CLI boundary.
 
-        Input comes from ``AWS_S3_BUCKET`` plus boto3's normal credential
-        lookup. Output is a writer with a real S3 client. Tests should construct
+        Input comes from ``AWS_S3_BUCKET``, optional ``AWS_ENDPOINT_URL`` or
+        ``AWS_S3_ENDPOINT_URL``, and boto3's normal credential lookup. Output is
+        a writer with a real S3 client. Tests should construct
         ``S3NdjsonWriter`` directly with a fake client.
         """
-
-        import boto3
 
         bucket = os.environ.get("AWS_S3_BUCKET")
         if not bucket:
             raise RuntimeError("AWS_S3_BUCKET must be set")
-        return cls(bucket=bucket, s3_client=boto3.client("s3"))
+        return cls(bucket=bucket, s3_client=_build_s3_client())
 
     def write_records(
         self,

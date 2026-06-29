@@ -25,6 +25,7 @@ ROOT_DOCS = {
 }
 
 ALLOWED_TEXT = {
+    "airflow/packages.txt",
     "airflow/requirements.txt",
     "airflow/.astro/dag_integrity_exceptions.txt",
 }

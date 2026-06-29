@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from scripts import soda_ingest
 from scripts.permits import PERMITS_CONFIG
@@ -185,3 +187,64 @@ def test_ndjson_s3_writer_skips_empty_upload():
 
     assert result == soda_ingest.WriteResult(None, None, 0, 0)
     s3.upload_file.assert_not_called()
+
+
+def test_s3_ndjson_writer_from_env_requires_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AWS_S3_BUCKET", raising=False)
+
+    with pytest.raises(RuntimeError, match="AWS_S3_BUCKET must be set"):
+        soda_ingest.S3NdjsonWriter.from_env()
+
+
+def test_s3_ndjson_writer_from_env_uses_default_s3_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_S3_BUCKET", "my-bucket")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_S3_ENDPOINT_URL", raising=False)
+
+    with patch("boto3.client") as mock_client:
+        mock_client.return_value = MagicMock()
+        writer = soda_ingest.S3NdjsonWriter.from_env()
+
+    mock_client.assert_called_once_with("s3")
+    assert writer.bucket == "my-bucket"
+
+
+@pytest.mark.parametrize(
+    ("endpoint_env", "endpoint_url"),
+    [
+        ("AWS_ENDPOINT_URL", "http://host.docker.internal:9000"),
+        ("AWS_S3_ENDPOINT_URL", "http://localhost:9000"),
+    ],
+)
+def test_s3_ndjson_writer_from_env_honors_custom_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint_env: str,
+    endpoint_url: str,
+) -> None:
+    monkeypatch.setenv("AWS_S3_BUCKET", "lakehouse")
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_S3_ENDPOINT_URL", raising=False)
+    monkeypatch.setenv(endpoint_env, endpoint_url)
+
+    with patch("boto3.client") as mock_client:
+        mock_client.return_value = MagicMock()
+        writer = soda_ingest.S3NdjsonWriter.from_env()
+
+    mock_client.assert_called_once_with("s3", endpoint_url=endpoint_url)
+    assert writer.bucket == "lakehouse"
+
+
+def test_s3_ndjson_writer_from_env_prefers_aws_endpoint_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_S3_BUCKET", "lakehouse")
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://primary:9000")
+    monkeypatch.setenv("AWS_S3_ENDPOINT_URL", "http://fallback:9000")
+
+    with patch("boto3.client") as mock_client:
+        mock_client.return_value = MagicMock()
+        soda_ingest.S3NdjsonWriter.from_env()
+
+    mock_client.assert_called_once_with("s3", endpoint_url="http://primary:9000")

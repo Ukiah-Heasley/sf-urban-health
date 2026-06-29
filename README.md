@@ -156,6 +156,9 @@ uv run airflow/include/scripts/permits.py \
 The Airflow UI is available at <http://localhost:8080> with the local
 `admin` / `admin` development credentials.
 
+For a local ingest-to-bronze smoke against MinIO instead of AWS S3, see
+[Development — Local MinIO Airflow smoke](docs/DEVELOPMENT.md#local-minio-airflow-smoke).
+
 ## Local lakehouse (Spark + Iceberg + dbt)
 
 `lakehouse/docker-compose.yml` runs MinIO, a one-shot bucket initializer, and a

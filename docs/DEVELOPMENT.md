@@ -19,7 +19,9 @@ cp lakehouse/.env.example lakehouse/.env
 
 `airflow/.env` is gitignored and loaded by the root Makefile. The extractor
 requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Set `LAKE_LOCAL_ROOT`
-for local lakehouse smoke tests without AWS. `transform_lakehouse` reads
+for local lakehouse smoke tests without AWS. Set `AWS_ENDPOINT_URL` or
+`AWS_S3_ENDPOINT_URL` to point ingest and promotion code at an S3-compatible
+endpoint such as the local MinIO stack. `transform_lakehouse` reads
 `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and optional
 `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
 S3 JSON ingest metadata events.
@@ -82,6 +84,46 @@ the current UTC time.
 
 Scripts under `airflow/include/scripts/` are mounted into the containers. DAGs
 import them through the Dockerfile's `PYTHONPATH` configuration.
+
+### Local MinIO Airflow smoke
+
+This path exercises ingest and bronze promotion against the lakehouse MinIO
+stack without real AWS S3. It does not reset the bucket; avoid
+`make lakehouse-prepare-fixtures` unless you explicitly want a destructive
+local reseed.
+
+1. Start local MinIO (and Spark Thrift) with `make spark-up`. The
+   `minio-init` service creates the `lakehouse` bucket from `lakehouse/.env`.
+2. Configure `airflow/.env` for MinIO-compatible S3:
+   - `AWS_ACCESS_KEY_ID=minioadmin`
+   - `AWS_SECRET_ACCESS_KEY=minioadmin`
+   - `AWS_S3_BUCKET=lakehouse` (must match `LAKEHOUSE_BUCKET` in
+     `lakehouse/.env`)
+   - `AWS_ENDPOINT_URL=http://host.docker.internal:9000` for Astro containers
+     reaching the host-published MinIO API port (`MINIO_API_PORT`, default
+     `9000`). Use `http://localhost:9000` for host CLI runs such as
+     `make ingest`.
+3. Start Airflow with `make airflow-up`.
+4. In the UI at <http://localhost:8080>, trigger `ingest_permits`,
+   `ingest_evictions`, and `ingest_incidents` for the **same** logical date so
+   all three share one daily interval. Each DAG runs
+   `extract_{dataset}_to_raw -> record_{dataset}_extract_metadata ->
+   ingest_complete`.
+5. After all three ingest assets update, `transform_lakehouse` runs
+   automatically. Confirm it promotes the interval, compacts metadata, and
+   emits `lakehouse_transform_complete` rather than `lakehouse_noop`.
+6. Verify objects in MinIO (console at <http://localhost:9001> or `mc` against
+   `http://localhost:9000`):
+   - raw NDJSON under `raw/{permits,evictions,incidents}/data_interval_start=.../`
+   - current ingest metadata JSON under `lake/metadata/events/`
+   - bronze Parquet under `lake/parquet/bronze/`
+   - file-manifest metadata events under `lake/metadata/events/`
+   - compacted metadata Parquet under `lake/parquet/metadata/ingest_runs/` and
+     `lake/parquet/metadata/file_manifest/`
+7. Trigger `transform_lakehouse` again (or wait for the next asset-driven
+   run). With default `LAKEHOUSE_PLAN_MODE=pending` and no remaining pending
+   complete interval, the DAG should branch to `lakehouse_noop` and skip bronze
+   promotion and compaction.
 
 ## Testing
 
