@@ -3,7 +3,7 @@
     tags=['lakehouse', 'bronze']
 ) }}
 
-{% set bucket = env_var('LAKEHOUSE_BUCKET', 'lakehouse') %}
-{% set bronze_prefix = 's3a://' ~ bucket ~ '/lake/parquet/bronze/permits/' %}
+{% set bronze_base_uri = env_var('LAKEHOUSE_BRONZE_BASE_URI', 's3a://lakehouse/lake/parquet/bronze') %}
+{% set bronze_prefix = bronze_base_uri.rstrip('/') ~ '/permits/' %}
 
 select * from parquet.`{{ bronze_prefix }}`

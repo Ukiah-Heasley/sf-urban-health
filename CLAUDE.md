@@ -11,6 +11,7 @@ make airflow-up          # sync Airflow assets, then astro dev start
 make airflow-down
 make airflow-logs
 make spark-up            # local MinIO + Spark Thrift Server
+make spark-up-aws        # Spark Thrift in AWS Glue catalog mode (no MinIO)
 make spark-down
 make dbt-lakehouse-debug
 make dbt-lakehouse-smoke
@@ -43,9 +44,13 @@ ingest assets -> promote_raw_to_bronze -> bronze Parquet + metadata events
 bronze promotion asset -> build_lakehouse_gold -> dbt silver/gold Iceberg
   -> gold transform completion asset
 
-lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg
+lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg (local Hadoop catalog)
   -> fixture prep -> bronze Parquet in MinIO -> dbt bronze/silver/gold Iceberg
   -> dbt smoke Iceberg model (local dev only)
+
+`make spark-up-aws` starts Spark Thrift with Iceberg AWS Glue catalog and
+S3FileIO against AWS S3 (no MinIO). Bronze Parquet must already exist in S3.
+Airflow does not orchestrate the AWS Glue path yet.
 
 Plotly Dash remains a consumer shell over empty frames without credentials.
 Evidence reads committed Parquet snapshots; `make export-evidence-snapshots`
@@ -100,7 +105,8 @@ Airflow containers need `DBT_SPARK_HOST=host.docker.internal` (and matching
   `staging/`, `intermediate/`, `stg_*`, `int_*`, or `mart_*` in the lakehouse slice.
 - `smoke_iceberg` is the harmless Iceberg proof model.
 - Bronze dbt models (`bronze_permits`, `bronze_evictions`, `bronze_incidents`) are
-  ephemeral read adapters over Python-promoted MinIO Parquet.
+  ephemeral read adapters over Python-promoted bronze Parquet (`LAKEHOUSE_BRONZE_BASE_URI`,
+  default `s3a://lakehouse/lake/parquet/bronze`).
 - Silver Iceberg models: `permits_current`, `evictions_current`, `incidents_current`.
 - Gold Iceberg models: `housing_production`, `permit_pipeline`, `evictions`, `public_safety`.
 

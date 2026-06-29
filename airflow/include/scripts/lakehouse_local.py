@@ -126,7 +126,17 @@ def reset_lakehouse_bucket(storage: StorageConfig) -> int:
 def _lakehouse_compose_cmd(*args: str) -> list[str]:
     compose = repo_root() / "lakehouse" / "docker-compose.yml"
     env_file = repo_root() / "lakehouse" / ".env"
-    return ["docker", "compose", "-f", str(compose), "--env-file", str(env_file), *args]
+    return [
+        "docker",
+        "compose",
+        "-f",
+        str(compose),
+        "--profile",
+        "local",
+        "--env-file",
+        str(env_file),
+        *args,
+    ]
 
 
 def _wait_for_spark_thrift(*, timeout_seconds: float = 180.0) -> None:
@@ -159,11 +169,14 @@ def _wait_for_spark_thrift(*, timeout_seconds: float = 180.0) -> None:
 
 def refresh_spark_catalog_after_bucket_reset(*, timeout_seconds: float = 180.0) -> None:
     """Restart Spark Thrift so entrypoint bootstrap recreates catalog namespaces."""
+    env = os.environ.copy()
+    env["LAKEHOUSE_CATALOG"] = "hadoop"
     result = subprocess.run(
         _lakehouse_compose_cmd("restart", "spark-thrift"),
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown compose failure"

@@ -107,19 +107,25 @@ this DAG.
 lakehouse contracts into `airflow/include/` for the Astro Docker build context.
 
 Local development runs MinIO and a repo-built Spark Thrift Server from
-`lakehouse/docker-compose.yml`. Spark is configured with Iceberg and S3A so
-warehouse data is stored under `s3a://lakehouse/warehouse/` in the local bucket.
+`lakehouse/docker-compose.yml` when using `make spark-up`. Spark uses the
+Hadoop Iceberg catalog with S3A pointed at MinIO; warehouse data is stored under
+`s3a://lakehouse/warehouse/` in the local bucket. `make spark-up-aws` starts
+only Spark Thrift with the AWS Glue Iceberg catalog and S3FileIO against AWS S3
+(no MinIO, no Glue crawlers or Glue ETL jobs). Airflow does not orchestrate the
+AWS Glue build path yet.
+
 `dbt/profiles.yml` connects to Spark Thrift with the `lakehouse` uv dependency
-group. Bronze remains Parquet in MinIO.
+group. Bronze remains Parquet in object storage; dbt reads it through
+`LAKEHOUSE_BRONZE_BASE_URI`.
 
 Local fixture preparation uses `make lakehouse-prepare-fixtures`, which
 destructively resets the local MinIO bucket, seeds fixture raw NDJSON for
 permits, evictions, and incidents, promotes bronze Parquet through the existing
 Python promotion code, and restarts Spark Thrift so catalog namespaces are
-rebuilt. dbt reads bronze through ephemeral `bronze_*` models over MinIO Parquet.
-Silver `*_current` models and gold analytical models materialize as Iceberg
-through Spark/dbt. The `smoke_iceberg` model remains a harmless catalog
-connectivity check.
+rebuilt. dbt reads bronze through ephemeral `bronze_*` models over Parquet at
+`LAKEHOUSE_BRONZE_BASE_URI`. Silver `*_current` models and gold analytical models
+materialize as Iceberg through Spark/dbt. The `smoke_iceberg` model remains a
+harmless catalog connectivity check.
 
 ```text
 make spark-up
@@ -130,6 +136,9 @@ make lakehouse-prepare-fixtures
 
 make dbt-lakehouse-gold
     → bronze_* (ephemeral) + silver/gold Iceberg tables
+
+make spark-up-aws
+    → Spark Thrift only; Glue catalog + S3FileIO (AWS bronze must already exist)
 
 make dbt-lakehouse-permits
     → bronze_permits (ephemeral) + permits_current Iceberg table

@@ -27,8 +27,12 @@ endpoint such as the local MinIO stack. `promote_raw_to_bronze` reads
 S3 JSON ingest metadata events.
 
 `lakehouse/.env` configures local MinIO and Spark Thrift host ports. The root
-Makefile loads it for `spark-up`, fixture prep, and lakehouse dbt targets.
-`make spark-up` creates the file from `lakehouse/.env.example` when missing.
+Makefile loads it for `spark-up`, `spark-up-aws`, fixture prep, and lakehouse dbt
+targets. `make spark-up` creates the file from `lakehouse/.env.example` when
+missing. `LAKEHOUSE_CATALOG` selects the Iceberg catalog implementation:
+`hadoop` (default, MinIO S3A) or `glue` (AWS Glue + S3FileIO). For AWS Glue
+proof, set `LAKEHOUSE_WAREHOUSE_URI`, `LAKEHOUSE_BRONZE_BASE_URI`, AWS
+credentials, and region in `lakehouse/.env`; see `lakehouse/.env.example`.
 Spark Thrift always listens on container port `10000`; `SPARK_THRIFT_PORT` selects
 the host port mapped by Compose. When `DBT_SPARK_PORT` is unset, the Makefile
 exports it from `SPARK_THRIFT_PORT`, or `10000` when that is also unset. dbt also
@@ -52,6 +56,7 @@ Spark Thrift port.
 | Build/test all lakehouse bronze/silver/gold Iceberg models | `make dbt-lakehouse-gold` |
 | Export Evidence Parquet snapshots from local lakehouse gold | `make export-evidence-snapshots` |
 | Start local MinIO + Spark Thrift | `make spark-up` |
+| Start Spark Thrift in AWS Glue catalog mode | `make spark-up-aws` |
 | Stop local lakehouse stack | `make spark-down` |
 | Verify dbt Spark profile | `make dbt-lakehouse-debug` |
 | Run dbt smoke Iceberg model | `make dbt-lakehouse-smoke` |
@@ -155,11 +160,32 @@ fixture bronze Parquet for permits, evictions, and incidents. That target delete
 every object in the local `lakehouse` bucket before reseeding fixture data and
 restarting Spark Thrift so catalog namespaces are rebuilt. Run
 `make dbt-lakehouse-debug`, `make dbt-lakehouse-permits`, `make dbt-lakehouse-gold`, or
-`make dbt-lakehouse-smoke` as needed. Bronze remains Parquet in MinIO. dbt uses
-medallion folders (`bronze/`, `silver/`, `gold/`) with ephemeral bronze read
-adapters and Iceberg silver/gold tables. The smoke model is tagged `smoke`,
-materializes as Iceberg, and stores warehouse data in the local MinIO bucket
-through Spark S3A without reading bronze.
+`make dbt-lakehouse-smoke` as needed. Bronze remains Parquet in object storage;
+dbt reads it through `LAKEHOUSE_BRONZE_BASE_URI` (default
+`s3a://lakehouse/lake/parquet/bronze`). dbt uses medallion folders (`bronze/`,
+`silver/`, `gold/`) with ephemeral bronze read adapters and Iceberg silver/gold
+tables. The smoke model is tagged `smoke`, materializes as Iceberg, and stores
+warehouse data in the configured catalog warehouse without reading bronze.
+
+### AWS Glue catalog proof
+
+`make spark-up-aws` starts only Spark Thrift with `LAKEHOUSE_CATALOG=glue`. It
+does not start MinIO, does not use Glue crawlers or Glue ETL jobs, and is not
+orchestrated from Airflow. Bronze Parquet must already exist in AWS S3 at
+`LAKEHOUSE_BRONZE_BASE_URI`. From the repository root with AWS credentials in
+`lakehouse/.env`:
+
+```bash
+make spark-up-aws
+make dbt-lakehouse-debug
+make dbt-lakehouse-gold
+make spark-down
+```
+
+Iceberg silver and gold tables register in the AWS Glue Data Catalog under
+`DBT_SPARK_SCHEMA` (default `sf_urban_health`). The Iceberg warehouse uses
+`s3://` at `LAKEHOUSE_WAREHOUSE_URI`; bronze Parquet reads use `s3a://` at
+`LAKEHOUSE_BRONZE_BASE_URI`.
 
 ### Evidence snapshot export
 

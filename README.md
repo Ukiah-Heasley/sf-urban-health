@@ -96,7 +96,7 @@ See [Architecture](docs/ARCHITECTURE.md) for the complete current-state flow.
 airflow/                 Astro project, DAGs, and extractors
 contracts/lakehouse/     YAML contracts for parquet lake table layouts
 dbt/                     Lakehouse-first dbt project (Spark + Iceberg locally)
-lakehouse/               Local MinIO and Spark Thrift Server Compose stack
+lakehouse/               Local MinIO + Spark Thrift; AWS Glue catalog mode via spark-up-aws
 dashboard/               Six-page Plotly Dash consumer shell
 reports/                 Static Evidence site and sample Parquet snapshots
 tests/                   Extractor, DAG, and dashboard import tests
@@ -141,6 +141,7 @@ make pre-commit        # all configured hooks
 make docs-check        # documentation consistency checks
 
 make spark-up          # local MinIO + Spark Thrift Server
+make spark-up-aws      # Spark Thrift in AWS Glue catalog mode (no MinIO)
 make spark-down
 make lakehouse-prepare-fixtures       # destructive: reset MinIO, seed all fixtures, promote bronze
 make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
@@ -178,10 +179,19 @@ and `DBT_SPARK_PORT` to the host port published by `make spark-up` (see
 ## Local lakehouse (Spark + Iceberg + dbt)
 
 `lakehouse/docker-compose.yml` runs MinIO, a one-shot bucket initializer, and a
-repo-built Spark Thrift Server with Iceberg and S3A enabled. Spark bootstraps
+repo-built Spark Thrift Server with Iceberg enabled. `make spark-up` uses the
+default Hadoop Iceberg catalog with S3A pointed at MinIO. Spark bootstraps
 `default` and `sf_urban_health` namespaces in the MinIO warehouse before Thrift
 starts. Iceberg warehouse data is stored under `s3a://lakehouse/warehouse/` in
 the local bucket.
+
+`make spark-up-aws` starts only Spark Thrift with `LAKEHOUSE_CATALOG=glue`,
+Iceberg `S3FileIO`, and the warehouse at `LAKEHOUSE_WAREHOUSE_URI` (typically
+`s3://<bucket>/warehouse`). It does not start MinIO and does not use Glue
+crawlers or Glue ETL jobs. Bronze Parquet must already exist in AWS S3 at
+`LAKEHOUSE_BRONZE_BASE_URI` (typically `s3a://<bucket>/lake/parquet/bronze`).
+Set AWS credentials and region in `lakehouse/.env`; see `lakehouse/.env.example`.
+Airflow does not orchestrate the AWS Glue build path yet.
 
 ```bash
 make spark-up
@@ -193,14 +203,25 @@ make dbt-lakehouse-smoke
 make spark-down
 ```
 
+AWS Glue proof from host CLI (requires existing AWS bronze Parquet):
+
+```bash
+make spark-up-aws
+make dbt-lakehouse-debug
+make dbt-lakehouse-gold
+make spark-down
+```
+
 `lakehouse-prepare-fixtures` deletes every object in the local `lakehouse` MinIO
 bucket, seeds `tests/fixtures/lakehouse/{permits,evictions,incidents}.ndjson` as
 raw NDJSON under the production interval key shape, writes ingest metadata events,
 promotes bronze Parquet for all three datasets through the existing Python
 promotion code, and restarts Spark Thrift so catalog namespaces are rebuilt after
 the bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
-dbt reads bronze through ephemeral `bronze_*` models over MinIO Parquet. This
-target is local-only and requires `make spark-up`.
+dbt reads bronze through ephemeral `bronze_*` models over Parquet at
+`LAKEHOUSE_BRONZE_BASE_URI` (default `s3a://lakehouse/lake/parquet/bronze` for
+local MinIO). `lakehouse-prepare-fixtures` is local-only and requires
+`make spark-up`.
 
 The dbt project uses medallion folder names (`bronze/`, `silver/`, `gold/`) and
 does not mix `staging/`, `intermediate/`, or `mart_*` model names in the
@@ -212,7 +233,7 @@ layer carries that meaning without a `mart_` prefix.
 container always listens on port `10000`. Override `DBT_SPARK_HOST`, `DBT_SPARK_PORT`
 (to match `SPARK_THRIFT_PORT`), and `DBT_SPARK_SCHEMA` when needed.
 The `lakehouse` uv dependency group installs `dbt-core` and `dbt-spark`. Bronze
-remains Parquet in MinIO. dbt materializes silver and gold models as Iceberg
+remains Parquet in object storage. dbt materializes silver and gold models as Iceberg
 catalog tables through Spark Thrift. Silver current models deduplicate bronze by
 natural key; gold models aggregate silver for housing production, permit
 pipeline, evictions, and public safety. The `smoke_iceberg` model is tagged

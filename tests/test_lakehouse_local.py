@@ -221,3 +221,12 @@ def test_iceberg_contract_without_catalog_fields_fails(tmp_path) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False))
     with pytest.raises(lc.ContractValidationError, match="catalog_schema and catalog_name"):
         lc.load_contracts(tmp_path)
+
+
+def test_lakehouse_compose_cmd_includes_local_profile() -> None:
+    from scripts.lakehouse_local import _lakehouse_compose_cmd
+
+    cmd = _lakehouse_compose_cmd("restart", "spark-thrift")
+    assert "--profile" in cmd
+    assert "local" in cmd
+    assert cmd[-2:] == ["restart", "spark-thrift"]

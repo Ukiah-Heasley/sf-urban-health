@@ -7,6 +7,7 @@ help:
 	@echo "  make airflow-down   Stop local Airflow stack"
 	@echo "  make airflow-logs   Tail Airflow scheduler logs"
 	@echo "  make spark-up       Start local MinIO + Spark Thrift Server (lakehouse dev)"
+	@echo "  make spark-up-aws   Start Spark Thrift in AWS Glue catalog mode (no MinIO)"
 	@echo "  make spark-down     Stop local lakehouse Docker stack"
 	@echo "  make dbt-lakehouse-debug  Verify dbt Spark profile against Thrift Server"
 	@echo "  make dbt-lakehouse-smoke  Run dbt smoke Iceberg model (requires spark-up)"
@@ -140,14 +141,18 @@ $(LAKEHOUSE_ENV):
 
 .PHONY: spark-up
 spark-up: $(LAKEHOUSE_ENV)
-	docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV) up -d --build --wait
+	LAKEHOUSE_CATALOG=hadoop docker compose -f $(LAKEHOUSE_COMPOSE) --profile local --env-file $(LAKEHOUSE_ENV) up -d --build --wait
+
+.PHONY: spark-up-aws
+spark-up-aws: $(LAKEHOUSE_ENV)
+	LAKEHOUSE_CATALOG=glue docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV) up -d --build --wait --no-deps spark-thrift
 
 .PHONY: spark-down
 spark-down:
 	@if [ -f $(LAKEHOUSE_ENV) ]; then \
-		docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV) down; \
+		docker compose -f $(LAKEHOUSE_COMPOSE) --profile local --env-file $(LAKEHOUSE_ENV) down; \
 	else \
-		docker compose -f $(LAKEHOUSE_COMPOSE) down; \
+		docker compose -f $(LAKEHOUSE_COMPOSE) --profile local down; \
 	fi
 
 .PHONY: dbt-lakehouse-debug

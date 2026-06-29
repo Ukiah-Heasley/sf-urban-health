@@ -2,6 +2,7 @@ name: sf-urban-health-lakehouse
 
 services:
   minio:
+    profiles: ["local"]
     image: minio/minio:${MINIO_IMAGE:-RELEASE.2024-11-07T00-52-20Z}
     container_name: lakehouse-minio
     command: server /data --console-address ":9001"
@@ -21,6 +22,7 @@ services:
       start_period: 10s
 
   minio-init:
+    profiles: ["local"]
     image: minio/mc:${MINIO_MC_IMAGE:-RELEASE.2024-11-21T17-21-54Z}
     container_name: lakehouse-minio-init
     depends_on:
@@ -51,10 +53,17 @@ services:
       minio-init:
         condition: service_completed_successfully
     environment:
+      LAKEHOUSE_CATALOG: ${LAKEHOUSE_CATALOG:-hadoop}
+      LAKEHOUSE_BUCKET: ${LAKEHOUSE_BUCKET:-lakehouse}
+      LAKEHOUSE_WAREHOUSE_URI: ${LAKEHOUSE_WAREHOUSE_URI:-}
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      LAKEHOUSE_BUCKET: ${LAKEHOUSE_BUCKET:-lakehouse}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
     ports:
       - "${SPARK_THRIFT_PORT:-10000}:10000"
       - "${SPARK_UI_PORT:-4040}:4040"
