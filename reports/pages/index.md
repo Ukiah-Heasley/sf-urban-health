@@ -3,7 +3,7 @@ title: SF Housing Production
 ---
 
 <Alert status=info>
-This static page reads a committed Parquet snapshot. The Pages workflow replaces it from Snowflake when repository credentials are available and otherwise keeps the sample data.
+This static page reads a committed Parquet snapshot. Regenerate it locally from lakehouse gold with `make export-evidence-snapshots`; GitHub Pages builds the committed file without querying Spark or Iceberg.
 </Alert>
 
 Monthly residential building-permit activity across San Francisco, from the `mart_housing_production` mart.

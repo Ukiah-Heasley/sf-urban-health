@@ -14,6 +14,7 @@ help:
 	@echo "  make lakehouse-prepare-permits-fixture  Alias for lakehouse-prepare-fixtures"
 	@echo "  make dbt-lakehouse-permits  Build and test permits_current silver Iceberg model (requires spark-up + fixture prep)"
 	@echo "  make dbt-lakehouse-gold     Build and test all lakehouse bronze/silver/gold Iceberg models (requires spark-up + fixture prep)"
+	@echo "  make export-evidence-snapshots  Export Evidence Parquet snapshots from local lakehouse gold (requires spark-up + dbt-lakehouse-gold)"
 	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
 	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
@@ -124,6 +125,10 @@ dbt-lakehouse-permits: $(LAKEHOUSE_ENV)
 .PHONY: dbt-lakehouse-gold
 dbt-lakehouse-gold: $(LAKEHOUSE_ENV)
 	cd $(DBT_DIR) && uv run --group lakehouse dbt build --select tag:lakehouse --profiles-dir .
+
+.PHONY: export-evidence-snapshots
+export-evidence-snapshots: $(LAKEHOUSE_ENV)
+	PYTHONPATH=airflow/include uv run --group lakehouse python airflow/include/scripts/evidence_snapshots.py
 
 .PHONY: lakehouse-smoke
 lakehouse-smoke:

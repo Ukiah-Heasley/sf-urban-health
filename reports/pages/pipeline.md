@@ -3,7 +3,7 @@ title: Pipeline Health & Data Trust
 ---
 
 <Alert status=info>
-This static page reads committed Parquet snapshots exported from the Snowflake observability marts when credentials are available, with sample data as the build fallback.
+This static page reads committed Parquet snapshots. Pipeline health and data trust are deterministic local observability shapes until lakehouse metadata is queryable through Spark.
 </Alert>
 
 ## Data trust by dataset

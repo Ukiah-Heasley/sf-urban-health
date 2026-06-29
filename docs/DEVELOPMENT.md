@@ -50,6 +50,7 @@ Spark Thrift port.
 | Reset local MinIO and seed all dataset fixtures to bronze | `make lakehouse-prepare-fixtures` (destructive; requires `spark-up`; `lakehouse-prepare-permits-fixture` is an alias) |
 | Build/test permits silver Iceberg model | `make dbt-lakehouse-permits` |
 | Build/test all lakehouse bronze/silver/gold Iceberg models | `make dbt-lakehouse-gold` |
+| Export Evidence Parquet snapshots from local lakehouse gold | `make export-evidence-snapshots` |
 | Start local MinIO + Spark Thrift | `make spark-up` |
 | Stop local lakehouse stack | `make spark-down` |
 | Verify dbt Spark profile | `make dbt-lakehouse-debug` |
@@ -159,3 +160,25 @@ medallion folders (`bronze/`, `silver/`, `gold/`) with ephemeral bronze read
 adapters and Iceberg silver/gold tables. The smoke model is tagged `smoke`,
 materializes as Iceberg, and stores warehouse data in the local MinIO bucket
 through Spark S3A without reading bronze.
+
+### Evidence snapshot export
+
+After the local lakehouse gold models build, regenerate the committed Evidence
+snapshots with:
+
+```bash
+make spark-up
+make lakehouse-prepare-fixtures
+make dbt-lakehouse-gold
+make export-evidence-snapshots
+```
+
+`airflow/include/scripts/evidence_snapshots.py` connects to Spark Thrift,
+exports `mart_housing_production.parquet` from the gold Iceberg table
+`sf_urban_health.housing_production`, and writes deterministic observability
+snapshots for `mart_pipeline_health.parquet` and `mart_data_trust.parquet`.
+Lakehouse metadata Parquet is not registered in the Spark catalog, so those two
+observability marts remain generated locally in this slice.
+
+`reports/scripts/make_sample_data.py` remains the fallback demo-data generator
+when Spark is unavailable. GitHub Pages builds from committed snapshots only.

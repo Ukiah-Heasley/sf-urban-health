@@ -18,6 +18,7 @@ make lakehouse-prepare-fixtures       # destructive local MinIO reset + all data
 make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg
+make export-evidence-snapshots            # export Evidence Parquet snapshots from local lakehouse gold
 make dashboard-dev       # http://localhost:8050
 make dashboard-docker
 make lint
@@ -46,8 +47,10 @@ lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg
   -> fixture prep -> bronze Parquet in MinIO -> dbt bronze/silver/gold Iceberg
   -> dbt smoke Iceberg model (local dev only)
 
-Plotly Dash and Evidence remain consumer shells over empty frames or committed
-sample Parquet until lakehouse consumer wiring lands.
+Plotly Dash remains a consumer shell over empty frames without credentials.
+Evidence reads committed Parquet snapshots; `make export-evidence-snapshots`
+regenerates them locally from lakehouse gold (`mart_housing_production`) plus
+deterministic observability shapes (`mart_pipeline_health`, `mart_data_trust`).
 ```
 
 `promote_raw_to_bronze` plans intervals from current S3 JSON ingest metadata

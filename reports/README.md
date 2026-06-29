@@ -9,15 +9,34 @@ Evidence queries three local Parquet snapshots through DuckDB:
 - `mart_pipeline_health`
 - `mart_data_trust`
 
-The Pages workflow builds from the committed sample snapshots only.
+GitHub Pages builds from committed snapshots only. It does not query Spark or
+Iceberg at deploy time.
 
-## Develop
+## Regenerate snapshots
 
-From the repository root:
+From the repository root, after local lakehouse gold models are built:
+
+```bash
+make spark-up
+make lakehouse-prepare-fixtures
+make dbt-lakehouse-gold
+make export-evidence-snapshots
+```
+
+`make export-evidence-snapshots` runs `airflow/include/scripts/evidence_snapshots.py`.
+It exports `mart_housing_production.parquet` from gold Iceberg
+`sf_urban_health.housing_production` and writes deterministic observability
+snapshots for `mart_pipeline_health.parquet` and `mart_data_trust.parquet`.
+
+When Spark is unavailable, regenerate demo-shaped snapshots with:
 
 ```bash
 uv run python reports/scripts/make_sample_data.py
+```
 
+## Develop
+
+```bash
 cd reports
 npm ci
 npm run sources
@@ -33,8 +52,8 @@ local build uses `npm run build && npm run preview`.
 reports/
   pages/                         Evidence pages
   sources/sf_urban_health/       DuckDB connection and source queries
-    data/                        committed sample Parquet snapshots
-  scripts/make_sample_data.py    deterministic-shape synthetic data
+    data/                        committed Parquet snapshots
+  scripts/make_sample_data.py    fallback deterministic demo data
 ```
 
 Deployment behavior is documented in [Deployment](../docs/DEPLOY.md).

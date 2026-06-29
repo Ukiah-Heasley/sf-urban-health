@@ -124,9 +124,14 @@ tables:
 - `mart_pipeline_health`
 - `mart_data_trust`
 
-These snapshot names predate the lakehouse gold rename and remain committed
-sample data for the static Evidence build. Dash and Evidence are not wired to
-live Spark/Iceberg gold tables.
+These snapshot names predate the lakehouse gold rename and remain the Evidence
+source contract. `make export-evidence-snapshots` writes
+`mart_housing_production.parquet` from the gold Iceberg table
+`sf_urban_health.housing_production` after local lakehouse gold builds.
+`mart_pipeline_health.parquet` and `mart_data_trust.parquet` remain
+deterministic observability snapshots in this slice because lakehouse metadata
+Parquet is not registered in the Spark catalog.
 
-`reports/scripts/make_sample_data.py` regenerates deterministic sample rows with
-the same column shapes so the static site builds without a warehouse.
+`reports/scripts/make_sample_data.py` remains the fallback demo-data generator
+when Spark is unavailable. Dash is not wired to live Spark/Iceberg gold tables.
+GitHub Pages builds from committed snapshots only.

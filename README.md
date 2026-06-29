@@ -37,9 +37,11 @@ Bronze promotion asset
     → gold transform completion asset
 ```
 
-The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Dashboard
-and Evidence pages are retained as consumer shells that render from empty frames
-or committed sample Parquet until lakehouse consumer wiring lands.
+The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Plotly Dash
+remains a consumer shell that renders empty-state layouts without credentials.
+Evidence reads committed Parquet snapshots. `make export-evidence-snapshots`
+regenerates them locally from lakehouse gold (`mart_housing_production`) plus
+deterministic observability shapes for pipeline health and data trust.
 
 ## Ingest behavior
 
@@ -146,6 +148,7 @@ make dbt-lakehouse-debug
 make dbt-lakehouse-smoke
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg models
+make export-evidence-snapshots          # export Evidence Parquet snapshots from local lakehouse gold
 
 make airflow-up        # sync Airflow mirrors, then start Astro Airflow
 make airflow-down
@@ -231,8 +234,9 @@ in `airflow/include/scripts/lakehouse_metadata.py`.
   shell. Live warehouse loading is disabled; pages render empty-state layouts
   without credentials.
 - [Evidence](reports/README.md) reads committed local Parquet snapshots with
-  DuckDB and is published to
-  [GitHub Pages](https://ukiah-heasley.github.io/sf-urban-health/).
+  DuckDB. `make export-evidence-snapshots` regenerates them from local lakehouse
+  gold after `make dbt-lakehouse-gold`. GitHub Pages builds from the committed
+  snapshots and does not query Spark or Iceberg at deploy time.
 
 ## Documentation
 

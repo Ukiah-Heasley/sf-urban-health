@@ -12,7 +12,23 @@ committed Parquet snapshots
     -> GitHub Pages
 ```
 
-Local build:
+GitHub Pages builds from committed snapshots only. It does not query Spark,
+Iceberg, or MinIO at deploy time.
+
+Local export after building lakehouse gold:
+
+```bash
+make spark-up
+make lakehouse-prepare-fixtures
+make dbt-lakehouse-gold
+make export-evidence-snapshots
+cd reports
+npm ci
+npm run sources
+npm run build
+```
+
+Fallback when Spark is unavailable:
 
 ```bash
 uv run python reports/scripts/make_sample_data.py
@@ -21,6 +37,12 @@ npm ci
 npm run sources
 npm run build
 ```
+
+`make export-evidence-snapshots` writes:
+
+- `mart_housing_production.parquet` from gold Iceberg `housing_production`
+- `mart_pipeline_health.parquet` and `mart_data_trust.parquet` as deterministic
+  observability shapes (lakehouse metadata is not queryable through Spark yet)
 
 Repository Pages must use **GitHub Actions** as its source. The workflow runs on
 manual dispatch, relevant pull requests, and its daily schedule.
