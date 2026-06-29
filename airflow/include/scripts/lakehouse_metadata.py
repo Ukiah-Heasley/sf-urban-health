@@ -294,7 +294,7 @@ def parse_lakehouse_plan_limit(raw: str | int | None = None) -> int:
     if value != LAKEHOUSE_PLAN_LIMIT:
         raise LakehouseLoadError(
             f"LAKEHOUSE_PLAN_LIMIT must be {LAKEHOUSE_PLAN_LIMIT} for the current "
-            f"transform_lakehouse DAG; got {value}"
+            f"promote_raw_to_bronze DAG; got {value}"
         )
     return value
 

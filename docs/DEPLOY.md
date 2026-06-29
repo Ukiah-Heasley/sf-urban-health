@@ -44,4 +44,4 @@ The Astro project can run locally with `make airflow-up` or be packaged through
 the Astro CLI. Configure AWS and DataSF values through the deployment platform.
 
 The ingest DAGs land raw NDJSON in S3 and promote bronze Parquet through
-`transform_lakehouse`.
+`promote_raw_to_bronze`.

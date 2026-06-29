@@ -14,8 +14,8 @@ pytest.importorskip("airflow.models", reason="airflow not installed; install --g
 
 def test_make_ingest_dag_extracts_raw_and_emits_asset():
     from airflow.timetables.interval import CronDataIntervalTimetable
-    from dag_factory import DagConfig, make_ingest_dag
-    from pipeline_assets import PERMITS_INGEST_ASSET
+    from _shared.dag_factory import DagConfig, make_ingest_dag
+    from _shared.pipeline_assets import PERMITS_INGEST_ASSET
     from scripts.soda_ingest import DatasetConfig
 
     cfg = DagConfig(

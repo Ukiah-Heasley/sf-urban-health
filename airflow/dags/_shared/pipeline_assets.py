@@ -23,7 +23,7 @@ BRONZE_ASSETS = {
     "incidents": INCIDENTS_BRONZE_ASSET,
 }
 
-LAKEHOUSE_TRANSFORM_ASSET = Asset("sf-urban-health://lakehouse/transform_complete")
+BRONZE_PROMOTION_ASSET = Asset("sf-urban-health://lakehouse/bronze/promotion_complete")
 
 
 def ingest_asset_for(dataset_name: str) -> Asset:

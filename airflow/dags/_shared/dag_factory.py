@@ -17,7 +17,7 @@ from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import DAG
 from airflow.timetables.interval import CronDataIntervalTimetable
 
-from pipeline_assets import ingest_asset_for
+from _shared.pipeline_assets import ingest_asset_for
 from scripts.lakehouse_metadata import record_extract_metadata
 from scripts.soda_ingest import (
     DatasetConfig,

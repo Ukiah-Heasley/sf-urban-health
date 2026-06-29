@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from airflow.sdk import DAG  # noqa: F401 - required for Airflow 3 DAG file discovery
-from dag_factory import DagConfig, make_ingest_dag
+from _shared.dag_factory import DagConfig, make_ingest_dag
 from scripts.permits import PERMITS_CONFIG
 
 dag = make_ingest_dag(DagConfig(

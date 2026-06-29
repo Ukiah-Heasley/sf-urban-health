@@ -1,4 +1,4 @@
-"""Lakehouse transform DAG: bronze promotion and metadata compaction."""
+"""Bronze promotion DAG: promote complete raw intervals to bronze Parquet."""
 from __future__ import annotations
 
 import os
@@ -9,10 +9,10 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import DAG
 
-from pipeline_assets import (
+from _shared.pipeline_assets import (
+    BRONZE_PROMOTION_ASSET,
     EVICTIONS_INGEST_ASSET,
     INCIDENTS_INGEST_ASSET,
-    LAKEHOUSE_TRANSFORM_ASSET,
     PERMITS_INGEST_ASSET,
     bronze_asset_for,
 )
@@ -35,9 +35,9 @@ _DATASETS = {
     "incidents": INCIDENTS_CONFIG,
 }
 
-_SELECT_TASK_ID = "select_lakehouse_interval"
+_SELECT_TASK_ID = "select_bronze_interval"
 _PROMOTE_PERMITS_TASK_ID = "promote_permits_to_bronze"
-_NOOP_TASK_ID = "lakehouse_noop"
+_NOOP_TASK_ID = "bronze_promotion_noop"
 
 
 def _parse_optional_plan_timestamp(value: str | None) -> datetime | None:
@@ -46,7 +46,7 @@ def _parse_optional_plan_timestamp(value: str | None) -> datetime | None:
     return coerce_utc_datetime(value)
 
 
-def _select_lakehouse_interval(**context) -> dict | None:
+def _select_bronze_interval(**context) -> dict | None:
     storage = storage_from_env()
     mode = os.environ.get("LAKEHOUSE_PLAN_MODE", "pending")
     limit = parse_lakehouse_plan_limit(os.environ.get("LAKEHOUSE_PLAN_LIMIT", "1"))
@@ -60,26 +60,26 @@ def _select_lakehouse_interval(**context) -> dict | None:
         limit=limit,
     )
     if not plans:
-        context["ti"].xcom_push(key="lakehouse_interval_plan", value=None)
+        context["ti"].xcom_push(key="bronze_interval_plan", value=None)
         return None
     plan = plans[0]
     payload = lakehouse_interval_plan_to_dict(plan)
-    context["ti"].xcom_push(key="lakehouse_interval_plan", value=payload)
+    context["ti"].xcom_push(key="bronze_interval_plan", value=payload)
     return payload
 
 
-class BranchOnLakehousePlanOperator(BaseBranchOperator):
+class BranchOnBronzePlanOperator(BaseBranchOperator):
     """Skip promotion and asset emission when no interval is selected."""
 
     def choose_branch(self, context) -> str:
-        plan = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="lakehouse_interval_plan")
+        plan = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="bronze_interval_plan")
         if plan is None:
             return _NOOP_TASK_ID
         return _PROMOTE_PERMITS_TASK_ID
 
 
 def _promote_dataset(dataset_name: str, **context) -> str | None:
-    plan_payload = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="lakehouse_interval_plan")
+    plan_payload = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="bronze_interval_plan")
     if plan_payload is None:
         return None
 
@@ -101,15 +101,15 @@ def _promote_dataset(dataset_name: str, **context) -> str | None:
 
 
 def _compact_metadata(**context) -> None:
-    plan_payload = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="lakehouse_interval_plan")
+    plan_payload = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="bronze_interval_plan")
     if plan_payload is None:
         return
     compact_lakehouse_metadata()
 
 
 with DAG(
-    dag_id="transform_lakehouse",
-    description="Promote raw intervals to bronze Parquet and compact lakehouse metadata",
+    dag_id="promote_raw_to_bronze",
+    description="Promote complete raw intervals to bronze Parquet and compact lakehouse metadata",
     schedule=[PERMITS_INGEST_ASSET, EVICTIONS_INGEST_ASSET, INCIDENTS_INGEST_ASSET],
     start_date=datetime(2026, 5, 1, tzinfo=timezone.utc),
     catchup=False,
@@ -121,12 +121,12 @@ with DAG(
     },
     tags=["sf-civic", "lakehouse", "daily"],
 ) as dag:
-    select_lakehouse_interval = PythonOperator(
+    select_bronze_interval = PythonOperator(
         task_id=_SELECT_TASK_ID,
-        python_callable=_select_lakehouse_interval,
+        python_callable=_select_bronze_interval,
     )
-    branch_on_plan = BranchOnLakehousePlanOperator(
-        task_id="branch_on_lakehouse_plan",
+    branch_on_plan = BranchOnBronzePlanOperator(
+        task_id="branch_on_bronze_plan",
     )
     promote_permits = PythonOperator(
         task_id=_PROMOTE_PERMITS_TASK_ID,
@@ -150,20 +150,20 @@ with DAG(
         task_id="compact_lakehouse_metadata",
         python_callable=_compact_metadata,
     )
-    lakehouse_transform_complete = EmptyOperator(
-        task_id="lakehouse_transform_complete",
-        outlets=[LAKEHOUSE_TRANSFORM_ASSET],
+    bronze_promotion_complete = EmptyOperator(
+        task_id="bronze_promotion_complete",
+        outlets=[BRONZE_PROMOTION_ASSET],
     )
-    lakehouse_noop = EmptyOperator(
+    bronze_promotion_noop = EmptyOperator(
         task_id=_NOOP_TASK_ID,
     )
 
-    select_lakehouse_interval >> branch_on_plan
-    branch_on_plan >> [promote_permits, lakehouse_noop]
+    select_bronze_interval >> branch_on_plan
+    branch_on_plan >> [promote_permits, bronze_promotion_noop]
     (
         promote_permits
         >> promote_evictions
         >> promote_incidents
         >> compact_lakehouse_metadata_task
-        >> lakehouse_transform_complete
+        >> bronze_promotion_complete
     )

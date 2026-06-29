@@ -26,7 +26,7 @@ DataSF SODA API
     → ingest Airflow assets
 
 Airflow ingest assets
-    → transform_lakehouse (plans intervals from S3 JSON metadata events)
+    → promote_raw_to_bronze (plans intervals from S3 JSON metadata events)
     → bronze Parquet + S3 file-manifest events
     → compacted metadata Parquet
 ```
@@ -64,13 +64,13 @@ raw/{dataset}/
 An empty interval is successful, uploads no raw object, still writes an ingest
 metadata event, and emits its ingest asset.
 
-`transform_lakehouse` runs after all three ingest assets update. It selects
+`promote_raw_to_bronze` runs after all three ingest assets update. It selects
 the oldest pending complete interval from current S3 ingest metadata events
 (default `LAKEHOUSE_PLAN_MODE=pending`, `LAKEHOUSE_PLAN_LIMIT=1`), promotes that
 interval to bronze Parquet, writes file-manifest metadata events, compacts
-current metadata events into contract-compatible Parquet, and emits a lakehouse
-transform asset. When no interval is selected, the DAG branches to a no-op path
-that emits no bronze or lakehouse transform assets. Set
+current metadata events into contract-compatible Parquet, and emits a bronze
+promotion asset. When no interval is selected, the DAG branches to a no-op path
+that emits no bronze or bronze promotion assets. Set
 `LAKEHOUSE_PLAN_MODE=refresh` with optional start/end bounds to reprocess
 intervals without a separate code path. Current JSON metadata events are the
 promotion source of truth; attempt audit events and compacted metadata Parquet

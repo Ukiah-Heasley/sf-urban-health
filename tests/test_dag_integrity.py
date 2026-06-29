@@ -21,7 +21,7 @@ _EXPECTED_DAG_IDS = {
     "ingest_permits",
     "ingest_evictions",
     "ingest_incidents",
-    "transform_lakehouse",
+    "promote_raw_to_bronze",
 }
 
 
@@ -46,6 +46,6 @@ def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
     assert dag_bag.dags, "DagBag is empty — no DAGs were discovered"
     assert set(dag_bag.dags) == _EXPECTED_DAG_IDS
 
-    lakehouse = dag_bag.dags["transform_lakehouse"]
-    assert lakehouse.max_active_runs == 1
-    assert "select_lakehouse_interval" in {task.task_id for task in lakehouse.tasks}
+    bronze = dag_bag.dags["promote_raw_to_bronze"]
+    assert bronze.max_active_runs == 1
+    assert "select_bronze_interval" in {task.task_id for task in bronze.tasks}

@@ -29,7 +29,7 @@ The three generated ingest DAGs are:
 | `ingest_evictions` | `0 6 * * *` | `extract_evictions_to_raw -> record_evictions_extract_metadata -> ingest_complete` |
 | `ingest_incidents` | `0 6 * * *` | `extract_incidents_to_raw -> record_incidents_extract_metadata -> ingest_complete` |
 
-`dag_factory.py` builds all three from `DatasetConfig` and `DagConfig` values.
+`_shared/dag_factory.py` builds all three from `DatasetConfig` and `DagConfig` values.
 Each extract task captures `started_at` and `completed_at` inside
 `extract_to_raw` and pushes interval metadata through XCom. The metadata task
 writes an attempt audit event under
@@ -41,30 +41,30 @@ ingest asset.
 Ingest DAGs do not promote bronze Parquet. A failure in lakehouse promotion
 does not block raw capture.
 
-## Lakehouse transformation path
+## Bronze promotion path
 
 ```text
 permits ingest asset   ─┐
-evictions ingest asset ─┼─> transform_lakehouse
+evictions ingest asset ─┼─> promote_raw_to_bronze
 incidents ingest asset ─┘      │
-                               ├─> select_lakehouse_interval
-                               ├─> branch_on_lakehouse_plan
+                               ├─> select_bronze_interval
+                               ├─> branch_on_bronze_plan
                                ├─> promote_permits_to_bronze
                                ├─> promote_evictions_to_bronze
                                ├─> promote_incidents_to_bronze
                                ├─> compact_lakehouse_metadata
-                               ├─> lakehouse_transform_complete
-                               └─> lakehouse_noop
+                               ├─> bronze_promotion_complete
+                               └─> bronze_promotion_noop
 ```
 
-`select_lakehouse_interval` reads current JSON ingest events and file-manifest
+`select_bronze_interval` reads current JSON ingest events and file-manifest
 events from S3 and selects the oldest complete interval missing bronze promotion
 (default `pending` mode). Each DAG run promotes at most one interval
-(`LAKEHOUSE_PLAN_LIMIT` must be `1`). `transform_lakehouse` sets
+(`LAKEHOUSE_PLAN_LIMIT` must be `1`). `promote_raw_to_bronze` sets
 `max_active_runs=1` so concurrent runs cannot select the same global interval.
 When no interval is selected,
-`branch_on_lakehouse_plan` skips promotion, compaction, and lakehouse asset
-emission via `lakehouse_noop`. Promotion tasks load the selected current ingest
+`branch_on_bronze_plan` skips promotion, compaction, and bronze promotion asset
+emission via `bronze_promotion_noop`. Promotion tasks load the selected current ingest
 event for each dataset, stream raw NDJSON into typed bronze Parquet under
 `lake/parquet/bronze/`, and write file-manifest metadata events under
 `lake/metadata/events/file_manifest/`. Bronze Parquet is written to a local temp

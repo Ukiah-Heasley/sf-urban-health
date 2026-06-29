@@ -693,8 +693,8 @@ def test_metadata_compaction_writes_contract_parquet(
 
 def test_ingest_dag_task_order() -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
-    from dag_factory import DagConfig, make_ingest_dag
-    from pipeline_assets import PERMITS_INGEST_ASSET
+    from _shared.dag_factory import DagConfig, make_ingest_dag
+    from _shared.pipeline_assets import PERMITS_INGEST_ASSET
     from scripts.permits import PERMITS_CONFIG
 
     dag = make_ingest_dag(
@@ -715,30 +715,30 @@ def test_ingest_dag_task_order() -> None:
     assert complete.upstream_task_ids == {"record_permits_extract_metadata"}
 
 
-def test_transform_lakehouse_dag_depends_on_ingest_assets() -> None:
+def test_promote_raw_to_bronze_dag_depends_on_ingest_assets() -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
-    from transform_lakehouse import dag
+    from promote.raw_to_bronze import dag
 
-    assert dag.dag_id == "transform_lakehouse"
+    assert dag.dag_id == "promote_raw_to_bronze"
     assert [task.task_id for task in dag.tasks] == [
-        "select_lakehouse_interval",
-        "branch_on_lakehouse_plan",
+        "select_bronze_interval",
+        "branch_on_bronze_plan",
         "promote_permits_to_bronze",
         "promote_evictions_to_bronze",
         "promote_incidents_to_bronze",
         "compact_lakehouse_metadata",
-        "lakehouse_transform_complete",
-        "lakehouse_noop",
+        "bronze_promotion_complete",
+        "bronze_promotion_noop",
     ]
-    select = dag.get_task("select_lakehouse_interval")
-    branch = dag.get_task("branch_on_lakehouse_plan")
+    select = dag.get_task("select_bronze_interval")
+    branch = dag.get_task("branch_on_bronze_plan")
     promote_permits = dag.get_task("promote_permits_to_bronze")
     compact = dag.get_task("compact_lakehouse_metadata")
-    noop = dag.get_task("lakehouse_noop")
-    complete = dag.get_task("lakehouse_transform_complete")
-    assert select.downstream_task_ids == {"branch_on_lakehouse_plan"}
-    assert branch.downstream_task_ids == {"promote_permits_to_bronze", "lakehouse_noop"}
-    assert promote_permits.upstream_task_ids == {"branch_on_lakehouse_plan"}
+    noop = dag.get_task("bronze_promotion_noop")
+    complete = dag.get_task("bronze_promotion_complete")
+    assert select.downstream_task_ids == {"branch_on_bronze_plan"}
+    assert branch.downstream_task_ids == {"promote_permits_to_bronze", "bronze_promotion_noop"}
+    assert promote_permits.upstream_task_ids == {"branch_on_bronze_plan"}
     assert compact.upstream_task_ids == {"promote_incidents_to_bronze"}
     assert noop.outlets == []
     assert complete.outlets
@@ -873,19 +873,19 @@ def test_hash_file_streams_without_loading_entire_file(tmp_path: Path) -> None:
     assert hash_file(source) == expected
 
 
-def test_transform_lakehouse_noop_when_no_interval_selected(
+def test_promote_raw_to_bronze_noop_when_no_interval_selected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
-    from transform_lakehouse import (
-        BranchOnLakehousePlanOperator,
+    from promote.raw_to_bronze import (
+        BranchOnBronzePlanOperator,
         _compact_metadata,
         _promote_dataset,
-        _select_lakehouse_interval,
+        _select_bronze_interval,
     )
 
     monkeypatch.setattr(
-        "transform_lakehouse.plan_lakehouse_intervals",
+        "promote.raw_to_bronze.plan_lakehouse_intervals",
         lambda *args, **kwargs: [],
     )
 
@@ -900,11 +900,11 @@ def test_transform_lakehouse_noop_when_no_interval_selected(
             return self.values.get(key)
 
     context = {"ti": _Ti()}
-    assert _select_lakehouse_interval(**context) is None
+    assert _select_bronze_interval(**context) is None
     assert _promote_dataset("permits", **context) is None
     _compact_metadata(**context)
-    branch = BranchOnLakehousePlanOperator(task_id="branch_on_lakehouse_plan")
-    assert branch.choose_branch(context) == "lakehouse_noop"
+    branch = BranchOnBronzePlanOperator(task_id="branch_on_bronze_plan")
+    assert branch.choose_branch(context) == "bronze_promotion_noop"
 
 
 def test_ingest_runs_contract_grain_matches_current_state(contract_root: Path) -> None:
@@ -1143,9 +1143,9 @@ def test_metadata_compaction_deletes_prefixes_before_rebuild(
     )
 
 
-def test_transform_lakehouse_max_active_runs_is_one() -> None:
+def test_promote_raw_to_bronze_max_active_runs_is_one() -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
-    from transform_lakehouse import dag
+    from promote.raw_to_bronze import dag
 
     assert dag.max_active_runs == 1
 

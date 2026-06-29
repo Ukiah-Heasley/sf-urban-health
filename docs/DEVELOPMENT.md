@@ -21,7 +21,7 @@ cp lakehouse/.env.example lakehouse/.env
 requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Set `LAKE_LOCAL_ROOT`
 for local lakehouse smoke tests without AWS. Set `AWS_ENDPOINT_URL` or
 `AWS_S3_ENDPOINT_URL` to point ingest and promotion code at an S3-compatible
-endpoint such as the local MinIO stack. `transform_lakehouse` reads
+endpoint such as the local MinIO stack. `promote_raw_to_bronze` reads
 `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and optional
 `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
 S3 JSON ingest metadata events.
@@ -109,9 +109,9 @@ local reseed.
    all three share one daily interval. Each DAG runs
    `extract_{dataset}_to_raw -> record_{dataset}_extract_metadata ->
    ingest_complete`.
-5. After all three ingest assets update, `transform_lakehouse` runs
+5. After all three ingest assets update, `promote_raw_to_bronze` runs
    automatically. Confirm it promotes the interval, compacts metadata, and
-   emits `lakehouse_transform_complete` rather than `lakehouse_noop`.
+   emits `bronze_promotion_complete` rather than `bronze_promotion_noop`.
 6. Verify objects in MinIO (console at <http://localhost:9001> or `mc` against
    `http://localhost:9000`):
    - raw NDJSON under `raw/{permits,evictions,incidents}/data_interval_start=.../`
@@ -120,9 +120,9 @@ local reseed.
    - file-manifest metadata events under `lake/metadata/events/`
    - compacted metadata Parquet under `lake/parquet/metadata/ingest_runs/` and
      `lake/parquet/metadata/file_manifest/`
-7. Trigger `transform_lakehouse` again (or wait for the next asset-driven
+7. Trigger `promote_raw_to_bronze` again (or wait for the next asset-driven
    run). With default `LAKEHOUSE_PLAN_MODE=pending` and no remaining pending
-   complete interval, the DAG should branch to `lakehouse_noop` and skip bronze
+   complete interval, the DAG should branch to `bronze_promotion_noop` and skip bronze
    promotion and compaction.
 
 ## Testing
