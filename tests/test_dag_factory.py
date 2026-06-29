@@ -13,6 +13,7 @@ pytest.importorskip("airflow.models", reason="airflow not installed; install --g
 
 
 def test_make_ingest_dag_extracts_raw_and_emits_asset():
+    from airflow.timetables.interval import CronDataIntervalTimetable
     from dag_factory import DagConfig, make_ingest_dag
     from pipeline_assets import PERMITS_INGEST_ASSET
     from scripts.soda_ingest import DatasetConfig
@@ -32,6 +33,7 @@ def test_make_ingest_dag_extracts_raw_and_emits_asset():
     dag = make_ingest_dag(cfg)
 
     assert dag.dag_id == "ingest_permits"
+    assert isinstance(dag.timetable, CronDataIntervalTimetable)
     task_ids = [t.task_id for t in dag.tasks]
     assert task_ids == [
         "extract_permits_to_raw",

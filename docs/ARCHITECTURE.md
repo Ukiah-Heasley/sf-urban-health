@@ -84,8 +84,8 @@ queryable export, not a planner input.
 
 ## dbt and local Spark
 
-`dbt/` is the canonical lakehouse-first project. `make sync-dbt` mirrors it into
-`airflow/include/dbt/` for the Astro Docker build context.
+`dbt/` is the canonical lakehouse-first project. `make sync-dbt` mirrors dbt and
+lakehouse contracts into `airflow/include/` for the Astro Docker build context.
 
 Local development runs MinIO and a repo-built Spark Thrift Server from
 `lakehouse/docker-compose.yml`. Spark is configured with Iceberg and S3A so

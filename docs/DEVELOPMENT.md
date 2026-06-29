@@ -53,7 +53,7 @@ profile uses `auth: NOSASL` to match the local Thrift Server configuration.
 | Lint YAML | `make yamllint` |
 | Run pre-commit hooks | `make pre-commit` |
 | Check documentation | `make docs-check` |
-| Mirror dbt into Airflow | `make sync-dbt` |
+| Mirror dbt and contracts into Airflow | `make sync-dbt` |
 | Start local Airflow | `make airflow-up` |
 | Stop local Airflow | `make airflow-down` |
 | Tail scheduler logs | `make airflow-logs` |
@@ -76,9 +76,9 @@ the current UTC time.
 
 ## Airflow
 
-`make airflow-up` first mirrors `dbt/` into `airflow/include/dbt/`, then runs
-`astro dev start`. The local UI is <http://localhost:8080> with development
-credentials `admin` / `admin`.
+`make airflow-up` first mirrors `dbt/` and `contracts/` into
+`airflow/include/`, then runs `astro dev start`. The local UI is
+<http://localhost:8080> with development credentials `admin` / `admin`.
 
 Scripts under `airflow/include/scripts/` are mounted into the containers. DAGs
 import them through the Dockerfile's `PYTHONPATH` configuration.

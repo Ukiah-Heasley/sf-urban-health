@@ -92,8 +92,9 @@ docs/                    Current behavior and operator documentation
 .codex/skills/           Repository-specific Codex workflows
 ```
 
-`dbt/` is the canonical project. `make sync-dbt` mirrors it into the gitignored
-`airflow/include/dbt/` directory for the Astro Docker build context.
+`dbt/` and `contracts/` are canonical at the repo root. `make sync-dbt` mirrors
+them into gitignored `airflow/include/` directories for the Astro Docker build
+context.
 
 ## Prerequisites
 
@@ -136,7 +137,7 @@ make dbt-lakehouse-smoke
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg models
 
-make airflow-up        # sync dbt mirror, then start Astro Airflow
+make airflow-up        # sync Airflow mirrors, then start Astro Airflow
 make airflow-down
 make airflow-logs
 

@@ -2,8 +2,8 @@
 help:
 	@echo "Targets:"
 	@echo "  make ingest         Run permits extractor (DataSF -> S3)"
-	@echo "  make sync-dbt       Mirror dbt/ into airflow/include/dbt/ for the Airflow image"
-	@echo "  make airflow-up     Start local Airflow stack (Astro CLI), syncing dbt/ first"
+	@echo "  make sync-dbt       Mirror dbt/ and contracts/ into airflow/include/ for the Airflow image"
+	@echo "  make airflow-up     Start local Airflow stack (Astro CLI), syncing Airflow assets first"
 	@echo "  make airflow-down   Stop local Airflow stack"
 	@echo "  make airflow-logs   Tail Airflow scheduler logs"
 	@echo "  make spark-up       Start local MinIO + Spark Thrift Server (lakehouse dev)"
@@ -24,6 +24,8 @@ help:
 ENV_FILE := airflow/.env
 DBT_DIR  := dbt
 DBT_MIRROR := airflow/include/dbt
+CONTRACTS_DIR := contracts
+CONTRACTS_MIRROR := airflow/include/contracts
 LAKEHOUSE_DIR := lakehouse
 LAKEHOUSE_COMPOSE := $(LAKEHOUSE_DIR)/docker-compose.yml
 LAKEHOUSE_ENV := $(LAKEHOUSE_DIR)/.env
@@ -53,7 +55,7 @@ check-env:
 ingest: check-env
 	uv run python airflow/include/scripts/permits.py
 
-# Mirror dbt/ into airflow/include/dbt/ so Astro can bake it into the image.
+# Mirror repo assets into airflow/include/ so Astro can bake them into the image.
 # Excludes runtime artifacts; airflow/include/dbt/ is gitignored.
 .PHONY: sync-dbt
 sync-dbt:
@@ -63,6 +65,10 @@ sync-dbt:
 		--exclude='.user.yml' \
 		$(DBT_DIR)/ $(DBT_MIRROR)/
 	@echo "synced $(DBT_DIR)/ -> $(DBT_MIRROR)/"
+	@mkdir -p $(CONTRACTS_MIRROR)
+	@rsync -a --delete \
+		$(CONTRACTS_DIR)/ $(CONTRACTS_MIRROR)/
+	@echo "synced $(CONTRACTS_DIR)/ -> $(CONTRACTS_MIRROR)/"
 
 .PHONY: airflow-up
 airflow-up: sync-dbt

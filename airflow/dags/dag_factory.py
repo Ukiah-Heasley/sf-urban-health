@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import DAG
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from pipeline_assets import ingest_asset_for
 from scripts.lakehouse_metadata import record_extract_metadata
@@ -117,7 +118,7 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
     with DAG(
         dag_id=f"ingest_{cfg.dataset.name}",
         description=f"Daily {cfg.dataset.name}: DataSF interval -> S3 raw + metadata event",
-        schedule=cfg.schedule,
+        schedule=CronDataIntervalTimetable(cfg.schedule, timezone="UTC"),
         start_date=cfg.start_date,
         catchup=False,
         default_args={

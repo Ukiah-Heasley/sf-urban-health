@@ -6,8 +6,8 @@ Use root `Makefile` targets; it loads `airflow/.env` when present.
 
 ```bash
 make ingest              # permits: DataSF -> S3 raw NDJSON
-make sync-dbt            # mirror dbt/ into airflow/include/dbt/
-make airflow-up          # sync dbt, then astro dev start
+make sync-dbt            # mirror dbt/ and contracts/ into airflow/include/
+make airflow-up          # sync Airflow assets, then astro dev start
 make airflow-down
 make airflow-logs
 make spark-up            # local MinIO + Spark Thrift Server

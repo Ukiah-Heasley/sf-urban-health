@@ -170,8 +170,8 @@ class WriteResult:
 
 
 def _format_soda_timestamp(value: date | datetime | str) -> str:
-    """Format a UTC timestamp for a SODA query literal."""
-    return coerce_utc_datetime(value).isoformat(timespec="milliseconds")
+    """Format a UTC timestamp for a SODA calendar-date query literal."""
+    return coerce_utc_datetime(value).replace(tzinfo=None).isoformat(timespec="milliseconds")
 
 
 def _parse_soda_timestamp(value: object) -> datetime:

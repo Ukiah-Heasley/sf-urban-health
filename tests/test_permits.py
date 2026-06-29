@@ -74,8 +74,8 @@ def test_fetch_records_uses_half_open_interval_and_stable_order():
 
     params = session.get.call_args.kwargs["params"]
     assert params["$where"] == (
-        "`data_loaded_at` >= '2024-01-01T12:30:05.123+00:00' "
-        "AND `data_loaded_at` < '2024-01-02T00:00:00.000+00:00'"
+        "`data_loaded_at` >= '2024-01-01T12:30:05.123' "
+        "AND `data_loaded_at` < '2024-01-02T00:00:00.000'"
     )
     assert params["$order"] == "`data_loaded_at`, `permit_number`"
 

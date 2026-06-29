@@ -210,7 +210,11 @@ def _parse_optional_bool(value: object) -> bool | None:
 def _parse_optional_int(value: object) -> int | None:
     if value is None or value == "":
         return None
-    return int(value)
+    parsed = Decimal(str(value).strip())
+    integral = parsed.to_integral_value()
+    if parsed != integral:
+        raise ValueError(f"expected integer-compatible value, got {value!r}")
+    return int(integral)
 
 
 def _parse_optional_decimal(value: object) -> Decimal | None:
