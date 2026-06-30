@@ -29,6 +29,68 @@ from scripts.soda_ingest import (
 )
 from scripts.time_utils import coerce_utc_datetime
 
+_MANUAL_LOAD_MODES = frozenset({"full", "backfill"})
+_MANUAL_WINDOW_CONF_KEYS = frozenset({"window_start", "window_end", "lookback_hours"})
+
+
+def resolve_extract_window(
+    *,
+    data_interval_start: datetime,
+    data_interval_end: datetime,
+    dag_run_conf: dict | None = None,
+) -> ExtractWindow:
+    """Build an ``ExtractWindow`` from the Airflow interval or manual trigger conf.
+
+    Scheduled runs use ``data_interval_start`` and ``data_interval_end`` unchanged.
+    Manual full/backfill runs supply ``load_mode``, ``window_start``, ``window_end``,
+    and optional ``lookback_hours`` in ``dag_run.conf``.
+    """
+    conf = dag_run_conf or {}
+    load_mode = conf.get("load_mode")
+    if load_mode is None:
+        supplied_manual_keys = sorted(_MANUAL_WINDOW_CONF_KEYS.intersection(conf))
+        if supplied_manual_keys:
+            raise ValueError(
+                "load_mode is required when manual window conf is supplied; "
+                f"got keys {supplied_manual_keys!r}"
+            )
+        return ExtractWindow(
+            data_interval_start=data_interval_start,
+            data_interval_end=data_interval_end,
+        )
+
+    if load_mode not in _MANUAL_LOAD_MODES:
+        raise ValueError(
+            "load_mode must be 'full' or 'backfill' when set; "
+            f"got {load_mode!r}"
+        )
+
+    window_start_raw = conf.get("window_start")
+    window_end_raw = conf.get("window_end")
+    if (window_start_raw is None) != (window_end_raw is None):
+        raise ValueError("window_start and window_end must be supplied together")
+    if window_start_raw is None:
+        raise ValueError(
+            f"load_mode {load_mode!r} requires window_start and window_end "
+            "in dag_run conf"
+        )
+
+    lookback_hours_raw = conf.get("lookback_hours", 0)
+    if lookback_hours_raw is None:
+        lookback_hours_raw = 0
+    try:
+        lookback_hours = int(lookback_hours_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("lookback_hours must be a non-negative integer") from exc
+    if lookback_hours < 0:
+        raise ValueError("lookback_hours must be non-negative")
+
+    return ExtractWindow(
+        data_interval_start=coerce_utc_datetime(window_start_raw),
+        data_interval_end=coerce_utc_datetime(window_end_raw),
+        lookback=timedelta(hours=lookback_hours),
+    )
+
 
 @dataclass
 class DagConfig:
@@ -47,9 +109,12 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
     metadata_task_id = f"record_{cfg.dataset.name}_extract_metadata"
 
     def _extract_to_raw(**context) -> str | None:
-        window = ExtractWindow(
+        dag_run = context.get("dag_run")
+        dag_run_conf = dag_run.conf if dag_run is not None else None
+        window = resolve_extract_window(
             data_interval_start=context["data_interval_start"],
             data_interval_end=context["data_interval_end"],
+            dag_run_conf=dag_run_conf,
         )
         result = extract_to_raw(
             cfg.dataset,

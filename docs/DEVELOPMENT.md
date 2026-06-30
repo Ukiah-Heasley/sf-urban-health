@@ -13,35 +13,33 @@
 
 ```bash
 uv sync --all-groups
-cp airflow/.env.example airflow/.env
-cp lakehouse/.env.example lakehouse/.env
+cp airflow/.env.local.example airflow/.env.local
+cp lakehouse/.env.local.example lakehouse/.env.local
 ```
 
-`airflow/.env` is gitignored and loaded by the root Makefile. The extractor
-requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Set `LAKE_LOCAL_ROOT`
-for local lakehouse smoke tests without AWS. Set `AWS_ENDPOINT_URL` or
-`AWS_S3_ENDPOINT_URL` to point ingest and promotion code at an S3-compatible
-endpoint such as the local MinIO stack. `promote_raw_to_bronze` reads
-`LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and optional
-`LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to plan intervals from current
-S3 JSON ingest metadata events.
+Private mode files are gitignored: `airflow/.env.local`, `airflow/.env.aws`,
+`lakehouse/.env.local`, and `lakehouse/.env.aws`. Make targets copy or pass them
+without commenting shared blocks:
 
-`lakehouse/.env` configures local MinIO and Spark Thrift host ports. The root
-Makefile loads it for `spark-up`, `spark-up-aws`, fixture prep, and lakehouse dbt
-targets. `make spark-up` creates the file from `lakehouse/.env.example` when
-missing. `LAKEHOUSE_CATALOG` selects the Iceberg catalog implementation:
-`hadoop` (default, MinIO S3A) or `glue` (AWS Glue + S3FileIO). For AWS Glue
-proof, set `LAKEHOUSE_WAREHOUSE_URI`, `LAKEHOUSE_BRONZE_BASE_URI`, AWS
-credentials, and region in `lakehouse/.env`; see `lakehouse/.env.example`.
-Spark Thrift always listens on container port `10000`; `SPARK_THRIFT_PORT` selects
-the host port mapped by Compose. When `DBT_SPARK_PORT` is unset, the Makefile
-exports it from `SPARK_THRIFT_PORT`, or `10000` when that is also unset. dbt also
-reads `DBT_SPARK_HOST`,
-`DBT_SPARK_USER`, and `DBT_SPARK_SCHEMA` from the environment. The checked-in
-profile uses `auth: NOSASL` to match the local Thrift Server configuration.
-For dbt from Astro Airflow containers, set `DBT_SPARK_HOST=host.docker.internal`
-in `airflow/.env` so tasks in `build_lakehouse_gold` can reach the host-published
-Spark Thrift port.
+| Mode | Airflow | Lakehouse Compose |
+| --- | --- | --- |
+| Local MinIO | `make airflow-up-local` copies `.env.local` → `airflow/.env` | `make spark-up` uses `lakehouse/.env.local` |
+| AWS | `make airflow-up-aws` copies `.env.aws` → `airflow/.env` | `make spark-up-aws` uses `lakehouse/.env.aws` |
+
+`make airflow-up` is an alias for `make airflow-up-local`. Astro always reads
+gitignored `airflow/.env`; ad-hoc Airflow CLI targets source it when they run.
+The extractor requires `AWS_S3_BUCKET`; `DATASF_APP_TOKEN` is optional. Set
+`LAKE_LOCAL_ROOT` for local lakehouse smoke tests without AWS. Local templates
+set `AWS_ENDPOINT_URL` for MinIO; AWS templates use real S3 credentials.
+`promote_raw_to_bronze` reads `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT`
+(must be `1`), and optional `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` to
+plan intervals from current S3 JSON ingest metadata events. After a manual
+full/backfill ingest, set matching plan start/end bounds when you need promotion
+to select that same window.
+
+Local dbt and fixture targets source `lakehouse/.env.local` by default. Pass
+`LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` for AWS Glue proof dbt runs after
+`make spark-up-aws`.
 
 ## Commands
 
@@ -65,7 +63,8 @@ Spark Thrift port.
 | Run pre-commit hooks | `make pre-commit` |
 | Check documentation | `make docs-check` |
 | Mirror dbt and contracts into Airflow | `make sync-dbt` |
-| Start local Airflow | `make airflow-up` |
+| Start local Airflow (local env) | `make airflow-up-local` or `make airflow-up` |
+| Start local Airflow (AWS env) | `make airflow-up-aws` |
 | Stop local Airflow | `make airflow-down` |
 | Tail scheduler logs | `make airflow-logs` |
 | Run Plotly Dash shell | `make dashboard-dev` |
@@ -85,6 +84,28 @@ uv run airflow/include/scripts/permits.py \
 When omitted, the start defaults to the dataset epoch and the end defaults to
 the current UTC time.
 
+### Manual full/backfill ingest in Airflow
+
+Scheduled ingest DAGs keep using the Airflow data interval. To run a bounded
+historical window, trigger `ingest_permits`, `ingest_evictions`, or
+`ingest_incidents` with JSON conf:
+
+```json
+{
+  "load_mode": "full",
+  "window_start": "2018-01-01T00:00:00Z",
+  "window_end": "2026-06-29T00:00:00Z",
+  "lookback_hours": 0
+}
+```
+
+`load_mode` may be `"full"` or `"backfill"`. Both require `window_start` and
+`window_end` together; `lookback_hours` is optional and defaults to `0`. The
+extract task writes raw NDJSON and ingest metadata under the normal interval key
+shape using the explicit window bounds. When promotion should target that same
+window, set matching `LAKEHOUSE_PLAN_START` and `LAKEHOUSE_PLAN_END` in the
+Airflow environment before triggering or waiting for `promote_raw_to_bronze`.
+
 ## Airflow
 
 `make airflow-up` first mirrors `dbt/` and `contracts/` into
@@ -102,17 +123,18 @@ stack without real AWS S3. It does not reset the bucket; avoid
 local reseed.
 
 1. Start local MinIO (and Spark Thrift) with `make spark-up`. The
-   `minio-init` service creates the `lakehouse` bucket from `lakehouse/.env`.
-2. Configure `airflow/.env` for MinIO-compatible S3:
+   `minio-init` service creates the `lakehouse` bucket from `lakehouse/.env.local`.
+2. Configure `airflow/.env.local` for MinIO-compatible S3 (see
+   `airflow/.env.local.example`):
    - `AWS_ACCESS_KEY_ID=minioadmin`
    - `AWS_SECRET_ACCESS_KEY=minioadmin`
    - `AWS_S3_BUCKET=lakehouse` (must match `LAKEHOUSE_BUCKET` in
-     `lakehouse/.env`)
+     `lakehouse/.env.local`)
    - `AWS_ENDPOINT_URL=http://host.docker.internal:9000` for Astro containers
      reaching the host-published MinIO API port (`MINIO_API_PORT`, default
      `9000`). Use `http://localhost:9000` for host CLI runs such as
      `make ingest`.
-3. Start Airflow with `make airflow-up`.
+3. Start Airflow with `make airflow-up-local` (or `make airflow-up`).
 4. In the UI at <http://localhost:8080>, trigger `ingest_permits`,
    `ingest_evictions`, and `ingest_incidents` for the **same** logical date so
    all three share one daily interval. Each DAG runs
@@ -134,7 +156,7 @@ local reseed.
    complete interval, the DAG should branch to `bronze_promotion_noop` and skip bronze
    promotion and compaction.
 8. Set `DBT_SPARK_HOST=host.docker.internal` and `DBT_SPARK_PORT` in
-   `airflow/.env` to match the host port from `make spark-up`. After bronze
+   `airflow/.env.local` to match the host port from `make spark-up`. After bronze
    promotion completes, `build_lakehouse_gold` runs automatically. Confirm
    `dbt_debug`, `dbt_build_lakehouse_gold`, and `lakehouse_gold_complete`
    succeed and emit the gold transform completion asset.
@@ -173,12 +195,12 @@ warehouse data in the configured catalog warehouse without reading bronze.
 does not start MinIO, does not use Glue crawlers or Glue ETL jobs, and is not
 orchestrated from Airflow. Bronze Parquet must already exist in AWS S3 at
 `LAKEHOUSE_BRONZE_BASE_URI`. From the repository root with AWS credentials in
-`lakehouse/.env`:
+`lakehouse/.env.aws`:
 
 ```bash
 make spark-up-aws
-make dbt-lakehouse-debug
-make dbt-lakehouse-gold
+make dbt-lakehouse-debug LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
+make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
 make spark-down
 ```
 

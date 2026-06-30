@@ -2,12 +2,14 @@
 
 ## Commands
 
-Use root `Makefile` targets; it loads `airflow/.env` when present.
+Use root `Makefile` targets; ad-hoc Airflow CLI targets source `airflow/.env`.
 
 ```bash
 make ingest              # permits: DataSF -> S3 raw NDJSON
 make sync-dbt            # mirror dbt/ and contracts/ into airflow/include/
-make airflow-up          # sync Airflow assets, then astro dev start
+make airflow-up          # sync Airflow assets, then astro dev start (alias: airflow-up-local)
+make airflow-up-local    # copy airflow/.env.local -> airflow/.env, then start Astro
+make airflow-up-aws      # copy airflow/.env.aws -> airflow/.env, then start Astro
 make airflow-down
 make airflow-logs
 make spark-up            # local MinIO + Spark Thrift Server
@@ -83,8 +85,17 @@ Airflow containers need `DBT_SPARK_HOST=host.docker.internal` (and matching
 
 ## Extraction invariants
 
-- Airflow data intervals are the extraction boundary. `ExtractWindow` uses a
-  half-open `[effective_start, data_interval_end)` predicate.
+- Scheduled ingest runs use Airflow data intervals as the extraction boundary.
+  Manual full/backfill runs supply trigger JSON in `dag_run.conf` (see
+  `resolve_extract_window` in `_shared/dag_factory.py`):
+  `load_mode` (`full` or `backfill`), `window_start`, `window_end`, and optional
+  `lookback_hours` (default `0`). The explicit window bounds become
+  `ExtractWindow.data_interval_start` and `data_interval_end`; `lookback_hours`
+  widens only `effective_start`. Raw keys and ingest metadata use those bounds.
+  To promote the same manual window, set matching `LAKEHOUSE_PLAN_START` /
+  `LAKEHOUSE_PLAN_END` on `promote_raw_to_bronze`.
+- `ExtractWindow` queries with a half-open `[effective_start, data_interval_end)`
+  predicate.
 - Normalize all internal timestamps to timezone-aware UTC.
 - Page in configured timestamp order with the dataset key as a stable
   tie-breaker.

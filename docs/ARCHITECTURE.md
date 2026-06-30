@@ -7,7 +7,7 @@ retained dashboard/report consumer shells.
 
 ```text
 DataSF SODA API
-    │  paginated HTTPS; half-open Airflow data interval
+    │  paginated HTTPS; half-open extraction interval
     ▼
 airflow/include/scripts/soda_ingest.py
     │  streaming compact NDJSON
@@ -30,7 +30,11 @@ The three generated ingest DAGs are:
 | `ingest_incidents` | `0 6 * * *` | `extract_incidents_to_raw -> record_incidents_extract_metadata -> ingest_complete` |
 
 `_shared/dag_factory.py` builds all three from `DatasetConfig` and `DagConfig` values.
-Each extract task captures `started_at` and `completed_at` inside
+Scheduled runs derive the extraction window from Airflow data intervals. Manual
+full/backfill triggers pass JSON conf (`load_mode`, `window_start`, `window_end`,
+optional `lookback_hours`); `resolve_extract_window` maps those bounds onto the
+same `ExtractWindow` shape and raw key layout as scheduled runs. Each extract task
+captures `started_at` and `completed_at` inside
 `extract_to_raw` and pushes interval metadata through XCom. The metadata task
 writes an attempt audit event under
 `lake/metadata/events/ingest_run_attempts/`, then overwrites the deterministic

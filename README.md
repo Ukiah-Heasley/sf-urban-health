@@ -53,8 +53,9 @@ extract_{dataset}_to_raw → record_{dataset}_extract_metadata → ingest_comple
 
 Each extractor:
 
-- queries a half-open Airflow interval,
-  `[data_interval_start, data_interval_end)`;
+- queries a half-open interval `[effective_start, data_interval_end)`;
+- on schedule, uses the Airflow data interval; manual triggers may override it
+  with JSON conf (`load_mode`, `window_start`, `window_end`, `lookback_hours`);
 - paginates in timestamp plus source-key order;
 - streams records through a temporary NDJSON file;
 - uploads a deterministic S3 object; and
@@ -121,13 +122,21 @@ context.
 
 ```bash
 uv sync --all-groups
-cp airflow/.env.example airflow/.env
-cp lakehouse/.env.example lakehouse/.env
+cp airflow/.env.local.example airflow/.env.local
+cp lakehouse/.env.local.example lakehouse/.env.local
 ```
 
-Fill in the environment values needed for the component you intend to run.
-The Airflow file is gitignored. `lakehouse/.env` supplies local MinIO and Spark
-ports; `make spark-up` creates it from the example when missing.
+Fill in the mode-specific private env files you need. Make targets select the
+active mode without commenting blocks in a shared file:
+
+- `make airflow-up-local` / `make airflow-up` copies `airflow/.env.local` to
+  gitignored `airflow/.env` (Astro reads the active file).
+- `make airflow-up-aws` copies `airflow/.env.aws` to `airflow/.env`.
+- `make spark-up` passes `lakehouse/.env.local` to Docker Compose.
+- `make spark-up-aws` passes `lakehouse/.env.aws`.
+
+Committed templates: `airflow/.env.local.example`, `airflow/.env.aws.example`,
+`lakehouse/.env.local.example`, and `lakehouse/.env.aws.example`.
 
 ## Common commands
 
@@ -151,7 +160,9 @@ make dbt-lakehouse-permits              # build/test permits_current silver Iceb
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg models
 make export-evidence-snapshots          # export Evidence Parquet snapshots from local lakehouse gold
 
-make airflow-up        # sync Airflow mirrors, then start Astro Airflow
+make airflow-up        # alias for airflow-up-local
+make airflow-up-local  # local MinIO-oriented Airflow env
+make airflow-up-aws    # AWS S3 + Glue-oriented Airflow env
 make airflow-down
 make airflow-logs
 
@@ -159,7 +170,7 @@ make dashboard-dev     # http://localhost:8050
 make dashboard-docker
 ```
 
-For an explicit raw interval:
+For an explicit raw interval from the CLI:
 
 ```bash
 uv run airflow/include/scripts/permits.py \
@@ -170,11 +181,28 @@ uv run airflow/include/scripts/permits.py \
 The Airflow UI is available at <http://localhost:8080> with the local
 `admin` / `admin` development credentials.
 
+For a manual full/backfill ingest run in the Airflow UI, trigger any ingest DAG
+with JSON conf:
+
+```json
+{
+  "load_mode": "full",
+  "window_start": "2018-01-01T00:00:00Z",
+  "window_end": "2026-06-29T00:00:00Z",
+  "lookback_hours": 0
+}
+```
+
+Use `"load_mode": "backfill"` for the same bounded window shape. Scheduled runs
+ignore conf and keep using the Airflow data interval. To promote the manual
+window, set matching `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` on
+`promote_raw_to_bronze` when needed.
+
 For a local ingest-to-bronze smoke against MinIO instead of AWS S3, see
 [Development — Local MinIO Airflow smoke](docs/DEVELOPMENT.md#local-minio-airflow-smoke).
 For local dbt from Astro Airflow containers, set `DBT_SPARK_HOST=host.docker.internal`
 and `DBT_SPARK_PORT` to the host port published by `make spark-up` (see
-`airflow/.env.example`).
+`airflow/.env.local.example`).
 
 ## Local lakehouse (Spark + Iceberg + dbt)
 
@@ -190,7 +218,10 @@ Iceberg `S3FileIO`, and the warehouse at `LAKEHOUSE_WAREHOUSE_URI` (typically
 `s3://<bucket>/warehouse`). It does not start MinIO and does not use Glue
 crawlers or Glue ETL jobs. Bronze Parquet must already exist in AWS S3 at
 `LAKEHOUSE_BRONZE_BASE_URI` (typically `s3a://<bucket>/lake/parquet/bronze`).
-Set AWS credentials and region in `lakehouse/.env`; see `lakehouse/.env.example`.
+Set AWS credentials and region in `lakehouse/.env.aws`; see
+`lakehouse/.env.aws.example`. For host CLI dbt after `make spark-up-aws`, run
+`make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` (local dbt
+targets default to `lakehouse/.env.local`).
 Airflow does not orchestrate the AWS Glue build path yet.
 
 ```bash
@@ -207,8 +238,8 @@ AWS Glue proof from host CLI (requires existing AWS bronze Parquet):
 
 ```bash
 make spark-up-aws
-make dbt-lakehouse-debug
-make dbt-lakehouse-gold
+make dbt-lakehouse-debug LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
+make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
 make spark-down
 ```
 
@@ -229,7 +260,7 @@ lakehouse path. Gold tables are business-facing analytical relations; the `gold`
 layer carries that meaning without a `mart_` prefix.
 
 `dbt/profiles.yml` connects to Spark Thrift on `localhost:10000` by default.
-`SPARK_THRIFT_PORT` in `lakehouse/.env` sets the host port exposed by Compose; the
+`SPARK_THRIFT_PORT` in `lakehouse/.env.local` sets the host port exposed by Compose; the
 container always listens on port `10000`. Override `DBT_SPARK_HOST`, `DBT_SPARK_PORT`
 (to match `SPARK_THRIFT_PORT`), and `DBT_SPARK_SCHEMA` when needed.
 The `lakehouse` uv dependency group installs `dbt-core` and `dbt-spark`. Bronze

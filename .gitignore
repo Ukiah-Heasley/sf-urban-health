@@ -43,3 +43,10 @@ astro
 
 # Local lakehouse Docker stack (MinIO data, optional overrides)
 lakehouse/.env
+lakehouse/.env.local
+lakehouse/.env.aws
+
+# Active and mode-specific Airflow env files
+airflow/.env
+airflow/.env.local
+airflow/.env.aws
