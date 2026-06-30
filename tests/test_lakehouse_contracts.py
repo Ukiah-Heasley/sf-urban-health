@@ -16,7 +16,7 @@ def contract_root() -> Path:
 
 def test_all_contracts_load(contract_root: Path) -> None:
     registry = lc.load_contracts(contract_root)
-    assert len(registry.contracts) == 12
+    assert len(registry.contracts) == 14
 
 
 def test_logical_table_names_are_unique(contract_root: Path) -> None:
@@ -94,7 +94,14 @@ def test_bronze_and_gold_helpers(contract_root: Path) -> None:
     bronze = lc.bronze_contracts(contract_root)
     gold = lc.gold_contracts(contract_root)
     assert {contract.name for contract in bronze} == {"permits", "evictions", "incidents"}
-    assert len(gold) == 4
+    assert {contract.name for contract in gold} == {
+        "housing_production",
+        "permit_pipeline",
+        "evictions",
+        "public_safety",
+        "pipeline_health",
+        "data_trust",
+    }
 
 
 @pytest.mark.parametrize(

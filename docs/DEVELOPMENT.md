@@ -52,7 +52,7 @@ Local dbt and fixture targets source `lakehouse/.env.local` by default. Pass
 | Reset local MinIO and seed all dataset fixtures to bronze | `make lakehouse-prepare-fixtures` (destructive; requires `spark-up`; `lakehouse-prepare-permits-fixture` is an alias) |
 | Build/test permits silver Iceberg model | `make dbt-lakehouse-permits` |
 | Build/test all lakehouse bronze/silver/gold Iceberg models | `make dbt-lakehouse-gold` |
-| Export Evidence Parquet snapshots from local lakehouse gold | `make export-evidence-snapshots` |
+| Export Evidence Parquet snapshots from selected lakehouse gold | `make export-evidence-snapshots` |
 | Start local MinIO + Spark Thrift | `make spark-up` |
 | Start Spark Thrift in AWS Glue catalog mode | `make spark-up-aws` |
 | Stop local lakehouse stack | `make spark-down` |
@@ -184,18 +184,23 @@ restarting Spark Thrift so catalog namespaces are rebuilt. Run
 `make dbt-lakehouse-debug`, `make dbt-lakehouse-permits`, `make dbt-lakehouse-gold`, or
 `make dbt-lakehouse-smoke` as needed. Bronze remains Parquet in object storage;
 dbt reads it through `LAKEHOUSE_BRONZE_BASE_URI` (default
-`s3a://lakehouse/lake/parquet/bronze`). dbt uses medallion folders (`bronze/`,
-`silver/`, `gold/`) with ephemeral bronze read adapters and Iceberg silver/gold
-tables. The smoke model is tagged `smoke`, materializes as Iceberg, and stores
+`s3a://lakehouse/lake/parquet/bronze`). dbt reads compacted metadata through
+`LAKEHOUSE_METADATA_BASE_URI`; when unset, dbt derives it from
+`LAKEHOUSE_BRONZE_BASE_URI` by replacing the trailing `/bronze` with
+`/metadata`. dbt uses medallion folders (`bronze/`, `silver/`, `gold/`) with
+ephemeral bronze and metadata read adapters plus Iceberg silver/gold tables.
+The smoke model is tagged `smoke`, materializes as Iceberg, and stores
 warehouse data in the configured catalog warehouse without reading bronze.
 
 ### AWS Glue catalog proof
 
 `make spark-up-aws` starts only Spark Thrift with `LAKEHOUSE_CATALOG=glue`. It
 does not start MinIO, does not use Glue crawlers or Glue ETL jobs, and is not
-orchestrated from Airflow. Bronze Parquet must already exist in AWS S3 at
-`LAKEHOUSE_BRONZE_BASE_URI`. From the repository root with AWS credentials in
-`lakehouse/.env.aws`:
+orchestrated from Airflow. Bronze and compacted metadata Parquet must already
+exist in AWS S3. dbt reads bronze from `LAKEHOUSE_BRONZE_BASE_URI` and reads
+metadata from `LAKEHOUSE_METADATA_BASE_URI` when set, otherwise from the
+matching `/metadata` path beside the bronze prefix. From the repository root
+with AWS credentials in `lakehouse/.env.aws`:
 
 ```bash
 make spark-up-aws
@@ -207,12 +212,13 @@ make spark-down
 Iceberg silver and gold tables register in the AWS Glue Data Catalog under
 `DBT_SPARK_SCHEMA` (default `sf_urban_health`). The Iceberg warehouse uses
 `s3://` at `LAKEHOUSE_WAREHOUSE_URI`; bronze Parquet reads use `s3a://` at
-`LAKEHOUSE_BRONZE_BASE_URI`.
+`LAKEHOUSE_BRONZE_BASE_URI`, and metadata Parquet reads use
+`LAKEHOUSE_METADATA_BASE_URI` or the derived sibling metadata path.
 
 ### Evidence snapshot export
 
-After the local lakehouse gold models build, regenerate the committed Evidence
-snapshots with:
+After lakehouse gold models build, regenerate the committed Evidence snapshots
+from the selected Spark/Iceberg catalog. Local export:
 
 ```bash
 make spark-up
@@ -221,12 +227,18 @@ make dbt-lakehouse-gold
 make export-evidence-snapshots
 ```
 
-`airflow/include/scripts/evidence_snapshots.py` connects to Spark Thrift,
-exports `mart_housing_production.parquet` from the gold Iceberg table
-`sf_urban_health.housing_production`, and writes deterministic observability
-snapshots for `mart_pipeline_health.parquet` and `mart_data_trust.parquet`.
-Lakehouse metadata Parquet is not registered in the Spark catalog, so those two
-observability marts remain generated locally in this slice.
+AWS Glue export:
 
-`reports/scripts/make_sample_data.py` remains the fallback demo-data generator
+```bash
+make spark-up-aws
+make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
+make export-evidence-snapshots LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
+```
+
+`airflow/include/scripts/evidence_snapshots.py` connects to Spark Thrift,
+exports exact-name Parquet snapshots for `housing_production`,
+`permit_pipeline`, `evictions`, `public_safety`, `pipeline_health`, and
+`data_trust` from gold Iceberg tables in `DBT_SPARK_SCHEMA`.
+
+`reports/scripts/make_sample_data.py` remains a fallback demo-data generator
 when Spark is unavailable. GitHub Pages builds from committed snapshots only.

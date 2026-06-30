@@ -28,6 +28,18 @@ npm run sources
 npm run build
 ```
 
+AWS Glue export after building lakehouse gold:
+
+```bash
+make spark-up-aws
+make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
+make export-evidence-snapshots LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
+cd reports
+npm ci
+npm run sources
+npm run build
+```
+
 Fallback when Spark is unavailable:
 
 ```bash
@@ -40,9 +52,15 @@ npm run build
 
 `make export-evidence-snapshots` writes:
 
-- `mart_housing_production.parquet` from gold Iceberg `housing_production`
-- `mart_pipeline_health.parquet` and `mart_data_trust.parquet` as deterministic
-  observability shapes (lakehouse metadata is not queryable through Spark yet)
+- `housing_production.parquet`
+- `permit_pipeline.parquet`
+- `evictions.parquet`
+- `public_safety.parquet`
+- `pipeline_health.parquet`
+- `data_trust.parquet`
+
+Each filename matches its source gold Iceberg table. `pipeline_health` and
+`data_trust` are built from compacted lakehouse metadata before export.
 
 Repository Pages must use **GitHub Actions** as its source. The workflow runs on
 manual dispatch, relevant pull requests, and its daily schedule.

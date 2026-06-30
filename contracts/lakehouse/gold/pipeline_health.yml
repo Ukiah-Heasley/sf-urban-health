@@ -1,0 +1,103 @@
+version: 1
+layer: gold
+name: pipeline_health
+owner: analytics-engineering
+description: >-
+  Daily operational health metrics derived from lakehouse ingest metadata and
+  bronze file manifests.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: pipeline_health
+grain:
+  - run_date
+  - dataset_name
+  - dag_id
+partition_columns: []
+columns:
+  - name: run_date
+    type: date
+    nullable: false
+    description: UTC date the ingest run completed or started.
+  - name: dataset_name
+    type: string
+    nullable: false
+    description: Logical dataset slug such as permits, evictions, or incidents.
+  - name: dag_id
+    type: string
+    nullable: false
+    description: Airflow DAG that produced the metadata event.
+  - name: total_runs
+    type: integer
+    nullable: false
+    description: Number of current ingest interval events on the run date.
+  - name: successful_runs
+    type: integer
+    nullable: false
+    description: Runs whose terminal status is success or empty.
+  - name: failed_runs
+    type: integer
+    nullable: false
+    description: Runs whose terminal status is failed.
+  - name: empty_runs
+    type: integer
+    nullable: false
+    description: Runs that completed successfully with no source records.
+  - name: success_rate_pct
+    type: double
+    nullable: false
+    description: Percent of runs with success or empty status.
+  - name: total_records_ingested
+    type: integer
+    nullable: false
+    description: Source records fetched across runs.
+  - name: avg_records_per_run
+    type: double
+    nullable: true
+    description: Average records fetched per current interval event.
+  - name: avg_duration_seconds
+    type: double
+    nullable: true
+    description: Average extract duration in seconds.
+  - name: p95_duration_seconds
+    type: double
+    nullable: true
+    description: Approximate p95 extract duration in seconds.
+  - name: latest_completed_at
+    type: timestamp
+    nullable: true
+    description: Latest extract completion timestamp in the group.
+  - name: raw_objects_written
+    type: integer
+    nullable: false
+    description: Count of runs with a non-null raw S3 path.
+  - name: bronze_files_written
+    type: integer
+    nullable: false
+    description: Count of bronze file-manifest rows matched to the run group.
+  - name: bronze_records_written
+    type: integer
+    nullable: false
+    description: Bronze manifest record counts matched to the run group.
+  - name: bronze_file_size_bytes
+    type: integer
+    nullable: false
+    description: Total bronze Parquet bytes from matched file manifests.
+  - name: latest_bronze_written_at
+    type: timestamp
+    nullable: true
+    description: Latest bronze file-manifest write timestamp in the group.
+  - name: intervals_missing_bronze
+    type: integer
+    nullable: false
+    description: Non-empty intervals with no matched bronze file manifest.
+quality:
+  checks:
+    - name: unique_grain
+      type: unique
+      columns:
+        - run_date
+        - dataset_name
+        - dag_id
+compatibility:
+  additive: true
+  version_policy: semver

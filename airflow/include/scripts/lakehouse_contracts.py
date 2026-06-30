@@ -116,6 +116,15 @@ DOCUMENTED_GOLD_GRAINS: dict[str, tuple[str, ...]] = {
         "lifecycle_stage",
         "age_bucket",
     ),
+    "pipeline_health": (
+        "run_date",
+        "dataset_name",
+        "dag_id",
+    ),
+    "data_trust": (
+        "dataset_name",
+        "check_name",
+    ),
 }
 
 PATH_LAYER_NAME_RE = re.compile(

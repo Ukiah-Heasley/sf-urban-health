@@ -1,7 +1,7 @@
 """Data Quality & Freshness Dashboard — /data-trust
 Analyst-facing view: per-dataset trust scores, freshness calendar,
-and test pass rate trends. Connected to mart_data_trust and
-mart_dbt_test_health / mart_pipeline_health.
+and test pass rate trends. Connected to data_trust and dbt_test_health /
+pipeline_health consumer frames.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ layout = dbc.Container(
                 ),
                 html.Div(
                     "Per-dataset trust scores, freshness status, and dbt test health  ·  "
-                    "Sources: mart_data_trust · mart_dbt_test_health",
+                    "Sources: data_trust · dbt_test_health",
                     className="text-muted mt-1",
                     style={"fontSize": "0.8rem"},
                 ),
@@ -119,7 +119,7 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
     if DATA_TRUST.is_empty():
         return dbc.Row(dbc.Col(
             dbc.Alert(
-                "mart_data_trust not yet loaded. Consumer wiring is pending the lakehouse rebuild.",
+                "data_trust not yet loaded. Consumer wiring is pending the lakehouse rebuild.",
                 color="warning",
             ),
         ))

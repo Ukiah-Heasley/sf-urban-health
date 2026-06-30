@@ -40,8 +40,9 @@ Bronze promotion asset
 The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Plotly Dash
 remains a consumer shell that renders empty-state layouts without credentials.
 Evidence reads committed Parquet snapshots. `make export-evidence-snapshots`
-regenerates them locally from lakehouse gold (`mart_housing_production`) plus
-deterministic observability shapes for pipeline health and data trust.
+regenerates exact-name snapshots from the selected lakehouse gold tables:
+`housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
+`pipeline_health`, and `data_trust`.
 
 ## Ingest behavior
 
@@ -158,7 +159,7 @@ make dbt-lakehouse-debug
 make dbt-lakehouse-smoke
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg models
-make export-evidence-snapshots          # export Evidence Parquet snapshots from local lakehouse gold
+make export-evidence-snapshots          # export Evidence Parquet snapshots from selected lakehouse gold
 
 make airflow-up        # alias for airflow-up-local
 make airflow-up-local  # local MinIO-oriented Airflow env
@@ -216,8 +217,11 @@ the local bucket.
 `make spark-up-aws` starts only Spark Thrift with `LAKEHOUSE_CATALOG=glue`,
 Iceberg `S3FileIO`, and the warehouse at `LAKEHOUSE_WAREHOUSE_URI` (typically
 `s3://<bucket>/warehouse`). It does not start MinIO and does not use Glue
-crawlers or Glue ETL jobs. Bronze Parquet must already exist in AWS S3 at
-`LAKEHOUSE_BRONZE_BASE_URI` (typically `s3a://<bucket>/lake/parquet/bronze`).
+crawlers or Glue ETL jobs. Bronze and compacted metadata Parquet must already
+exist in AWS S3. dbt reads bronze from `LAKEHOUSE_BRONZE_BASE_URI` (typically
+`s3a://<bucket>/lake/parquet/bronze`) and derives the metadata base URI by
+replacing the trailing `/bronze` with `/metadata` unless
+`LAKEHOUSE_METADATA_BASE_URI` is set explicitly.
 Set AWS credentials and region in `lakehouse/.env.aws`; see
 `lakehouse/.env.aws.example`. For host CLI dbt after `make spark-up-aws`, run
 `make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` (local dbt
@@ -251,7 +255,10 @@ promotion code, and restarts Spark Thrift so catalog namespaces are rebuilt afte
 the bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
 dbt reads bronze through ephemeral `bronze_*` models over Parquet at
 `LAKEHOUSE_BRONZE_BASE_URI` (default `s3a://lakehouse/lake/parquet/bronze` for
-local MinIO). `lakehouse-prepare-fixtures` is local-only and requires
+local MinIO). It reads compacted lakehouse metadata through ephemeral
+`metadata_*` models over Parquet at `LAKEHOUSE_METADATA_BASE_URI`, or by
+deriving the metadata base from `LAKEHOUSE_BRONZE_BASE_URI` when that override
+is unset. `lakehouse-prepare-fixtures` is local-only and requires
 `make spark-up`.
 
 The dbt project uses medallion folder names (`bronze/`, `silver/`, `gold/`) and
@@ -267,7 +274,8 @@ The `lakehouse` uv dependency group installs `dbt-core` and `dbt-spark`. Bronze
 remains Parquet in object storage. dbt materializes silver and gold models as Iceberg
 catalog tables through Spark Thrift. Silver current models deduplicate bronze by
 natural key; gold models aggregate silver for housing production, permit
-pipeline, evictions, and public safety. The `smoke_iceberg` model is tagged
+pipeline, evictions, and public safety, and aggregate lakehouse metadata for
+pipeline health and operational data trust. The `smoke_iceberg` model is tagged
 `smoke` and remains a harmless Iceberg connectivity check.
 
 ## Lakehouse contracts
@@ -276,8 +284,8 @@ Lakehouse table contracts live under `contracts/lakehouse/` and are validated by
 `airflow/include/scripts/lakehouse_contracts.py`. Bronze promotion lives in
 `airflow/include/scripts/lakehouse_load.py`. Silver and gold lakehouse models
 (`permits_current`, `evictions_current`, `incidents_current`, `housing_production`,
-`permit_pipeline`, `evictions`, `public_safety`) are Iceberg catalog relation
-contracts. Immutable metadata events and compaction live
+`permit_pipeline`, `evictions`, `public_safety`, `pipeline_health`, `data_trust`)
+are Iceberg catalog relation contracts. Immutable metadata events and compaction live
 in `airflow/include/scripts/lakehouse_metadata.py`.
 
 ## Dashboards
@@ -286,9 +294,10 @@ in `airflow/include/scripts/lakehouse_metadata.py`.
   shell. Live warehouse loading is disabled; pages render empty-state layouts
   without credentials.
 - [Evidence](reports/README.md) reads committed local Parquet snapshots with
-  DuckDB. `make export-evidence-snapshots` regenerates them from local lakehouse
-  gold after `make dbt-lakehouse-gold`. GitHub Pages builds from the committed
-  snapshots and does not query Spark or Iceberg at deploy time.
+  DuckDB. `make export-evidence-snapshots` regenerates exact-name snapshots from
+  selected lakehouse gold after `make dbt-lakehouse-gold`. GitHub Pages builds
+  from the committed snapshots and does not query Spark or Iceberg at deploy
+  time.
 
 ## Documentation
 

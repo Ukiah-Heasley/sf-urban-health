@@ -21,7 +21,7 @@ make lakehouse-prepare-fixtures       # destructive local MinIO reset + all data
 make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg
-make export-evidence-snapshots            # export Evidence Parquet snapshots from local lakehouse gold
+make export-evidence-snapshots            # export Evidence Parquet snapshots from selected lakehouse gold
 make dashboard-dev       # http://localhost:8050
 make dashboard-docker
 make lint
@@ -56,8 +56,9 @@ Airflow does not orchestrate the AWS Glue path yet.
 
 Plotly Dash remains a consumer shell over empty frames without credentials.
 Evidence reads committed Parquet snapshots; `make export-evidence-snapshots`
-regenerates them locally from lakehouse gold (`mart_housing_production`) plus
-deterministic observability shapes (`mart_pipeline_health`, `mart_data_trust`).
+regenerates exact-name snapshots from selected lakehouse gold tables
+(`housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
+`pipeline_health`, `data_trust`).
 ```
 
 `promote_raw_to_bronze` plans intervals from current S3 JSON ingest metadata
@@ -118,8 +119,14 @@ Airflow containers need `DBT_SPARK_HOST=host.docker.internal` (and matching
 - Bronze dbt models (`bronze_permits`, `bronze_evictions`, `bronze_incidents`) are
   ephemeral read adapters over Python-promoted bronze Parquet (`LAKEHOUSE_BRONZE_BASE_URI`,
   default `s3a://lakehouse/lake/parquet/bronze`).
+- Metadata dbt models (`metadata_ingest_runs`, `metadata_file_manifest`) are
+  ephemeral read adapters over compacted metadata Parquet
+  (`LAKEHOUSE_METADATA_BASE_URI`; when unset, dbt derives it from
+  `LAKEHOUSE_BRONZE_BASE_URI` by replacing the trailing `/bronze` with
+  `/metadata`).
 - Silver Iceberg models: `permits_current`, `evictions_current`, `incidents_current`.
-- Gold Iceberg models: `housing_production`, `permit_pipeline`, `evictions`, `public_safety`.
+- Gold Iceberg models: `housing_production`, `permit_pipeline`, `evictions`,
+  `public_safety`, `pipeline_health`, `data_trust`.
 
 ## Airflow import boundary
 

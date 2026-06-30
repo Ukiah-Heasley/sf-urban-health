@@ -77,7 +77,7 @@ The lakehouse dbt project uses medallion vocabulary consistently:
 | --- | --- | --- | --- |
 | Bronze | Source-faithful records plus lineage (Python promotion; dbt read adapters) | `dbt/models/bronze/` | `bronze_permits`, `bronze_evictions`, `bronze_incidents` |
 | Silver | Cleaned, validated, deduped entity tables (Iceberg) | `dbt/models/silver/` | `permits_current`, `evictions_current`, `incidents_current` |
-| Gold | Business-facing analytical tables (Iceberg) | `dbt/models/gold/` | `housing_production`, `permit_pipeline`, `evictions`, `public_safety` |
+| Gold | Business-facing and operational analytical tables (Iceberg) | `dbt/models/gold/` | `housing_production`, `permit_pipeline`, `evictions`, `public_safety`, `pipeline_health`, `data_trust` |
 
 Do not mix dbt `staging/`, `intermediate/`, `stg_*`, `int_*`, or `mart_*`
 model names with this lakehouse slice. Gold tables do not use a `mart_` prefix
@@ -96,9 +96,10 @@ under production-shaped interval keys, writes ingest metadata events, promotes
 bronze Parquet for all three datasets, and restarts Spark Thrift after the
 bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
 
-`bronze_*` models are ephemeral dbt read adapters over bronze Parquet prefixes
-in MinIO. They are inlined into downstream models because the Iceberg catalog
-does not support persisted views.
+`bronze_*` models are ephemeral dbt read adapters over bronze Parquet prefixes.
+`metadata_*` models are ephemeral dbt read adapters over compacted metadata
+Parquet prefixes. They are inlined into downstream models because the Iceberg
+catalog does not support persisted views.
 
 Silver `*_current` models deduplicate bronze to one latest row per natural key
 using `_loaded_at desc` with deterministic tie-breakers (`_extracted_at`,
@@ -111,27 +112,28 @@ otherwise `at_fault`. All three silver models materialize as Iceberg tables in
 
 Gold models aggregate silver for monthly housing production, in-flight permit
 pipeline snapshots, monthly eviction counts, and monthly public-safety incident
-counts. They materialize as Iceberg tables in `sf_urban_health`. The
-`smoke_iceberg` model remains a harmless local connectivity check and does not
-read bronze.
+counts. Gold also aggregates compacted metadata into `pipeline_health` and
+`data_trust`, which describe operational pipeline health and metadata trust
+rather than independent source-system quality. They materialize as Iceberg
+tables in `sf_urban_health`. The `smoke_iceberg` model remains a harmless local
+connectivity check and does not read bronze.
 
 ## Consumer snapshot shapes
 
-The Evidence shell reads committed Parquet snapshots for three mart-shaped
+The Evidence shell reads committed Parquet snapshots for six lakehouse gold
 tables:
 
-- `mart_housing_production`
-- `mart_pipeline_health`
-- `mart_data_trust`
+- `housing_production`
+- `permit_pipeline`
+- `evictions`
+- `public_safety`
+- `pipeline_health`
+- `data_trust`
 
-These snapshot names predate the lakehouse gold rename and remain the Evidence
-source contract. `make export-evidence-snapshots` writes
-`mart_housing_production.parquet` from the gold Iceberg table
-`sf_urban_health.housing_production` after local lakehouse gold builds.
-`mart_pipeline_health.parquet` and `mart_data_trust.parquet` remain
-deterministic observability snapshots in this slice because lakehouse metadata
-Parquet is not registered in the Spark catalog.
+Snapshot filenames and Evidence source names match the gold table names exactly.
+`make export-evidence-snapshots` writes each snapshot from the selected Spark
+catalog after lakehouse gold builds. `reports/scripts/make_sample_data.py`
+remains a local fallback demo-data generator when Spark is unavailable.
 
-`reports/scripts/make_sample_data.py` remains the fallback demo-data generator
-when Spark is unavailable. Dash is not wired to live Spark/Iceberg gold tables.
-GitHub Pages builds from committed snapshots only.
+Dash is not wired to live Spark/Iceberg gold tables. GitHub Pages builds from
+committed snapshots only.

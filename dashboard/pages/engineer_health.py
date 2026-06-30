@@ -1,7 +1,7 @@
 """Engineer Health Dashboard — /engineer
 Mirrors the engineer_health.html preview: DAG success rate, runtime trends,
-and test volume/pass rate, connected to mart_pipeline_summary and
-mart_pipeline_health / mart_dbt_test_health.
+and test volume/pass rate, connected to pipeline_summary, pipeline_health, and
+dbt_test_health consumer frames.
 """
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ layout = dbc.Container(
                 ),
                 html.Div(
                     "DAG success rates, runtime trends, and dbt validation results  ·  "
-                    "Sources: mart_pipeline_summary · mart_pipeline_health · mart_dbt_test_health",
+                    "Sources: pipeline_summary · pipeline_health · dbt_test_health",
                     className="text-muted mt-1",
                     style={"fontSize": "0.8rem"},
                 ),

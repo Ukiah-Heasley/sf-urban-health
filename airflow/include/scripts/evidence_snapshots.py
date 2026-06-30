@@ -1,11 +1,9 @@
-"""Export Evidence Parquet snapshots from the local lakehouse gold path."""
+"""Export Evidence Parquet snapshots from lakehouse gold tables."""
 from __future__ import annotations
 
 import argparse
 import os
-import random
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
@@ -28,26 +26,24 @@ class EvidenceSnapshotsError(RuntimeError):
 
 class SnapshotSource(str, Enum):
     SPARK_GOLD = "spark_gold"
-    GENERATED = "generated"
 
 
 @dataclass(frozen=True)
 class SnapshotSpec:
     filename: str
+    table_name: str
     source: SnapshotSource
-    spark_query: str | None = None
+    spark_query: str
 
 
-_OBSERVABILITY_SEED = 42
-
-_NEIGHBORHOODS = {
-    "Mission": "9",
-    "South Of Market": "6",
-    "Bayview Hunters Point": "10",
-    "Sunset/Parkside": "4",
-    "Financial District/South Beach": "3",
-}
-_USE_TRANSITIONS = ["new_residential", "unit_addition", "renovation_same_use"]
+GOLD_TABLES: tuple[str, ...] = (
+    "housing_production",
+    "permit_pipeline",
+    "evictions",
+    "public_safety",
+    "pipeline_health",
+    "data_trust",
+)
 
 
 def spark_schema() -> str:
@@ -62,113 +58,27 @@ def default_output_dir() -> Path:
     return repo_root() / "reports" / "sources" / "sf_urban_health" / "data"
 
 
-def housing_production_query(schema: str | None = None) -> str:
+def gold_table_query(table_name: str, schema: str | None = None) -> str:
+    if table_name not in GOLD_TABLES:
+        raise EvidenceSnapshotsError(f"unknown Evidence gold table: {table_name!r}")
     resolved = schema or spark_schema()
-    return f"SELECT * FROM {resolved}.housing_production"
+    return f"SELECT * FROM {resolved}.{table_name}"
+
+
+def housing_production_query(schema: str | None = None) -> str:
+    return gold_table_query("housing_production", schema)
 
 
 def snapshot_specs(schema: str | None = None) -> tuple[SnapshotSpec, ...]:
-    return (
+    return tuple(
         SnapshotSpec(
-            filename="mart_housing_production.parquet",
+            filename=f"{table_name}.parquet",
+            table_name=table_name,
             source=SnapshotSource.SPARK_GOLD,
-            spark_query=housing_production_query(schema),
-        ),
-        SnapshotSpec(
-            filename="mart_pipeline_health.parquet",
-            source=SnapshotSource.GENERATED,
-        ),
-        SnapshotSpec(
-            filename="mart_data_trust.parquet",
-            source=SnapshotSource.GENERATED,
-        ),
-    )
-
-
-def _months(n: int) -> list[date]:
-    start = date(date.today().year - 2, 1, 1)
-    return [
-        date(start.year + (start.month - 1 + index) // 12, (start.month - 1 + index) % 12 + 1, 1)
-        for index in range(n)
-    ]
-
-
-def build_pipeline_health_snapshot(rng: random.Random | None = None) -> pa.Table:
-    generator = rng or random.Random(_OBSERVABILITY_SEED)
-    rows: list[dict[str, object]] = []
-    dags = ["ingest_permits", "ingest_evictions", "ingest_incidents", "promote_raw_to_bronze"]
-    for day_offset in range(30):
-        run_date = date.today() - timedelta(days=29 - day_offset)
-        for dag_id in dags:
-            failed = 1 if generator.random() < 0.05 else 0
-            total = 1
-            success = total - failed
-            duration = generator.uniform(40, 360)
-            rows.append(
-                {
-                    "run_date": run_date,
-                    "dag_id": dag_id,
-                    "total_runs": total,
-                    "successful_runs": success,
-                    "failed_runs": failed,
-                    "success_rate_pct": round(success * 100.0 / total, 1),
-                    "avg_duration_seconds": round(duration, 1),
-                    "p95_duration_seconds": round(duration * 1.2, 1),
-                    "total_records_ingested": (
-                        generator.randint(0, 5000)
-                        if dag_id != "promote_raw_to_bronze"
-                        else 0
-                    ),
-                    "avg_records_per_run": (
-                        generator.randint(0, 5000)
-                        if dag_id != "promote_raw_to_bronze"
-                        else 0
-                    ),
-                }
-            )
-    return pa.Table.from_pylist(rows)
-
-
-def build_data_trust_snapshot(rng: random.Random | None = None) -> pa.Table:
-    generator = rng or random.Random(_OBSERVABILITY_SEED)
-    today = date.today()
-    rows = [
-        ("Permits", "ingest_permits", "stg_permits"),
-        ("Evictions", "ingest_evictions", "stg_evictions"),
-        ("Incidents", "ingest_incidents", "stg_incidents"),
-    ]
-    output: list[dict[str, object]] = []
-    for dataset_name, dag_id, model_name in rows:
-        pass_rate = round(generator.uniform(92, 100), 1)
-        trust = round(0.4 * 100 + 0.6 * pass_rate)
-        output.append(
-            {
-                "dataset_name": dataset_name,
-                "dag_id": dag_id,
-                "model_name": model_name,
-                "last_loaded_date": today,
-                "days_since_last_load": 0,
-                "freshness_status": "fresh",
-                "test_pass_rate_7d": pass_rate,
-                "total_tests_7d": generator.randint(8, 20),
-                "failed_tests_7d": 0,
-                "last_test_failure_at": datetime(today.year, 1, 1),
-                "trust_score": trust,
-                "trust_status": "trusted" if trust >= 90 else "degraded",
-            }
+            spark_query=gold_table_query(table_name, schema),
         )
-    return pa.Table.from_pylist(output)
-
-
-def _generated_snapshot_table(
-    spec: SnapshotSpec,
-    rng: random.Random | None = None,
-) -> pa.Table:
-    if spec.filename == "mart_pipeline_health.parquet":
-        return build_pipeline_health_snapshot(rng)
-    if spec.filename == "mart_data_trust.parquet":
-        return build_data_trust_snapshot(rng)
-    raise EvidenceSnapshotsError(f"no generated snapshot builder for {spec.filename!r}")
+        for table_name in GOLD_TABLES
+    )
 
 
 def write_parquet_atomic(path: Path, table: pa.Table) -> None:
@@ -215,8 +125,12 @@ def open_spark_connection():
     except Exception as exc:
         raise EvidenceSnapshotsError(
             "Spark Thrift Server is not reachable at "
-            f"{host}:{port}. Start the stack with `make spark-up`."
+            f"{host}:{port}. Start the stack with `make spark-up` or `make spark-up-aws`."
         ) from exc
+
+
+def _uses_glue_catalog() -> bool:
+    return os.environ.get("LAKEHOUSE_CATALOG", "").lower() == "glue"
 
 
 def export_snapshots(
@@ -226,13 +140,12 @@ def export_snapshots(
 ) -> dict[str, int]:
     """Write Evidence snapshot Parquet files and return row counts by filename."""
     load_lakehouse_env()
-    if not skip_stack_check:
+    if not skip_stack_check and not _uses_glue_catalog():
         require_local_lakehouse_stack()
 
     destination = output_dir or default_output_dir()
     counts: dict[str, int] = {}
     specs = snapshot_specs()
-    observability_rng = random.Random(_OBSERVABILITY_SEED)
 
     connection = open_spark_connection()
     try:
@@ -240,14 +153,7 @@ def export_snapshots(
         try:
             for spec in specs:
                 target = destination / spec.filename
-                if spec.source is SnapshotSource.SPARK_GOLD:
-                    if spec.spark_query is None:
-                        raise EvidenceSnapshotsError(
-                            f"missing Spark query for snapshot {spec.filename!r}"
-                        )
-                    table = fetch_spark_table(cursor, spec.spark_query)
-                else:
-                    table = _generated_snapshot_table(spec, observability_rng)
+                table = fetch_spark_table(cursor, spec.spark_query)
                 write_parquet_atomic(target, table)
                 counts[spec.filename] = table.num_rows
                 print(f"wrote {spec.filename} ({table.num_rows} rows) -> {target}")
@@ -261,7 +167,7 @@ def export_snapshots(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Export Evidence Parquet snapshots from the local lakehouse."
+        description="Export Evidence Parquet snapshots from lakehouse gold tables."
     )
     parser.add_argument(
         "--output-dir",

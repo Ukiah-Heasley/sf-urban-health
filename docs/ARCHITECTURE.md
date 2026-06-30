@@ -119,17 +119,19 @@ only Spark Thrift with the AWS Glue Iceberg catalog and S3FileIO against AWS S3
 AWS Glue build path yet.
 
 `dbt/profiles.yml` connects to Spark Thrift with the `lakehouse` uv dependency
-group. Bronze remains Parquet in object storage; dbt reads it through
-`LAKEHOUSE_BRONZE_BASE_URI`.
+group. Bronze and compacted metadata remain Parquet in object storage; dbt reads
+them through `LAKEHOUSE_BRONZE_BASE_URI` and `LAKEHOUSE_METADATA_BASE_URI`.
 
 Local fixture preparation uses `make lakehouse-prepare-fixtures`, which
 destructively resets the local MinIO bucket, seeds fixture raw NDJSON for
 permits, evictions, and incidents, promotes bronze Parquet through the existing
 Python promotion code, and restarts Spark Thrift so catalog namespaces are
 rebuilt. dbt reads bronze through ephemeral `bronze_*` models over Parquet at
-`LAKEHOUSE_BRONZE_BASE_URI`. Silver `*_current` models and gold analytical models
-materialize as Iceberg through Spark/dbt. The `smoke_iceberg` model remains a
-harmless catalog connectivity check.
+`LAKEHOUSE_BRONZE_BASE_URI` and compacted metadata through ephemeral
+`metadata_*` models over Parquet at `LAKEHOUSE_METADATA_BASE_URI`. Silver
+`*_current` models and gold analytical models materialize as Iceberg through
+Spark/dbt. The `smoke_iceberg` model remains a harmless catalog connectivity
+check.
 
 ```text
 make spark-up
@@ -139,10 +141,10 @@ make lakehouse-prepare-fixtures
     → bronze Parquet promotion + Spark catalog refresh
 
 make dbt-lakehouse-gold
-    → bronze_* (ephemeral) + silver/gold Iceberg tables
+    → bronze_* and metadata_* (ephemeral) + silver/gold Iceberg tables
 
 make spark-up-aws
-    → Spark Thrift only; Glue catalog + S3FileIO (AWS bronze must already exist)
+    → Spark Thrift only; Glue catalog + S3FileIO (AWS bronze and metadata Parquet must already exist)
 
 make dbt-lakehouse-permits
     → bronze_permits (ephemeral) + permits_current Iceberg table
@@ -156,6 +158,9 @@ make dbt-lakehouse-smoke
 - Plotly Dash keeps six pages as a consumer shell. Live warehouse loading is
   disabled; startup cache calls fail closed to empty Polars frames.
 - Evidence reads committed local Parquet snapshots with DuckDB during its static
-  build. The Pages workflow builds from those snapshots only.
+  build. The snapshots are exported from the six lakehouse gold tables:
+  `housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
+  `pipeline_health`, and `data_trust`. The Pages workflow builds from those
+  snapshots only.
 
 These paths are separate processes; neither dashboard is part of an ingest DAG.
