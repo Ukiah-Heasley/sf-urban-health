@@ -70,6 +70,11 @@ ingest: check-env
 .PHONY: sync-dbt
 sync-dbt:
 	@mkdir -p $(DBT_MIRROR)
+	@rm -rf \
+		$(DBT_MIRROR)/target \
+		$(DBT_MIRROR)/dbt_packages \
+		$(DBT_MIRROR)/logs \
+		$(DBT_MIRROR)/.user.yml
 	@rsync -a --delete \
 		--exclude='target/' --exclude='dbt_packages/' --exclude='logs/' \
 		--exclude='.user.yml' \
@@ -166,11 +171,13 @@ lakehouse-smoke:
 
 .PHONY: spark-up
 spark-up: $(LAKEHOUSE_ENV_LOCAL)
-	LAKEHOUSE_CATALOG=hadoop docker compose -f $(LAKEHOUSE_COMPOSE) --profile local --env-file $(LAKEHOUSE_ENV_LOCAL) up -d --build --wait
+	LAKEHOUSE_CATALOG=hadoop docker compose -f $(LAKEHOUSE_COMPOSE) --profile local --env-file $(LAKEHOUSE_ENV_LOCAL) up -d --build --wait minio
+	LAKEHOUSE_CATALOG=hadoop docker compose -f $(LAKEHOUSE_COMPOSE) --profile local --env-file $(LAKEHOUSE_ENV_LOCAL) run --rm minio-init
+	LAKEHOUSE_CATALOG=hadoop docker compose -f $(LAKEHOUSE_COMPOSE) --profile local --env-file $(LAKEHOUSE_ENV_LOCAL) up -d --build --wait spark-thrift
 
 .PHONY: spark-up-aws
 spark-up-aws: $(LAKEHOUSE_ENV_AWS)
-	LAKEHOUSE_CATALOG=glue docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV_AWS) up -d --build --wait --no-deps spark-thrift
+	LAKEHOUSE_CATALOG=glue docker compose -f $(LAKEHOUSE_COMPOSE) --env-file $(LAKEHOUSE_ENV_AWS) up -d --build --wait spark-thrift
 
 .PHONY: spark-down
 spark-down:

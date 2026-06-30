@@ -3,7 +3,15 @@ set -euo pipefail
 
 : "${LAKEHOUSE_CATALOG:=hadoop}"
 
-mapfile -t spark_conf < <(python3 /opt/spark/lakehouse_catalog_config.py --shell-args)
+spark_conf_file="$(mktemp)"
+python3 /opt/spark/lakehouse_catalog_config.py --shell-args > "${spark_conf_file}"
+mapfile -t spark_conf < "${spark_conf_file}"
+rm -f "${spark_conf_file}"
+if ((${#spark_conf[@]} == 0)); then
+  echo "No Spark catalog configuration was generated." >&2
+  exit 1
+fi
+
 bootstrap_sql="$(python3 /opt/spark/lakehouse_catalog_config.py --bootstrap-sql)"
 
 warehouse_path="$(python3 /opt/spark/lakehouse_catalog_config.py --warehouse-uri)"

@@ -54,20 +54,61 @@ def warehouse_uri(env: Mapping[str, str] | None = None) -> str:
     return f"s3a://{bucket}/warehouse"
 
 
+def _s3_to_s3a_uri(uri: str) -> str:
+    if uri.startswith("s3://"):
+        return f"s3a://{uri[len('s3://'):]}"
+    return uri
+
+
+def spark_sql_warehouse_dir(env: Mapping[str, str] | None = None) -> str:
+    source = os.environ if env is None else env
+    warehouse = warehouse_uri(source)
+    if catalog_mode(source) == "glue":
+        return _s3_to_s3a_uri(warehouse)
+    return warehouse
+
+
+def _add_s3a_aws_settings(confs: dict[str, str]) -> None:
+    confs["spark.hadoop.fs.s3a.impl"] = "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    confs[
+        "spark.hadoop.fs.s3a.aws.credentials.provider"
+    ] = "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+
+
+def _add_parquet_stability_settings(confs: dict[str, str]) -> None:
+    # Avoid ZSTD Parquet reads in the local ARM Spark container; Temurin 11 can crash there.
+    confs["spark.sql.parquet.compression.codec"] = "snappy"
+    confs[
+        f"spark.sql.catalog.{SPARK_CATALOG}.table-default.write.parquet.compression-codec"
+    ] = "snappy"
+    confs[
+        f"spark.sql.catalog.{SPARK_CATALOG}.table-override.write.parquet.compression-codec"
+    ] = "snappy"
+
+
+def _add_sql_codegen_stability_settings(confs: dict[str, str]) -> None:
+    # The local ARM Spark container can abort while running generated SQL code.
+    confs["spark.sql.codegen.wholeStage"] = "false"
+    confs["spark.sql.codegen.factoryMode"] = "NO_CODEGEN"
+
+
 def spark_thrift_conf_args(env: Mapping[str, str] | None = None) -> list[str]:
     source = os.environ if env is None else env
     mode = catalog_mode(source)
     warehouse = warehouse_uri(source)
     confs: dict[str, str] = {
         "spark.sql.catalog.spark_catalog.warehouse": warehouse,
-        "spark.sql.warehouse.dir": warehouse,
+        "spark.sql.warehouse.dir": spark_sql_warehouse_dir(source),
     }
+    _add_parquet_stability_settings(confs)
+    _add_sql_codegen_stability_settings(confs)
 
     if mode == "glue":
         confs["spark.sql.catalog.spark_catalog.type"] = "glue"
         confs[
             "spark.sql.catalog.spark_catalog.io-impl"
         ] = "org.apache.iceberg.aws.s3.S3FileIO"
+        _add_s3a_aws_settings(confs)
     else:
         confs["spark.sql.catalog.spark_catalog.type"] = "hadoop"
         confs["spark.hadoop.fs.s3a.endpoint"] = source.get(
@@ -80,8 +121,8 @@ def spark_thrift_conf_args(env: Mapping[str, str] | None = None) -> list[str]:
             "MINIO_ROOT_PASSWORD", "minioadmin"
         )
         confs["spark.hadoop.fs.s3a.path.style.access"] = "true"
-        confs["spark.hadoop.fs.s3a.impl"] = "org.apache.hadoop.fs.s3a.S3AFileSystem"
         confs["spark.hadoop.fs.s3a.connection.ssl.enabled"] = "false"
+        _add_s3a_aws_settings(confs)
 
     return ["--master", "local[*]"] + [
         f"--conf={key}={value}" for key, value in confs.items()

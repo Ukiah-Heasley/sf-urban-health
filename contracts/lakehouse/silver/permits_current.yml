@@ -76,11 +76,11 @@ columns:
     nullable: true
     description: Number of residential units in the proposed structure.
   - name: existing_stories
-    type: integer
+    type: double
     nullable: true
     description: Number of stories in the existing structure.
   - name: proposed_stories
-    type: integer
+    type: double
     nullable: true
     description: Number of stories in the proposed structure.
   - name: street_number

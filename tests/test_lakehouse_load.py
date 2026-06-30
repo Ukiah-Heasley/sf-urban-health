@@ -318,6 +318,34 @@ def test_permit_integer_fields_accept_integral_decimal_strings(
     assert row["proposed_stories"] == 4
 
 
+def test_permit_story_fields_accept_fractional_values(
+    contract_root: Path,
+    storage: StorageConfig,
+) -> None:
+    contract = lc.get_contract("bronze", "permits", contract_root)
+    raw_path, raw_key, _ = _seed_raw(storage, "permits", "permits.ndjson")
+    payload = json.loads((_FIXTURES / "permits.ndjson").read_text().splitlines()[0])
+    payload["number_of_existing_stories"] = "2.5"
+    payload["number_of_proposed_stories"] = "3.5"
+
+    row = map_bronze_row(
+        dataset_name="permits",
+        contract=contract,
+        payload=payload,
+        ingest_run_id="run-1",
+        raw_s3_path=raw_path,
+        raw_s3_key=raw_key,
+        data_interval_start=_INTERVAL_START,
+        data_interval_end=_INTERVAL_END,
+        effective_start=_INTERVAL_START,
+        extracted_at=_COMPLETED_AT,
+        source_dataset_id="i98e-djp9",
+    )
+
+    assert row["existing_stories"] == 2.5
+    assert row["proposed_stories"] == 3.5
+
+
 def test_parquet_schema_matches_contract(contract_root: Path, storage: StorageConfig) -> None:
     contract = lc.get_contract("bronze", "permits", contract_root)
     raw_path, raw_key, records = _seed_raw(storage, "permits", "permits.ndjson")

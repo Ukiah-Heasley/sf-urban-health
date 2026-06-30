@@ -49,13 +49,11 @@ services:
         HADOOP_AWS_VERSION: ${HADOOP_AWS_VERSION:-3.3.4}
         AWS_SDK_BUNDLE_VERSION: ${AWS_SDK_BUNDLE_VERSION:-1.12.262}
     container_name: lakehouse-spark-thrift
-    depends_on:
-      minio-init:
-        condition: service_completed_successfully
     environment:
       LAKEHOUSE_CATALOG: ${LAKEHOUSE_CATALOG:-hadoop}
       LAKEHOUSE_BUCKET: ${LAKEHOUSE_BUCKET:-lakehouse}
       LAKEHOUSE_WAREHOUSE_URI: ${LAKEHOUSE_WAREHOUSE_URI:-}
+      LAKEHOUSE_BRONZE_BASE_URI: ${LAKEHOUSE_BRONZE_BASE_URI:-}
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}

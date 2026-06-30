@@ -15,6 +15,7 @@ from lakehouse_catalog_config import (  # noqa: E402
     bronze_base_uri,
     bronze_dataset_prefix,
     catalog_mode,
+    spark_sql_warehouse_dir,
     spark_thrift_conf_args,
     warehouse_uri,
 )
@@ -66,6 +67,14 @@ def test_warehouse_uri_glue_uses_s3_scheme() -> None:
     assert warehouse_uri(env) == "s3://sf-urban-health/warehouse"
 
 
+def test_spark_sql_warehouse_dir_glue_uses_s3a_scheme() -> None:
+    env = {
+        "LAKEHOUSE_CATALOG": "glue",
+        "LAKEHOUSE_WAREHOUSE_URI": "s3://sf-urban-health/warehouse",
+    }
+    assert spark_sql_warehouse_dir(env) == "s3a://sf-urban-health/warehouse"
+
+
 def test_spark_thrift_conf_args_hadoop_includes_minio_s3a_settings() -> None:
     args = spark_thrift_conf_args(
         {
@@ -80,6 +89,17 @@ def test_spark_thrift_conf_args_hadoop_includes_minio_s3a_settings() -> None:
     assert "--conf=spark.sql.catalog.spark_catalog.type=hadoop" in joined
     assert "--conf=spark.sql.catalog.spark_catalog.warehouse=s3a://lakehouse/warehouse" in joined
     assert "--conf=spark.hadoop.fs.s3a.endpoint=http://minio:9000" in joined
+    assert "--conf=spark.sql.parquet.compression.codec=snappy" in joined
+    assert (
+        "--conf=spark.sql.catalog.spark_catalog.table-default.write.parquet.compression-codec=snappy"
+        in joined
+    )
+    assert (
+        "--conf=spark.sql.catalog.spark_catalog.table-override.write.parquet.compression-codec=snappy"
+        in joined
+    )
+    assert "--conf=spark.sql.codegen.wholeStage=false" in joined
+    assert "--conf=spark.sql.codegen.factoryMode=NO_CODEGEN" in joined
 
 
 def test_spark_thrift_conf_args_glue_uses_glue_and_s3_file_io() -> None:
@@ -99,6 +119,20 @@ def test_spark_thrift_conf_args_glue_uses_glue_and_s3_file_io() -> None:
         "--conf=spark.sql.catalog.spark_catalog.warehouse=s3://sf-urban-health/warehouse"
         in joined
     )
+    assert "--conf=spark.sql.warehouse.dir=s3a://sf-urban-health/warehouse" in joined
+    assert "--conf=spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" in joined
+    assert "--conf=spark.hadoop.fs.s3a.aws.credentials.provider=" in joined
+    assert "--conf=spark.sql.parquet.compression.codec=snappy" in joined
+    assert (
+        "--conf=spark.sql.catalog.spark_catalog.table-default.write.parquet.compression-codec=snappy"
+        in joined
+    )
+    assert (
+        "--conf=spark.sql.catalog.spark_catalog.table-override.write.parquet.compression-codec=snappy"
+        in joined
+    )
+    assert "--conf=spark.sql.codegen.wholeStage=false" in joined
+    assert "--conf=spark.sql.codegen.factoryMode=NO_CODEGEN" in joined
     assert "s3a.endpoint" not in joined
 
 
