@@ -14,8 +14,8 @@ safety, eviction, pipeline-health, and data-trust analysis.
 The active runtime ingests DataSF responses into durable newline-delimited JSON
 in S3, promotes complete intervals to bronze Parquet, and compacts lakehouse
 metadata. The repository also keeps a lakehouse-first dbt project with a local
-Spark + Iceberg smoke path, a Plotly Dash consumer shell, and an Evidence site
-built from committed Parquet snapshots.
+Spark + Iceberg smoke path and an Evidence site built from committed Parquet
+snapshots.
 
 ## Current runtime boundary
 
@@ -41,12 +41,11 @@ Failed ingest metadata asset
     → compacted metadata Parquet + pipeline_health/data_trust refresh
 ```
 
-The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Plotly Dash
-remains a consumer shell that renders empty-state layouts without credentials.
-Evidence reads committed Parquet snapshots. `make export-evidence-snapshots`
-regenerates exact-name snapshots from the selected lakehouse gold tables:
-`housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
-`pipeline_health`, and `data_trust`.
+The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Evidence
+reads committed Parquet snapshots. `make export-evidence-snapshots` regenerates
+exact-name snapshots from selected lakehouse gold tables. The public Evidence
+site currently displays the committed domain snapshots for `housing_production`,
+`permit_pipeline`, `evictions`, and `public_safety`.
 
 ## Ingest behavior
 
@@ -114,9 +113,8 @@ airflow/                 Astro project, DAGs, and extractors
 contracts/lakehouse/     YAML contracts for parquet lake table layouts
 dbt/                     Lakehouse-first dbt project (Spark + Iceberg locally)
 lakehouse/               Local MinIO + Spark Thrift; AWS Glue catalog mode via spark-up-aws
-dashboard/               Six-page Plotly Dash consumer shell
 reports/                 Static Evidence site and sample Parquet snapshots
-tests/                   Extractor, DAG, and dashboard import tests
+tests/                   Extractor, DAG, lakehouse, and snapshot export tests
 docs/                    Current behavior and operator documentation
 .codex/skills/           Repository-specific Codex workflows
 ```
@@ -181,9 +179,6 @@ make airflow-up-local  # local MinIO-oriented Airflow env
 make airflow-up-aws    # AWS S3 + Glue-oriented Airflow env
 make airflow-down
 make airflow-logs
-
-make dashboard-dev     # http://localhost:8050
-make dashboard-docker
 ```
 
 For an explicit raw interval from the CLI:
@@ -303,15 +298,12 @@ Lakehouse table contracts live under `contracts/lakehouse/` and are validated by
 are Iceberg catalog relation contracts. Immutable metadata events and compaction live
 in `airflow/include/scripts/lakehouse_metadata.py`.
 
-## Dashboards
+## Reports
 
-- [Plotly Dash](dashboard/README.md) keeps six interactive pages as a consumer
-  shell. Live warehouse loading is disabled; pages render empty-state layouts
-  without credentials.
 - [Evidence](reports/README.md) reads committed local Parquet snapshots with
   DuckDB. `make export-evidence-snapshots` regenerates exact-name snapshots from
-  selected lakehouse gold after `make dbt-lakehouse-gold`. GitHub Pages builds
-  from the committed snapshots and does not query Spark or Iceberg at deploy
+  selected lakehouse gold after `make dbt-lakehouse-gold`. GitHub Pages displays
+  the committed domain snapshots and does not query Spark or Iceberg at deploy
   time.
 
 ## Documentation

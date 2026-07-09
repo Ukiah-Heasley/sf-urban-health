@@ -20,7 +20,6 @@ ROOT_DOCS = {
     "docs/EDGE_CASES.md",
     "docs/DEVELOPMENT.md",
     "docs/DEPLOY.md",
-    "dashboard/README.md",
     "reports/README.md",
 }
 

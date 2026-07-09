@@ -3,14 +3,12 @@
 This Evidence application builds the public static site at
 <https://ukiah-heasley.github.io/sf-urban-health/>.
 
-Evidence queries six local Parquet snapshots through DuckDB:
+Evidence queries four local Parquet snapshots through DuckDB:
 
 - `housing_production`
 - `permit_pipeline`
 - `evictions`
 - `public_safety`
-- `pipeline_health`
-- `data_trust`
 
 GitHub Pages builds from committed snapshots only. It does not query Spark or
 Iceberg at deploy time.
@@ -36,9 +34,9 @@ make export-evidence-snapshots LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
 ```
 
 `make export-evidence-snapshots` runs `airflow/include/scripts/evidence_snapshots.py`.
-It exports `housing_production.parquet`, `permit_pipeline.parquet`,
-`evictions.parquet`, `public_safety.parquet`, `pipeline_health.parquet`, and
-`data_trust.parquet` from the selected Spark/Iceberg gold schema.
+The report pages read `housing_production.parquet`, `permit_pipeline.parquet`,
+`evictions.parquet`, and `public_safety.parquet` from the selected
+Spark/Iceberg gold schema.
 
 When Spark is unavailable, regenerate demo-shaped snapshots with:
 

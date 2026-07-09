@@ -68,9 +68,3 @@ S3 object was uploaded.
 
 Naive Python datetimes are interpreted as UTC. Aware datetimes are converted to
 UTC before query formatting or comparison.
-
-## Dashboard startup without a warehouse
-
-The dashboard cache catches mart-loading errors and substitutes empty Polars
-frames so modules remain importable without credentials. Pages render their
-empty-state behavior rather than preventing application import.

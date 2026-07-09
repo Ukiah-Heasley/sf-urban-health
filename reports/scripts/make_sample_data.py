@@ -4,7 +4,7 @@ Writes fallback Parquet files matching the lakehouse gold table names so the
 static site can be previewed without a warehouse. Values are illustrative only
 and are not real SF civic data.
 
-    uv run --group dashboard python reports/scripts/make_sample_data.py
+    uv run python reports/scripts/make_sample_data.py
 """
 
 from __future__ import annotations

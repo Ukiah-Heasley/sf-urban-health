@@ -67,8 +67,6 @@ Local dbt and fixture targets source `lakehouse/.env.local` by default. Pass
 | Start local Airflow (AWS env) | `make airflow-up-aws` |
 | Stop local Airflow | `make airflow-down` |
 | Tail scheduler logs | `make airflow-logs` |
-| Run Plotly Dash shell | `make dashboard-dev` |
-| Build the Dash image | `make dashboard-docker` |
 
 ## Targeted extraction
 
@@ -167,9 +165,6 @@ The default suite mocks HTTP and S3 boundaries. DAG tests skip automatically
 when Airflow is not installed. CI installs the Airflow dependency group for a
 separate DAG-integrity job.
 
-Set `SKIP_DASHBOARD_TESTS=1` when local Arrow wheels cannot load; Linux CI still
-runs the dashboard import probe.
-
 ## dbt and local Spark
 
 Edit only top-level `dbt/`. The mirror under `airflow/include/dbt/` is generated,
@@ -241,4 +236,6 @@ exports exact-name Parquet snapshots for `housing_production`,
 `data_trust` from gold Iceberg tables in `DBT_SPARK_SCHEMA`.
 
 `reports/scripts/make_sample_data.py` remains a fallback demo-data generator
-when Spark is unavailable. GitHub Pages builds from committed snapshots only.
+when Spark is unavailable. GitHub Pages builds from committed snapshots only,
+and the public Evidence report currently displays the four domain snapshots:
+`housing_production`, `permit_pipeline`, `evictions`, and `public_safety`.

@@ -139,5 +139,6 @@ Snapshot filenames and Evidence source names match the gold table names exactly.
 catalog after lakehouse gold builds. `reports/scripts/make_sample_data.py`
 remains a local fallback demo-data generator when Spark is unavailable.
 
-Dash is not wired to live Spark/Iceberg gold tables. GitHub Pages builds from
-committed snapshots only.
+GitHub Pages builds from committed snapshots only. The public Evidence report
+currently displays the four domain snapshots: `housing_production`,
+`permit_pipeline`, `evictions`, and `public_safety`.

@@ -1,7 +1,7 @@
 # Architecture
 
 The checked-in runtime is a raw S3 ingestion path, a lakehouse bronze path, and
-retained dashboard/report consumer shells.
+an Evidence report consumer.
 
 ## Raw ingestion
 
@@ -176,12 +176,9 @@ make dbt-lakehouse-smoke
 
 ## Consumers
 
-- Plotly Dash keeps six pages as a consumer shell. Live warehouse loading is
-  disabled; startup cache calls fail closed to empty Polars frames.
 - Evidence reads committed local Parquet snapshots with DuckDB during its static
-  build. The snapshots are exported from the six lakehouse gold tables:
-  `housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
-  `pipeline_health`, and `data_trust`. The Pages workflow builds from those
-  snapshots only.
+  build. The public report pages display the domain gold snapshots:
+  `housing_production`, `permit_pipeline`, `evictions`, and `public_safety`.
+  The Pages workflow builds from committed snapshots only.
 
-These paths are separate processes; neither dashboard is part of an ingest DAG.
+This consumer path is separate from the ingest DAGs.
