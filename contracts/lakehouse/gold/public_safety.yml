@@ -1,0 +1,86 @@
+version: 1
+layer: gold
+name: public_safety
+owner: analytics-engineering
+description: >-
+  Monthly incident counts by neighborhood, district, and category.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: public_safety
+grain:
+  - incident_month
+  - neighborhood
+  - supervisor_district
+  - police_district
+  - incident_category
+partition_columns: []
+columns:
+  - name: incident_month
+    type: date
+    nullable: false
+    description: First day of the month the incidents occurred.
+  - name: neighborhood
+    type: string
+    nullable: false
+    description: Normalized neighborhood name.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district.
+  - name: police_district
+    type: string
+    nullable: true
+    description: SFPD operational district.
+  - name: incident_category
+    type: string
+    nullable: true
+    description: Top-level incident category.
+  - name: total_incidents
+    type: integer
+    nullable: false
+    description: Count of all incidents in the group.
+  - name: resolved_count
+    type: integer
+    nullable: true
+    description: Incidents that reached a real resolution.
+  - name: open_count
+    type: integer
+    nullable: true
+    description: Incidents explicitly marked open or active.
+  - name: unknown_count
+    type: integer
+    nullable: true
+    description: Incidents with no resolution recorded.
+  - name: avg_report_lag_hours
+    type: double
+    nullable: true
+    description: Average hours between incident occurrence and report filing.
+  - name: morning_incidents
+    type: integer
+    nullable: true
+    description: Incidents occurring 06:00-11:59.
+  - name: afternoon_incidents
+    type: integer
+    nullable: true
+    description: Incidents occurring 12:00-16:59.
+  - name: evening_incidents
+    type: integer
+    nullable: true
+    description: Incidents occurring 17:00-20:59.
+  - name: night_incidents
+    type: integer
+    nullable: true
+    description: Incidents occurring 21:00-05:59.
+quality:
+  checks:
+    - name: unique_grain
+      type: unique
+      columns:
+        - incident_month
+        - neighborhood
+        - supervisor_district
+        - police_district
+        - incident_category
+compatibility:
+  additive: true
+  version_policy: semver

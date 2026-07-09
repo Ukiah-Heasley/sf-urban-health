@@ -1,0 +1,24 @@
+extends: relaxed
+rules:
+  line-length:
+    max: 120
+    level: warning
+  truthy:
+    allowed-values: ['true', 'false', 'on']
+  document-start: disable
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+ignore: |
+  .venv/
+  dbt/target/
+  dbt/dbt_packages/
+  dbt/logs/
+  airflow/include/dbt/
+  airflow/logs/
+  airflow/.astro/
+  airflow/airflow_settings.yaml
+  reports/node_modules/
+  reports/.evidence/
+  reports/.svelte-kit/
+  reports/build/

@@ -148,8 +148,10 @@ def _fmt_pct(v: float | None) -> str:
     Input("i-date-range", "end_date"),
     Input("i-neighborhoods", "value"),
     Input("i-categories", "value"),
+    Input("theme-store", "data"),
 )
-def refresh(start_date, end_date, neighborhoods, categories):
+def refresh(start_date, end_date, neighborhoods, categories, theme):
+    template = "cal_light" if theme == "light" else "terminal_amber"
     start = _parse(start_date) or _MIN_DATE
     end = _parse(end_date) or _MAX_DATE
 
@@ -173,8 +175,8 @@ def refresh(start_date, end_date, neighborhoods, categories):
 
     return (
         cards,
-        ifig.incident_trend(filtered),
-        ifig.top_neighborhoods(filtered),
-        ifig.category_bar(filtered),
-        ifig.resolution_by_district(filtered),
+        ifig.incident_trend(filtered, template=template),
+        ifig.top_neighborhoods(filtered, template=template),
+        ifig.category_bar(filtered, template=template),
+        ifig.resolution_by_district(filtered, template=template),
     )

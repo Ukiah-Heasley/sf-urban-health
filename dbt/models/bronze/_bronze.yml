@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: bronze_permits
+    description: >
+      Ephemeral read adapter over Python-promoted bronze permits Parquet in MinIO.
+  - name: bronze_evictions
+    description: >
+      Ephemeral read adapter over Python-promoted bronze evictions Parquet in MinIO.
+  - name: bronze_incidents
+    description: >
+      Ephemeral read adapter over Python-promoted bronze incidents Parquet in MinIO.

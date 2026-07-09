@@ -16,12 +16,17 @@ clean-targets:
 
 models:
   sf_urban_health:
-    staging:
-      +schema: staging
-      +materialized: view
-    intermediate:
-      +schema: intermediate
-      +materialized: view
-    marts:
-      +schema: marts
+    smoke:
+      +tags: [smoke]
       +materialized: table
+      +file_format: iceberg
+    bronze:
+      +tags: [lakehouse, bronze]
+    silver:
+      +tags: [lakehouse, silver]
+      +materialized: table
+      +file_format: iceberg
+    gold:
+      +tags: [lakehouse, gold]
+      +materialized: table
+      +file_format: iceberg

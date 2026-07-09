@@ -1,0 +1,39 @@
+# Pre-commit hooks for the sf-urban-health project.
+#
+# CI runs the same hooks (`pre-commit run --all-files`) — keep this file as
+# the single source of truth for lint/format scope and args.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        exclude: ^(airflow/include/dbt/|dbt/dbt_packages/|dbt/target/)
+      - id: end-of-file-fixer
+        exclude: ^(airflow/include/dbt/|dbt/dbt_packages/|dbt/target/)
+      - id: trailing-whitespace
+        exclude: ^(airflow/include/dbt/|dbt/dbt_packages/|dbt/target/)
+      - id: check-added-large-files
+        args: ['--maxkb=512']
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+
+  - repo: local
+    hooks:
+      - id: docs-check
+        name: current-state documentation audit
+        entry: uv run --group dev python .codex/skills/maintain-project-docs/scripts/audit_docs.py
+        language: system
+        pass_filenames: false
+        always_run: true

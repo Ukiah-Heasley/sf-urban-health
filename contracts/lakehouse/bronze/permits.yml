@@ -1,0 +1,171 @@
+version: 1
+layer: bronze
+name: permits
+owner: data-platform
+description: >-
+  Immutable interval-scoped permit records materialized from raw S3 NDJSON.
+  Each row preserves the source payload, typed source fields, and extract
+  lineage metadata.
+grain:
+  - _ingest_run_id
+  - permit_number
+  - _data_interval_start
+  - _data_interval_end
+path_template: lake/parquet/bronze/permits/data_interval_start={data_interval_start}/data_interval_end={data_interval_end}/
+partition_columns:
+  - data_interval_start
+  - data_interval_end
+natural_key:
+  - permit_number
+columns:
+  - name: _ingest_run_id
+    type: string
+    nullable: false
+    description: Airflow run identifier for the extract that produced this row.
+  - name: _raw_s3_path
+    type: string
+    nullable: false
+    description: Full S3 URI of the source raw NDJSON object.
+  - name: _raw_s3_key
+    type: string
+    nullable: false
+    description: Object key of the source raw NDJSON object.
+  - name: _data_interval_start
+    type: timestamp
+    nullable: false
+    description: Airflow data interval start (UTC, inclusive).
+  - name: _data_interval_end
+    type: timestamp
+    nullable: false
+    description: Airflow data interval end (UTC, exclusive).
+  - name: _effective_start
+    type: timestamp
+    nullable: false
+    description: Half-open extract lower bound after configured lookback.
+  - name: _loaded_at
+    type: timestamp
+    nullable: false
+    description: Source data_loaded_at timestamp observed on the record.
+  - name: _extracted_at
+    type: timestamp
+    nullable: false
+    description: UTC timestamp when the extract task materialized this row.
+  - name: _source_dataset_id
+    type: string
+    nullable: false
+    description: DataSF SODA resource identifier for the dataset.
+  - name: _record_hash
+    type: string
+    nullable: false
+    description: Deterministic hash of the canonical raw JSON payload.
+  - name: _raw_payload
+    type: string
+    nullable: false
+    description: Source-faithful JSON object for the record.
+  - name: permit_number
+    type: string
+    nullable: false
+    description: DBI-issued permit identifier from the source payload.
+  - name: permit_type_code
+    type: string
+    nullable: true
+    description: Numeric DataSF permit_type code.
+  - name: permit_type
+    type: string
+    nullable: true
+    description: Human-readable permit type definition.
+  - name: status
+    type: string
+    nullable: true
+    description: Raw DBI lifecycle status from the source payload.
+  - name: filed_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the permit application was filed.
+  - name: issued_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the permit was issued by DBI.
+  - name: status_date
+    type: timestamp
+    nullable: true
+    description: Timestamp the current status was set in the source payload.
+  - name: approved_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the permit was approved by DBI.
+  - name: last_activity_at
+    type: timestamp
+    nullable: true
+    description: Timestamp of most recent permit activity.
+  - name: is_adu
+    type: boolean
+    nullable: true
+    description: True if the permit is for an Accessory Dwelling Unit.
+  - name: estimated_cost
+    type: decimal
+    nullable: true
+    description: Applicant-reported estimated cost at filing.
+  - name: revised_cost
+    type: decimal
+    nullable: true
+    description: Updated project cost if revised after filing.
+  - name: existing_units
+    type: integer
+    nullable: true
+    description: Number of residential units in the existing structure.
+  - name: proposed_units
+    type: integer
+    nullable: true
+    description: Number of residential units in the proposed structure.
+  - name: existing_stories
+    type: double
+    nullable: true
+    description: Number of stories in the existing structure.
+  - name: proposed_stories
+    type: double
+    nullable: true
+    description: Number of stories in the proposed structure.
+  - name: street_number
+    type: string
+    nullable: true
+    description: Street number of the project address.
+  - name: street_name
+    type: string
+    nullable: true
+    description: Street name of the project address.
+  - name: zipcode
+    type: string
+    nullable: true
+    description: Zip code of the project address.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district where the project is located.
+  - name: neighborhood
+    type: string
+    nullable: true
+    description: Neighborhood name from DataSF analysis boundaries.
+  - name: existing_use
+    type: string
+    nullable: true
+    description: Existing use classification of the structure.
+  - name: proposed_use
+    type: string
+    nullable: true
+    description: Proposed use classification of the structure.
+quality:
+  checks:
+    - name: not_null_permit_number
+      type: not_null
+      columns:
+        - permit_number
+    - name: not_null_lineage
+      type: not_null
+      columns:
+        - _ingest_run_id
+        - _raw_s3_path
+        - _record_hash
+compatibility:
+  additive: true
+  version_policy: semver

@@ -1,44 +1,60 @@
 # Dashboard
 
-Plotly Dash app that reads `mart_housing_production` from Snowflake into an
-in-memory Polars DataFrame and serves it to a browser.
+The Plotly Dash application keeps six interactive pages as a consumer shell.
+Live warehouse loading is disabled during the lakehouse rebuild; startup cache
+calls fail closed to empty Polars frames.
 
 ## Run locally
 
-From the repo root:
-
 ```bash
-make dashboard-dev          # http://localhost:8050
+make dashboard-dev
 ```
 
-This loads `airflow/.env`, installs the `dashboard` dependency group via uv,
-and runs `python -m dashboard.app`.
+The app listens on <http://localhost:8050>. `DASH_DEBUG=1` enables Dash
+development tools; debug mode is off by default.
 
 ## Run in Docker
 
 ```bash
 make dashboard-docker
-docker run --env-file airflow/.env -p 8050:8050 sf-urban-health-dashboard
+docker run -p 8050:8050 sf-urban-health-dashboard
 ```
 
-## Config
+Gunicorn serves the `server` object exported by `dashboard.app`.
 
-All credentials come from `airflow/.env`. The dashboard adds one optional
-variable:
+## Data loading
 
-| Var | Default | Purpose |
+`dashboard/data/cache.py` attempts to load one module-level Polars frame per
+mart-shaped table. Connection or query failures produce warning logs and empty
+frames so the app can still import. A successful query returning more than
+`DASHBOARD_MAX_ROWS` fails startup rather than silently loading an unexpectedly
+large frame.
+
+## Pages
+
+| Route | Intended data |
+| --- | --- |
+| `/` | housing production |
+| `/incidents` | public safety |
+| `/evictions` | evictions |
+| `/pipeline` | pipeline and dbt test health |
+| `/engineer` | pipeline summary and engineering health |
+| `/data-trust` | trust, freshness, and test health |
+
+## Configuration
+
+| Variable | Default | Requirement |
 | --- | --- | --- |
-| `DASHBOARD_MART_SCHEMA` | `MARTS` | Schema holding the dbt marts |
-| `DASHBOARD_MAX_ROWS` | `100000` | Safety guard at startup load |
+| `DASHBOARD_MAX_ROWS` | `200000` | per-mart startup limit |
+| `DASH_DEBUG` | unset | set to `1` for development tools |
 
 ## Layout
 
-```
+```text
 dashboard/
-├── app.py            # Dash entrypoint; exposes `server` for gunicorn
-├── data/
-│   ├── snowflake.py  # connector + query_arrow()
-│   └── cache.py      # MART singleton, loaded once at import
-├── pages/            # (future) multi-page routes
-└── components/       # (future) reusable Dash components
+  app.py          Dash entry point and WSGI server
+  data/           startup cache and Polars transforms
+  pages/          six route modules
+  components/     figure builders, KPI cards, theme helpers
+  assets/         Dash-served CSS and SVG
 ```

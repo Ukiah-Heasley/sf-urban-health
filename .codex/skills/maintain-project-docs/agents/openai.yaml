@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Project Docs"
+  short_description: "Keep docs aligned with implemented behavior"
+  default_prompt: "Use $maintain-project-docs to audit this change and update affected current-state documentation."

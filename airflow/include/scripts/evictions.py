@@ -1,15 +1,16 @@
-"""Extract SF eviction notices from the DataSF SODA API and land them as raw JSON.
+"""Dataset config and CLI entry point for SF eviction-notice raw extracts.
 
-Writes to s3://$AWS_S3_BUCKET/raw/evictions/YYYY/MM/DD/evictions_<offset>.json.
+Input:    DataSF SODA resource 5cei-gny5, filtered by data_loaded_at.
+Output:   Raw interval NDJSON under s3://$AWS_S3_BUCKET/raw/evictions/.
 """
 from __future__ import annotations
 
 from datetime import date
 
 try:
-    from scripts.soda_ingest import DatasetConfig, run as _run
+    from scripts.soda_ingest import DatasetConfig, cli
 except ImportError:
-    from soda_ingest import DatasetConfig, run as _run  # type: ignore[no-redef]  # standalone
+    from soda_ingest import DatasetConfig, cli  # type: ignore[no-redef]  # standalone
 
 EVICTIONS_CONFIG = DatasetConfig(
     name="evictions",
@@ -20,21 +21,5 @@ EVICTIONS_CONFIG = DatasetConfig(
 )
 
 
-def run(run_date: date | None = None) -> str:
-    return _run(EVICTIONS_CONFIG, run_date)
-
-
 if __name__ == "__main__":
-    import argparse
-    import logging
-
-    from dotenv import load_dotenv
-
-    parser = argparse.ArgumentParser(description="Fetch SF eviction notices from DataSF.")
-    parser.add_argument("--run-date", type=date.fromisoformat, default=None,
-                        help="Date to run for (YYYY-MM-DD). Defaults to today.")
-    args = parser.parse_args()
-
-    load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run(run_date=args.run_date)
+    cli(EVICTIONS_CONFIG)

@@ -1,0 +1,68 @@
+version: 1
+layer: gold
+name: evictions
+owner: analytics-engineering
+description: >-
+  Monthly eviction notice counts by neighborhood, supervisor district, and
+  eviction type.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: evictions
+grain:
+  - filed_month
+  - neighborhood
+  - supervisor_district
+  - eviction_type
+partition_columns: []
+columns:
+  - name: filed_month
+    type: date
+    nullable: false
+    description: First day of the month the eviction notices were filed.
+  - name: neighborhood
+    type: string
+    nullable: false
+    description: Normalized neighborhood name.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district.
+  - name: eviction_type
+    type: string
+    nullable: false
+    description: Derived no_fault or at_fault classification.
+  - name: eviction_count
+    type: integer
+    nullable: false
+    description: Total eviction notices filed in the group.
+  - name: ellis_act_count
+    type: integer
+    nullable: true
+    description: Notices with the Ellis Act withdrawal flag set.
+  - name: owner_move_in_count
+    type: integer
+    nullable: true
+    description: Notices with the owner move-in flag set.
+  - name: non_payment_count
+    type: integer
+    nullable: true
+    description: Notices with the non-payment flag set.
+quality:
+  checks:
+    - name: unique_grain
+      type: unique
+      columns:
+        - filed_month
+        - neighborhood
+        - supervisor_district
+        - eviction_type
+    - name: accepted_eviction_type
+      type: accepted_values
+      columns:
+        - eviction_type
+      values:
+        - at_fault
+        - no_fault
+compatibility:
+  additive: true
+  version_policy: semver

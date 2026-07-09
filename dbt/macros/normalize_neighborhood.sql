@@ -1,8 +1,7 @@
 {#
     Normalizes a neighborhood string to a consistent casing and handles the
-    DataSF "unknown" / null pattern. Used by every mart that groups by
-    neighborhood so taxonomy stays consistent across domains (permits, 311,
-    transit).
+    DataSF "unknown" / null pattern. Used by gold models that group by
+    neighborhood so taxonomy stays consistent across domains.
 #}
 {% macro normalize_neighborhood(column_name) %}
     case

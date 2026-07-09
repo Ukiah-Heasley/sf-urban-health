@@ -19,11 +19,16 @@ from dashboard.data.transforms import (
 
 ACCENT = "#ffb300"
 
-_NEIGHBORHOODS = sorted(
-    n for n in MART["neighborhood"].unique().to_list() if n is not None
+# Marts load empty while consumer wiring is pending (see data/cache.py); guard
+# every module-level column access so the app still imports/boots, matching
+# the evictions and incidents pages.
+_NEIGHBORHOODS = (
+    sorted(n for n in MART["neighborhood"].unique().to_list() if n is not None)
+    if not MART.is_empty()
+    else []
 )
-_MIN_DATE: date = MART["filed_month"].min()
-_MAX_DATE: date = MART["filed_month"].max()
+_MIN_DATE: date = MART["filed_month"].min() if not MART.is_empty() else date.today()
+_MAX_DATE: date = MART["filed_month"].max() if not MART.is_empty() else date.today()
 
 
 def _filter_bar() -> dbc.Row:
@@ -193,8 +198,10 @@ def _shift_months(d: date, months: int) -> date:
     Input("h-date-range", "start_date"),
     Input("h-date-range", "end_date"),
     Input("h-neighborhoods", "value"),
+    Input("theme-store", "data"),
 )
-def refresh(start_date, end_date, neighborhoods):
+def refresh(start_date, end_date, neighborhoods, theme):
+    template = "cal_light" if theme == "light" else "terminal_amber"
     start = _parse(start_date) or _MIN_DATE
     end = _parse(end_date) or _MAX_DATE
 
@@ -280,12 +287,12 @@ def refresh(start_date, end_date, neighborhoods):
 
     return (
         cards,
-        fig.trend_net_units(filtered),
-        fig.top_neighborhoods(filtered, n=15),
-        fig.district_breakdown(filtered),
-        fig.median_days_to_issue_trend(filtered),
-        fig.completion_rate_by_district(filtered),
-        fig.use_transition_breakdown(filtered),
-        fig.cost_per_unit_by_neighborhood(filtered),
-        fig.pipeline_backlog(pipeline_filtered),
+        fig.trend_net_units(filtered, template=template),
+        fig.top_neighborhoods(filtered, n=15, template=template),
+        fig.district_breakdown(filtered, template=template),
+        fig.median_days_to_issue_trend(filtered, template=template),
+        fig.completion_rate_by_district(filtered, template=template),
+        fig.use_transition_breakdown(filtered, template=template),
+        fig.cost_per_unit_by_neighborhood(filtered, template=template),
+        fig.pipeline_backlog(pipeline_filtered, template=template),
     )

@@ -1,0 +1,81 @@
+version: 1
+layer: gold
+name: data_trust
+owner: analytics-engineering
+description: >-
+  Operational trust checks derived from the latest lakehouse metadata interval
+  for each dataset.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: data_trust
+grain:
+  - dataset_name
+  - check_name
+partition_columns: []
+columns:
+  - name: dataset_name
+    type: string
+    nullable: false
+    description: Logical dataset slug such as permits, evictions, or incidents.
+  - name: dag_id
+    type: string
+    nullable: false
+    description: Airflow DAG that produced the latest metadata event.
+  - name: data_interval_start
+    type: timestamp
+    nullable: false
+    description: Latest metadata interval start.
+  - name: data_interval_end
+    type: timestamp
+    nullable: false
+    description: Latest metadata interval end.
+  - name: check_name
+    type: string
+    nullable: false
+    description: Stable operational check identifier.
+  - name: check_status
+    type: string
+    nullable: false
+    description: Check result of pass, warn, or fail.
+  - name: severity
+    type: string
+    nullable: false
+    description: Operational severity for failed or warning checks.
+  - name: observed_value
+    type: string
+    nullable: true
+    description: Value observed in lakehouse metadata for the check.
+  - name: expected_rule
+    type: string
+    nullable: false
+    description: Human-readable rule evaluated by the check.
+  - name: latest_completed_at
+    type: timestamp
+    nullable: true
+    description: Completion timestamp for the latest metadata interval.
+  - name: latest_bronze_written_at
+    type: timestamp
+    nullable: true
+    description: Latest matched bronze file-manifest write timestamp.
+  - name: checked_at
+    type: timestamp
+    nullable: false
+    description: Timestamp when the dbt model evaluated the check.
+quality:
+  checks:
+    - name: unique_grain
+      type: unique
+      columns:
+        - dataset_name
+        - check_name
+    - name: accepted_check_status
+      type: accepted_values
+      columns:
+        - check_status
+      values:
+        - pass
+        - warn
+        - fail
+compatibility:
+  additive: true
+  version_policy: semver

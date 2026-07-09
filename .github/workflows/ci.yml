@@ -19,8 +19,74 @@ jobs:
       - name: Pin Python to project version
         run: uv python install 3.11
 
-      - name: Lint
+      - name: Ruff
         run: uv run --group dev ruff check .
 
-      - name: Test
+      - name: yamllint
+        run: uv run --group dev yamllint .
+
+      - name: Documentation audit
+        run: make docs-check
+
+      - name: Pytest (dev group)
         run: uv run --group dev pytest -v
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python to project version
+        run: uv python install 3.11
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: pre-commit run --all-files
+        run: uv run --group dev pre-commit run --all-files --show-diff-on-failure
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
+  dag-integrity:
+    # Installs Airflow + Amazon providers for DAG import tests.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Pin Python to project version
+        run: uv python install 3.11
+
+      - name: Install Airflow group
+        run: uv sync --group dev --group airflow
+
+      - name: DAG-bag import + factory tests
+        run: |
+          uv run --group dev --group airflow pytest -v \
+            tests/test_dag_factory.py \
+            tests/test_dag_integrity.py

@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: evictions_current
+    description: >
+      Latest typed eviction notice per eviction_id, deduplicated from bronze
+      using _loaded_at descending order with deterministic tie-breakers.
+    columns:
+      - name: eviction_id
+        description: Rent Board internal case record identifier. Grain of this model.
+        tests:
+          - not_null
+          - unique
+      - name: filed_at
+        description: Date the eviction notice was filed with the Rent Board.
+        tests:
+          - not_null
+      - name: eviction_type
+        description: Derived classification of no_fault or at_fault.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['at_fault', 'no_fault']
+      - name: _loaded_at
+        description: Latest source data_loaded_at used for deduplication.
+        tests:
+          - not_null
+
+  - name: incidents_current
+    description: >
+      Latest typed incident report per row_id, deduplicated from bronze using
+      _loaded_at descending order with deterministic tie-breakers.
+    columns:
+      - name: row_id
+        description: DataSF unique row identifier. Grain of this model.
+        tests:
+          - not_null
+          - unique
+      - name: incident_number
+        description: SFPD report number.
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: Latest source data_loaded_at used for deduplication.
+        tests:
+          - not_null

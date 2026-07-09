@@ -1,15 +1,16 @@
-"""Extract SF building permits from the DataSF SODA API and land them as raw JSON.
+"""Dataset config and CLI entry point for SF building permit raw extracts.
 
-Writes to s3://$AWS_S3_BUCKET/raw/permits/YYYY/MM/DD/permits_<offset>.json.
+Input:    DataSF SODA resource i98e-djp9, filtered by data_loaded_at.
+Output:   Raw interval NDJSON under s3://$AWS_S3_BUCKET/raw/permits/.
 """
 from __future__ import annotations
 
 from datetime import date
 
 try:
-    from scripts.soda_ingest import DatasetConfig, run as _run
+    from scripts.soda_ingest import DatasetConfig, cli
 except ImportError:
-    from soda_ingest import DatasetConfig, run as _run  # type: ignore[no-redef]  # standalone
+    from soda_ingest import DatasetConfig, cli  # type: ignore[no-redef]  # standalone
 
 PERMITS_CONFIG = DatasetConfig(
     name="permits",
@@ -20,21 +21,5 @@ PERMITS_CONFIG = DatasetConfig(
 )
 
 
-def run(run_date: date | None = None) -> str:
-    return _run(PERMITS_CONFIG, run_date)
-
-
 if __name__ == "__main__":
-    import argparse
-    import logging
-
-    from dotenv import load_dotenv
-
-    parser = argparse.ArgumentParser(description="Fetch SF building permits from DataSF.")
-    parser.add_argument("--run-date", type=date.fromisoformat, default=None,
-                        help="Date to run for (YYYY-MM-DD). Defaults to today.")
-    args = parser.parse_args()
-
-    load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run(run_date=args.run_date)
+    cli(PERMITS_CONFIG)

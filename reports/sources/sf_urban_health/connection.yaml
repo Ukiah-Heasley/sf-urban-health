@@ -1,0 +1,4 @@
+name: sf_urban_health
+type: duckdb
+options:
+  filename: ":memory:"

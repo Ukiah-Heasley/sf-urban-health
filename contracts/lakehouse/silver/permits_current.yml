@@ -1,0 +1,134 @@
+version: 1
+layer: silver
+name: permits_current
+owner: analytics-engineering
+description: >-
+  Latest typed permit record per permit_number, deduplicated from bronze using
+  _loaded_at descending order. Materialized as an Iceberg table in the Spark
+  catalog for local lakehouse development.
+table_format: iceberg
+catalog_schema: sf_urban_health
+catalog_name: permits_current
+grain:
+  - permit_number
+partition_columns: []
+columns:
+  - name: permit_number
+    type: string
+    nullable: false
+    description: DBI-issued permit identifier. Grain of this model.
+  - name: permit_type_code
+    type: string
+    nullable: true
+    description: Numeric DataSF permit_type code.
+  - name: permit_type
+    type: string
+    nullable: true
+    description: Human-readable permit type definition.
+  - name: current_status
+    type: string
+    nullable: true
+    description: Latest DBI lifecycle status (lowercased).
+  - name: filed_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the permit application was filed.
+  - name: issued_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the permit was issued by DBI.
+  - name: completed_at
+    type: timestamp
+    nullable: true
+    description: >-
+      Derived from status_date when lower(current_status) = 'complete';
+      otherwise null.
+  - name: current_status_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the current status was set.
+  - name: approved_at
+    type: timestamp
+    nullable: true
+    description: Timestamp the permit was approved by DBI.
+  - name: last_activity_at
+    type: timestamp
+    nullable: true
+    description: Timestamp of most recent permit activity.
+  - name: is_adu
+    type: boolean
+    nullable: true
+    description: True if the permit is for an Accessory Dwelling Unit.
+  - name: estimated_cost
+    type: decimal
+    nullable: true
+    description: Applicant-reported estimated cost at filing.
+  - name: revised_cost
+    type: decimal
+    nullable: true
+    description: Updated project cost if revised after filing.
+  - name: existing_units
+    type: integer
+    nullable: true
+    description: Number of residential units in the existing structure.
+  - name: proposed_units
+    type: integer
+    nullable: true
+    description: Number of residential units in the proposed structure.
+  - name: existing_stories
+    type: double
+    nullable: true
+    description: Number of stories in the existing structure.
+  - name: proposed_stories
+    type: double
+    nullable: true
+    description: Number of stories in the proposed structure.
+  - name: street_number
+    type: string
+    nullable: true
+    description: Street number of the project address.
+  - name: street_name
+    type: string
+    nullable: true
+    description: Street name of the project address.
+  - name: zipcode
+    type: string
+    nullable: true
+    description: Zip code of the project address.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district where the project is located.
+  - name: neighborhood
+    type: string
+    nullable: true
+    description: Neighborhood name from DataSF analysis boundaries.
+  - name: existing_use
+    type: string
+    nullable: true
+    description: Existing use classification of the structure.
+  - name: proposed_use
+    type: string
+    nullable: true
+    description: Proposed use classification of the structure.
+  - name: _loaded_at
+    type: timestamp
+    nullable: false
+    description: Latest source data_loaded_at used for deduplication.
+quality:
+  checks:
+    - name: unique_permit_number
+      type: unique
+      columns:
+        - permit_number
+    - name: not_null_permit_number
+      type: not_null
+      columns:
+        - permit_number
+    - name: not_null_loaded_at
+      type: not_null
+      columns:
+        - _loaded_at
+compatibility:
+  additive: true
+  version_policy: semver

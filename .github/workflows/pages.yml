@@ -1,0 +1,61 @@
+# Build the Evidence static snapshot and publish it to GitHub Pages.
+#
+# Data: committed sample Parquet snapshots under
+# reports/sources/sf_urban_health/data/. Regenerate locally with
+# reports/scripts/make_sample_data.py when page shapes change.
+#
+# One-time setup: Settings → Pages → Source = "GitHub Actions".
+name: pages
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'reports/**'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: reports/package-lock.json
+
+      - name: Build Evidence site
+        working-directory: reports
+        run: |
+          npm ci
+          npm run sources
+          npm run build
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: reports/build
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

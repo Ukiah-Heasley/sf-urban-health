@@ -1,0 +1,7 @@
+version: 2
+
+models:
+  - name: smoke_iceberg
+    description: >
+      Harmless local proof that dbt connects to Spark Thrift Server and
+      materializes an Iceberg table in the MinIO-backed warehouse.

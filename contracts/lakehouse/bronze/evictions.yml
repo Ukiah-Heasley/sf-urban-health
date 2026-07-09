@@ -1,0 +1,172 @@
+version: 1
+layer: bronze
+name: evictions
+owner: data-platform
+description: >-
+  Immutable interval-scoped eviction notice records materialized from raw S3
+  NDJSON with typed source fields and full extract lineage metadata.
+grain:
+  - _ingest_run_id
+  - eviction_id
+  - _data_interval_start
+  - _data_interval_end
+path_template: lake/parquet/bronze/evictions/data_interval_start={data_interval_start}/data_interval_end={data_interval_end}/
+partition_columns:
+  - data_interval_start
+  - data_interval_end
+natural_key:
+  - eviction_id
+columns:
+  - name: _ingest_run_id
+    type: string
+    nullable: false
+    description: Airflow run identifier for the extract that produced this row.
+  - name: _raw_s3_path
+    type: string
+    nullable: false
+    description: Full S3 URI of the source raw NDJSON object.
+  - name: _raw_s3_key
+    type: string
+    nullable: false
+    description: Object key of the source raw NDJSON object.
+  - name: _data_interval_start
+    type: timestamp
+    nullable: false
+    description: Airflow data interval start (UTC, inclusive).
+  - name: _data_interval_end
+    type: timestamp
+    nullable: false
+    description: Airflow data interval end (UTC, exclusive).
+  - name: _effective_start
+    type: timestamp
+    nullable: false
+    description: Half-open extract lower bound after configured lookback.
+  - name: _loaded_at
+    type: timestamp
+    nullable: false
+    description: Source data_loaded_at timestamp observed on the record.
+  - name: _extracted_at
+    type: timestamp
+    nullable: false
+    description: UTC timestamp when the extract task materialized this row.
+  - name: _source_dataset_id
+    type: string
+    nullable: false
+    description: DataSF SODA resource identifier for the dataset.
+  - name: _record_hash
+    type: string
+    nullable: false
+    description: Deterministic hash of the canonical raw JSON payload.
+  - name: _raw_payload
+    type: string
+    nullable: false
+    description: Source-faithful JSON object for the record.
+  - name: eviction_id
+    type: string
+    nullable: false
+    description: Rent Board internal case record identifier from the source payload.
+  - name: filed_at
+    type: date
+    nullable: true
+    description: Date the eviction notice was filed with the Rent Board.
+  - name: address
+    type: string
+    nullable: true
+    description: Block-level address where the notice was issued.
+  - name: zipcode
+    type: string
+    nullable: true
+    description: Zip code of the eviction address.
+  - name: supervisor_district
+    type: string
+    nullable: true
+    description: SF Supervisor district assigned from geocoding.
+  - name: neighborhood
+    type: string
+    nullable: true
+    description: Analysis Boundaries neighborhood from DataSF.
+  - name: non_payment
+    type: boolean
+    nullable: true
+    description: Non-payment of rent was cited as grounds for eviction.
+  - name: breach
+    type: boolean
+    nullable: true
+    description: Breach of lease was cited.
+  - name: nuisance
+    type: boolean
+    nullable: true
+    description: Nuisance was cited.
+  - name: illegal_use
+    type: boolean
+    nullable: true
+    description: Illegal use of the unit was cited.
+  - name: failure_to_sign_renewal
+    type: boolean
+    nullable: true
+    description: Failure to sign lease renewal was cited.
+  - name: access_denial
+    type: boolean
+    nullable: true
+    description: Unlawful denial of access was cited.
+  - name: unapproved_subtenant
+    type: boolean
+    nullable: true
+    description: Unapproved subtenant was cited.
+  - name: late_payments
+    type: boolean
+    nullable: true
+    description: Habitual late payment was cited.
+  - name: roommate_same_unit
+    type: boolean
+    nullable: true
+    description: Eviction of a roommate in the same unit was cited.
+  - name: other_cause
+    type: boolean
+    nullable: true
+    description: Other cause not covered by the admin code was cited.
+  - name: owner_move_in
+    type: boolean
+    nullable: true
+    description: Owner move-in was cited (no-fault).
+  - name: demolition
+    type: boolean
+    nullable: true
+    description: Demolition of the property was cited (no-fault).
+  - name: capital_improvement
+    type: boolean
+    nullable: true
+    description: Capital improvement was cited (no-fault).
+  - name: substantial_rehab
+    type: boolean
+    nullable: true
+    description: Substantial rehabilitation was cited (no-fault).
+  - name: ellis_act_withdrawal
+    type: boolean
+    nullable: true
+    description: Ellis Act withdrawal was cited (no-fault).
+  - name: condo_conversion
+    type: boolean
+    nullable: true
+    description: Condo conversion was cited (no-fault).
+  - name: lead_remediation
+    type: boolean
+    nullable: true
+    description: Lead remediation was cited (no-fault).
+  - name: development
+    type: boolean
+    nullable: true
+    description: Development agreement was cited (no-fault).
+  - name: good_samaritan_ends
+    type: boolean
+    nullable: true
+    description: End of Good Samaritan period was cited (no-fault).
+quality:
+  checks:
+    - name: not_null_eviction_id
+      type: not_null
+      columns:
+        - eviction_id
+compatibility:
+  additive: true
+  version_policy: semver

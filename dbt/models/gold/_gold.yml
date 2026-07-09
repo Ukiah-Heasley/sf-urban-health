@@ -1,0 +1,165 @@
+version: 2
+
+models:
+  - name: housing_production
+    description: >
+      Monthly housing permit activity by neighborhood and supervisor district
+      for residential permits.
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - filed_month
+            - neighborhood
+            - supervisor_district
+            - use_transition
+    columns:
+      - name: filed_month
+        tests:
+          - not_null
+      - name: neighborhood
+        tests:
+          - not_null
+      - name: permits_filed
+        tests:
+          - not_null
+
+  - name: permit_pipeline
+    description: >
+      Daily snapshot of in-flight residential permits grouped by neighborhood,
+      district, lifecycle stage, and age bucket.
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - neighborhood
+            - supervisor_district
+            - lifecycle_stage
+            - age_bucket
+    columns:
+      - name: neighborhood
+        tests:
+          - not_null
+      - name: lifecycle_stage
+        tests:
+          - not_null
+      - name: age_bucket
+        tests:
+          - not_null
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: permit_count
+        tests:
+          - not_null
+
+  - name: evictions
+    description: >
+      Monthly eviction notice counts by neighborhood, supervisor district, and
+      eviction type.
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - filed_month
+            - neighborhood
+            - supervisor_district
+            - eviction_type
+    columns:
+      - name: filed_month
+        tests:
+          - not_null
+      - name: neighborhood
+        tests:
+          - not_null
+      - name: eviction_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['at_fault', 'no_fault']
+      - name: eviction_count
+        tests:
+          - not_null
+
+  - name: public_safety
+    description: >
+      Monthly incident counts by neighborhood, district, and category.
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - incident_month
+            - neighborhood
+            - supervisor_district
+            - police_district
+            - incident_category
+    columns:
+      - name: incident_month
+        tests:
+          - not_null
+      - name: neighborhood
+        tests:
+          - not_null
+      - name: total_incidents
+        tests:
+          - not_null
+
+  - name: pipeline_health
+    description: >
+      Daily operational health metrics derived from lakehouse ingest metadata
+      and bronze file manifests.
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - run_date
+            - dataset_name
+            - dag_id
+    columns:
+      - name: run_date
+        tests:
+          - not_null
+      - name: dataset_name
+        tests:
+          - not_null
+      - name: dag_id
+        tests:
+          - not_null
+      - name: total_runs
+        tests:
+          - not_null
+      - name: success_rate_pct
+        tests:
+          - not_null
+      - name: total_records_ingested
+        tests:
+          - not_null
+      - name: intervals_missing_bronze
+        tests:
+          - not_null
+
+  - name: data_trust
+    description: >
+      Operational trust checks derived from the latest lakehouse metadata
+      interval for each dataset.
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - dataset_name
+            - check_name
+    columns:
+      - name: dataset_name
+        tests:
+          - not_null
+      - name: check_name
+        tests:
+          - not_null
+      - name: check_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['pass', 'warn', 'fail']
+      - name: severity
+        tests:
+          - not_null
+      - name: expected_rule
+        tests:
+          - not_null
+      - name: checked_at
+        tests:
+          - not_null
