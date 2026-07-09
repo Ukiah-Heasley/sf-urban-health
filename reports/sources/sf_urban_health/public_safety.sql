@@ -1,1 +1,3 @@
-select * from read_parquet('sources/sf_urban_health/data/public_safety.parquet')
+select
+    * replace (cast(incident_month as date) as incident_month)
+from read_parquet('sources/sf_urban_health/data/public_safety.parquet')

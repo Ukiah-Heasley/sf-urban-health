@@ -18,8 +18,6 @@ help:
 	@echo "  make dbt-lakehouse-permits  Build and test permits_current silver Iceberg model (requires spark-up + fixture prep)"
 	@echo "  make dbt-lakehouse-gold     Build and test all lakehouse bronze/silver/gold Iceberg models (requires spark-up + fixture prep)"
 	@echo "  make export-evidence-snapshots  Export Evidence Parquet snapshots from selected lakehouse gold (requires Spark + dbt-lakehouse-gold)"
-	@echo "  make dashboard-dev    Run Dash app locally on http://localhost:8050"
-	@echo "  make dashboard-docker Build the dashboard Docker image"
 	@echo "  make lint           Ruff lint"
 	@echo "  make docs-check     Validate current-state documentation"
 	@echo "  make test           Run pytest"
@@ -107,14 +105,6 @@ airflow-down:
 .PHONY: airflow-logs
 airflow-logs:
 	cd airflow && astro dev logs --scheduler
-
-.PHONY: dashboard-dev
-dashboard-dev: check-env
-	$(call source_airflow_env) && uv run --group dashboard python -m dashboard.app
-
-.PHONY: dashboard-docker
-dashboard-docker:
-	docker build -f dashboard/Dockerfile -t sf-urban-health-dashboard .
 
 .PHONY: lint
 lint:

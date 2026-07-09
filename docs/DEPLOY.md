@@ -60,24 +60,13 @@ npm run build
 - `data_trust.parquet`
 
 Each filename matches its source gold Iceberg table. `pipeline_health` and
-`data_trust` are built from compacted lakehouse metadata before export.
+`data_trust` are built from compacted lakehouse metadata before export. The
+public Evidence report currently displays the four domain snapshots:
+`housing_production`, `permit_pipeline`, `evictions`, and `public_safety`.
 
 Repository Pages must use **GitHub Actions** as its source. The workflow runs on
 main pushes that touch report files, manual dispatch, relevant pull requests,
 and its daily schedule.
-
-## Plotly Dash
-
-The Dash application is a consumer shell. Live warehouse loading is disabled;
-pages render empty-state layouts without credentials.
-
-```bash
-make dashboard-dev
-make dashboard-docker
-docker run -p 8050:8050 sf-urban-health-dashboard
-```
-
-The image serves `dashboard.app:server` with Gunicorn.
 
 ## Airflow
 

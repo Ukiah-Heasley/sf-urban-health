@@ -22,8 +22,6 @@ make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
 make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
 make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg
 make export-evidence-snapshots            # export Evidence Parquet snapshots from selected lakehouse gold
-make dashboard-dev       # http://localhost:8050
-make dashboard-docker
 make lint
 make yamllint
 make pre-commit
@@ -58,7 +56,6 @@ lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg (local Hadoop catalog)
 S3FileIO against AWS S3 (no MinIO). Bronze Parquet must already exist in S3.
 Airflow does not orchestrate the AWS Glue path yet.
 
-Plotly Dash remains a consumer shell over empty frames without credentials.
 Evidence reads committed Parquet snapshots; `make export-evidence-snapshots`
 regenerates exact-name snapshots from selected lakehouse gold tables
 (`housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
@@ -150,8 +147,6 @@ imported as `from _shared ...`.
 - `pyproject.toml` controls local uv environments.
 - `airflow/requirements.txt` controls additional packages in the Astro image,
   including `dbt-core` and `dbt-spark` for `build_lakehouse_gold`.
-- Dashboard imports may be skipped locally with `SKIP_DASHBOARD_TESTS=1` when
-  platform wheels cannot load. Linux CI exercises the import.
 
 ## Documentation maintenance
 
