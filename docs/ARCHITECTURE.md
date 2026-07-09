@@ -1,7 +1,15 @@
 # Architecture
 
-The checked-in runtime is a raw S3 ingestion path, a lakehouse bronze path, and
-an Evidence report consumer.
+The checked-in runtime is an AWS S3 ingestion path, a Glue-catalog lakehouse
+transform path, and an Evidence report consumer. The local MinIO + Hadoop
+catalog Compose stack is a development harness, not a separate deployed layer.
+
+Airflow handles the S3 raw-ingestion and bronze-promotion paths. Host CLI
+commands support Spark/dbt transforms against AWS Glue; Airflow does not yet
+orchestrate that Glue transform path.
+
+For an explorable component and contract map, open the deployed [interactive
+PipeFlow architecture whiteboard](https://ukiah-heasley.github.io/sf-urban-health/architecture/sf-urban-health.pipeflow.html).
 
 ## Raw ingestion
 
@@ -107,7 +115,7 @@ runtime. This updates operational gold tables for failed extracts without
 emitting dataset ingest assets, bronze promotion assets, or the general gold
 transform completion asset.
 
-## Gold transform path
+## Local Airflow gold transform path
 
 ```text
 bronze promotion asset
@@ -124,59 +132,35 @@ runtime through `scripts/dbt_lakehouse.py`, using the mirrored dbt project at
 `airflow/include/dbt/` (synced by `make sync-dbt`). dbt connects to Spark
 Thrift using `dbt/profiles.yml` and `DBT_SPARK_*` environment variables. The
 final task emits `GOLD_TRANSFORM_ASSET`. Evidence Parquet export is not part of
-this DAG.
+this DAG. This asset-triggered path does not orchestrate the AWS Glue transform
+proof described below.
 
-## dbt and local Spark
+## dbt and Spark catalogs
 
 `dbt/` is the canonical lakehouse-first project. `make sync-dbt` mirrors dbt and
 lakehouse contracts into `airflow/include/` for the Astro Docker build context.
 
-Local development runs MinIO and a repo-built Spark Thrift Server from
-`lakehouse/docker-compose.yml` when using `make spark-up`. Spark uses the
-Hadoop Iceberg catalog with S3A pointed at MinIO; warehouse data is stored under
-`s3a://lakehouse/warehouse/` in the local bucket. `make spark-up-aws` starts
-only Spark Thrift with the AWS Glue Iceberg catalog and S3FileIO against AWS S3
-(no MinIO, no Glue crawlers or Glue ETL jobs). Airflow does not orchestrate the
-AWS Glue build path yet.
+### AWS Glue catalog
 
-`dbt/profiles.yml` connects to Spark Thrift with the `lakehouse` uv dependency
-group. Bronze and compacted metadata remain Parquet in object storage; dbt reads
-them through `LAKEHOUSE_BRONZE_BASE_URI` and `LAKEHOUSE_METADATA_BASE_URI`.
+`make spark-up-aws` starts Spark Thrift with the AWS Glue Iceberg catalog and
+S3FileIO against AWS S3. It does not start MinIO, Glue crawlers, or Glue ETL
+jobs. Bronze and compacted metadata Parquet must already exist in S3.
+`dbt/profiles.yml` connects through Spark Thrift using the `lakehouse` uv group;
+dbt reads those prefixes through `LAKEHOUSE_BRONZE_BASE_URI` and
+`LAKEHOUSE_METADATA_BASE_URI`, then materializes silver and gold as Glue
+catalog Iceberg tables. The host CLI commands are the supported Glue proof path.
 
-Local fixture preparation uses `make lakehouse-prepare-fixtures`, which
-destructively resets the local MinIO bucket, seeds fixture raw NDJSON for
-permits, evictions, and incidents, promotes bronze Parquet through the existing
-Python promotion code, and restarts Spark Thrift so catalog namespaces are
-rebuilt. dbt reads bronze through ephemeral `bronze_*` models over Parquet at
-`LAKEHOUSE_BRONZE_BASE_URI` and compacted metadata through ephemeral
-`metadata_*` models over Parquet at `LAKEHOUSE_METADATA_BASE_URI`. Silver
-`*_current` models and gold analytical models materialize as Iceberg through
-Spark/dbt. The `smoke_iceberg` model remains a harmless catalog connectivity
-check.
+### Optional local test harness
 
-```text
-make spark-up
-make lakehouse-prepare-fixtures
-    → destructive MinIO reset
-    → raw fixture NDJSON for permits, evictions, incidents in MinIO
-    → bronze Parquet promotion + Spark catalog refresh
-
-make dbt-lakehouse-gold
-    → bronze_* and metadata_* (ephemeral) + silver/gold Iceberg tables
-
-make spark-up-aws
-    → Spark Thrift only; Glue catalog + S3FileIO (AWS bronze and metadata Parquet must already exist)
-
-make dbt-lakehouse-permits
-    → bronze_permits (ephemeral) + permits_current Iceberg table
-
-make dbt-lakehouse-smoke
-    → dbt-spark → Thrift → smoke_iceberg Iceberg table
-```
+`make spark-up` starts MinIO and Spark Thrift with a local Hadoop catalog.
+`make lakehouse-prepare-fixtures` destructively resets that local bucket, loads
+three deterministic fixture datasets, and promotes them to bronze. It exists to
+exercise the same promotion and dbt logic without AWS credentials; it is not a
+deployment target.
 
 ## Consumers
 
-- Evidence reads committed local Parquet snapshots with DuckDB during its static
+- Evidence reads committed Parquet snapshots with DuckDB during its static
   build. The snapshots are exported from the six lakehouse gold tables:
   `housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
   `pipeline_health`, and `data_trust`. The Pages workflow builds from those

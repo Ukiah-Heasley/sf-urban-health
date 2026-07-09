@@ -15,20 +15,15 @@ committed Parquet snapshots
 GitHub Pages builds from committed snapshots only. It does not query Spark,
 Iceberg, or MinIO at deploy time.
 
-Local export after building lakehouse gold:
+The deployed site also serves the standalone interactive PipeFlow architecture
+whiteboard at `/architecture/sf-urban-health.pipeflow.html`. Evidence copies
+`reports/static/` to the Pages artifact unchanged; keep the corresponding
+`sf-urban-health.pipeflow.json` sidecar there as the reviewable, editable board
+source. Regenerate both files with PipeFlow's **Download HTML Bundle** action
+when the architecture diagram changes.
 
-```bash
-make spark-up
-make lakehouse-prepare-fixtures
-make dbt-lakehouse-gold
-make export-evidence-snapshots
-cd reports
-npm ci
-npm run sources
-npm run build
-```
-
-AWS Glue export after building lakehouse gold:
+AWS Glue export after building lakehouse gold (with existing AWS bronze and
+metadata Parquet):
 
 ```bash
 make spark-up-aws
@@ -50,6 +45,11 @@ npm run sources
 npm run build
 ```
 
+For an optional local fixture run, use `make spark-up`,
+`make lakehouse-prepare-fixtures`, and `make dbt-lakehouse-gold` before the
+same snapshot export and Evidence build commands. The local stack is a
+development harness; Pages always deploys committed snapshot files.
+
 `make export-evidence-snapshots` writes:
 
 - `housing_production.parquet`
@@ -66,15 +66,13 @@ Repository Pages must use **GitHub Actions** as its source. The workflow runs on
 main pushes that touch report files, manual dispatch, relevant pull requests,
 and its daily schedule.
 
-## Airflow
+## Airflow runtime boundary
 
 The Astro project can run locally with `make airflow-up` or be packaged through
 the Astro CLI. Configure AWS and DataSF values through the deployment platform.
 
 The ingest DAGs land raw NDJSON in S3 and promote bronze Parquet through
-`promote_raw_to_bronze`. `build_lakehouse_gold` runs dbt inside the Astro
-image after bronze promotion completes, building lakehouse silver and gold
-Iceberg models. Configure `DBT_SPARK_HOST`, `DBT_SPARK_PORT`, `DBT_SPARK_SCHEMA`,
-and `DBT_SPARK_USER` so Airflow tasks can reach Spark Thrift. The mirrored dbt
-project is synced into `airflow/include/dbt/` by `make sync-dbt` before
-`make airflow-up`.
+`promote_raw_to_bronze`. `make airflow-up-aws` runs the local Astro container
+stack with AWS S3 configuration. The AWS Glue transform path is currently a
+host CLI proof run; Airflow does not orchestrate it. `make sync-dbt` mirrors
+the canonical dbt project into `airflow/include/dbt/` before Airflow starts.
