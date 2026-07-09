@@ -3,19 +3,25 @@
 Skipped automatically when the `airflow` dependency group isn't installed
 (local `make test` with only `--group dev` will auto-skip).
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-pytest.importorskip("airflow.models", reason="airflow not installed; install --group airflow")
+pytest.importorskip(
+    "airflow.models", reason="airflow not installed; install --group airflow"
+)
 
 
 def test_make_ingest_dag_extracts_raw_and_emits_asset():
     from airflow.timetables.interval import CronDataIntervalTimetable
     from _shared.dag_factory import DagConfig, make_ingest_dag
-    from _shared.pipeline_assets import PERMITS_INGEST_ASSET
+    from _shared.pipeline_assets import (
+        INGEST_FAILURE_METADATA_ASSET,
+        PERMITS_INGEST_ASSET,
+    )
     from scripts.soda_ingest import DatasetConfig
 
     cfg = DagConfig(
@@ -38,18 +44,37 @@ def test_make_ingest_dag_extracts_raw_and_emits_asset():
     assert task_ids == [
         "extract_permits_to_raw",
         "record_permits_extract_metadata",
+        "mark_permits_extract_failure_metadata",
         "ingest_complete",
     ]
 
     extract = dag.get_task("extract_permits_to_raw")
     record_metadata = dag.get_task("record_permits_extract_metadata")
+    failure_marker = dag.get_task("mark_permits_extract_failure_metadata")
     complete = dag.get_task("ingest_complete")
 
     assert record_metadata.upstream_task_ids == {"extract_permits_to_raw"}
-    assert complete.upstream_task_ids == {"record_permits_extract_metadata"}
-    assert extract.downstream_task_ids == {"record_permits_extract_metadata"}
-    assert record_metadata.downstream_task_ids == {"ingest_complete"}
+    assert str(record_metadata.trigger_rule) == "all_done"
+    assert complete.upstream_task_ids == {
+        "extract_permits_to_raw",
+        "record_permits_extract_metadata",
+    }
+    assert failure_marker.upstream_task_ids == {
+        "extract_permits_to_raw",
+        "record_permits_extract_metadata",
+    }
+    assert str(failure_marker.trigger_rule) == "all_done"
+    assert extract.downstream_task_ids == {
+        "ingest_complete",
+        "mark_permits_extract_failure_metadata",
+        "record_permits_extract_metadata",
+    }
+    assert record_metadata.downstream_task_ids == {
+        "ingest_complete",
+        "mark_permits_extract_failure_metadata",
+    }
     assert complete.outlets == [PERMITS_INGEST_ASSET]
+    assert failure_marker.outlets == [INGEST_FAILURE_METADATA_ASSET]
 
 
 def test_resolve_extract_window_uses_scheduled_interval_by_default():

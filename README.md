@@ -35,6 +35,10 @@ Bronze promotion asset
     → build_lakehouse_gold (dbt inside Astro Airflow)
     → silver/gold Iceberg tables
     → gold transform completion asset
+
+Failed ingest metadata asset
+    → handle_ingest_failure_metadata
+    → compacted metadata Parquet + pipeline_health/data_trust refresh
 ```
 
 The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Plotly Dash
@@ -50,6 +54,7 @@ Three generated DAGs run daily at 06:00 UTC:
 
 ```text
 extract_{dataset}_to_raw → record_{dataset}_extract_metadata → ingest_complete
+                         ↘ mark_{dataset}_extract_failure_metadata
 ```
 
 Each extractor:
@@ -72,7 +77,9 @@ raw/{dataset}/
 ```
 
 An empty interval is successful, uploads no raw object, still writes an ingest
-metadata event, and emits its ingest asset.
+metadata event, and emits its ingest asset. A failed extract writes a current
+and attempt metadata event with `status="failed"` after recomputing the same
+interval bounds, but it does not emit the dataset ingest asset.
 
 `promote_raw_to_bronze` runs after all three ingest assets update. It selects
 the oldest pending complete interval from current S3 ingest metadata events
@@ -80,7 +87,10 @@ the oldest pending complete interval from current S3 ingest metadata events
 interval to bronze Parquet, writes file-manifest metadata events, compacts
 current metadata events into contract-compatible Parquet, and emits a bronze
 promotion asset. When no interval is selected, the DAG branches to a no-op path
-that emits no bronze or bronze promotion assets. After bronze promotion completes,
+that still compacts metadata but emits no bronze or bronze promotion assets.
+Intervals with a failed required dataset are not promotable; rerunning the
+failed interval successfully overwrites the current failed event and unblocks
+planning. After bronze promotion completes,
 `build_lakehouse_gold` runs `dbt debug` and `dbt build --select tag:lakehouse`
 inside the Astro Airflow runtime against the mirrored project at
 `airflow/include/dbt/`, materializing silver and gold Iceberg tables through
@@ -89,6 +99,11 @@ Spark Thrift, and emits a gold transform completion asset. Set
 intervals without a separate code path. Current JSON metadata events are the
 promotion source of truth; attempt audit events and compacted metadata Parquet
 are not planner inputs.
+
+`handle_ingest_failure_metadata` runs after a failed ingest metadata asset. It
+compacts current metadata events and rebuilds only `pipeline_health` and
+`data_trust` so operational gold tables can show failed extracts even though no
+bronze promotion asset was emitted.
 
 See [Architecture](docs/ARCHITECTURE.md) for the complete current-state flow.
 

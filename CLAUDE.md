@@ -38,13 +38,17 @@ The checked-in runtime is split:
 
 ```text
 DataSF SODA API -> soda_ingest.py -> S3 raw interval NDJSON
-  -> lakehouse_metadata.py current + attempt ingest events -> ingest assets
+  -> lakehouse_metadata.py current + attempt ingest events
+  -> success ingest assets or failed metadata asset
 
 ingest assets -> promote_raw_to_bronze -> bronze Parquet + metadata events
   -> compact metadata Parquet -> bronze promotion asset (when planned)
 
 bronze promotion asset -> build_lakehouse_gold -> dbt silver/gold Iceberg
   -> gold transform completion asset
+
+failed metadata asset -> handle_ingest_failure_metadata
+  -> compact metadata Parquet -> dbt pipeline_health/data_trust
 
 lakehouse/ Compose -> MinIO + Spark Thrift + Iceberg (local Hadoop catalog)
   -> fixture prep -> bronze Parquet in MinIO -> dbt bronze/silver/gold Iceberg
@@ -68,18 +72,24 @@ flow; each compaction fully rebuilds it from JSON. Attempt audit events do not
 drive the planner.
 
 Dataset ingest DAGs contain
-`extract_<dataset>_to_raw -> record_<dataset>_extract_metadata -> ingest_complete`.
+`extract_<dataset>_to_raw -> record_<dataset>_extract_metadata -> ingest_complete`,
+plus a failed-metadata marker task that emits the failure metadata asset only
+after a failed extract metadata event is written.
 `promote_raw_to_bronze` promotes raw intervals to bronze and compacts metadata.
 It reads `LAKEHOUSE_PLAN_MODE`, `LAKEHOUSE_PLAN_LIMIT` (must be `1`), and
 optional start/end bounds. `max_active_runs=1` prevents concurrent runs from
 selecting the same global interval. When no interval is selected, promotion and
-bronze promotion asset emission are skipped.
+bronze promotion asset emission are skipped, but metadata compaction still runs.
+Intervals with a failed required dataset are not selected until the failed
+current event is overwritten by a successful rerun of the same interval.
 
 Three ingest DAGs run at 06:00 UTC. `promote_raw_to_bronze` is asset-triggered by
 all three ingest assets. `build_lakehouse_gold` is asset-triggered by
 `BRONZE_PROMOTION_ASSET`, runs `dbt debug` then `dbt build --select tag:lakehouse`
 inside the Astro Airflow runtime against the mirrored project at
-`airflow/include/dbt/`, and emits `GOLD_TRANSFORM_ASSET` when complete. Local
+`airflow/include/dbt/`, and emits `GOLD_TRANSFORM_ASSET` when complete.
+`handle_ingest_failure_metadata` is asset-triggered by failed ingest metadata,
+compacts metadata, and runs `dbt build --select pipeline_health data_trust`. Local
 Airflow containers need `DBT_SPARK_HOST=host.docker.internal` (and matching
 `DBT_SPARK_PORT`) so dbt can reach the host-published Spark Thrift Server from
 `make spark-up`.

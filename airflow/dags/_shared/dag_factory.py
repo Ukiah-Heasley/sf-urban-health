@@ -7,18 +7,23 @@ Each DAG built here owns raw capture only:
 3. Record extract metadata as a current S3 event plus an attempt audit event.
 4. Emit the dataset ingest asset for downstream lakehouse and Snowflake work.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
+from airflow.exceptions import AirflowSkipException
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import DAG
 from airflow.timetables.interval import CronDataIntervalTimetable
 
-from _shared.pipeline_assets import ingest_asset_for
-from scripts.lakehouse_metadata import record_extract_metadata
+from _shared.pipeline_assets import INGEST_FAILURE_METADATA_ASSET, ingest_asset_for
+from scripts.lakehouse_metadata import (
+    record_extract_failed_metadata,
+    record_extract_metadata,
+)
 from scripts.soda_ingest import (
     DatasetConfig,
     ExtractWindow,
@@ -31,6 +36,7 @@ from scripts.time_utils import coerce_utc_datetime
 
 _MANUAL_LOAD_MODES = frozenset({"full", "backfill"})
 _MANUAL_WINDOW_CONF_KEYS = frozenset({"window_start", "window_end", "lookback_hours"})
+_FAILED_EXTRACT_STATES = frozenset({"failed", "upstream_failed"})
 
 
 def resolve_extract_window(
@@ -61,8 +67,7 @@ def resolve_extract_window(
 
     if load_mode not in _MANUAL_LOAD_MODES:
         raise ValueError(
-            "load_mode must be 'full' or 'backfill' when set; "
-            f"got {load_mode!r}"
+            "load_mode must be 'full' or 'backfill' when set; " f"got {load_mode!r}"
         )
 
     window_start_raw = conf.get("window_start")
@@ -107,15 +112,39 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
 
     extract_task_id = f"extract_{cfg.dataset.name}_to_raw"
     metadata_task_id = f"record_{cfg.dataset.name}_extract_metadata"
+    failure_marker_task_id = f"mark_{cfg.dataset.name}_extract_failure_metadata"
 
-    def _extract_to_raw(**context) -> str | None:
+    def _window_from_context(context) -> ExtractWindow:
         dag_run = context.get("dag_run")
         dag_run_conf = dag_run.conf if dag_run is not None else None
-        window = resolve_extract_window(
+        return resolve_extract_window(
             data_interval_start=context["data_interval_start"],
             data_interval_end=context["data_interval_end"],
             dag_run_conf=dag_run_conf,
         )
+
+    def _task_instance_for(context, task_id: str):
+        dag_run = context.get("dag_run")
+        if dag_run is None or not hasattr(dag_run, "get_task_instance"):
+            return None
+        return dag_run.get_task_instance(task_id)
+
+    def _normalized_task_state(task_instance) -> str | None:
+        if task_instance is None:
+            return None
+        state = getattr(task_instance, "state", None)
+        if state is None:
+            return None
+        return str(getattr(state, "value", state)).lower()
+
+    def _task_datetime(task_instance, attribute: str) -> datetime | None:
+        value = getattr(task_instance, attribute, None)
+        if value is None:
+            return None
+        return coerce_utc_datetime(value)
+
+    def _extract_to_raw(**context) -> str | None:
+        window = _window_from_context(context)
         result = extract_to_raw(
             cfg.dataset,
             window,
@@ -149,14 +178,38 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         from scripts.soda_ingest import ExtractResult
 
         ti = context["ti"]
+        extract_ti = _task_instance_for(context, extract_task_id)
+        extract_state = _normalized_task_state(extract_ti)
+        if extract_state in _FAILED_EXTRACT_STATES:
+            window = _window_from_context(context)
+            event_key = record_extract_failed_metadata(
+                extract_window=window,
+                ingest_run_id=context["run_id"],
+                dag_id=context["dag"].dag_id,
+                dataset_name=cfg.dataset.name,
+                started_at=_task_datetime(extract_ti, "start_date"),
+                completed_at=(
+                    _task_datetime(extract_ti, "end_date") or datetime.now(timezone.utc)
+                ),
+            )
+            ti.xcom_push(key="ingest_metadata_event_key", value=event_key)
+            ti.xcom_push(key="ingest_metadata_event_status", value="failed")
+            return event_key
+
         max_loaded_at_raw = ti.xcom_pull(task_ids=extract_task_id, key="max_loaded_at")
         extract_result = ExtractResult(
             raw_path=ti.xcom_pull(task_ids=extract_task_id, key="raw_path"),
             raw_key=ti.xcom_pull(task_ids=extract_task_id, key="raw_key"),
-            records_fetched=ti.xcom_pull(task_ids=extract_task_id, key="records_fetched"),
-            max_loaded_at=coerce_utc_datetime(max_loaded_at_raw) if max_loaded_at_raw else None,
+            records_fetched=ti.xcom_pull(
+                task_ids=extract_task_id, key="records_fetched"
+            ),
+            max_loaded_at=coerce_utc_datetime(max_loaded_at_raw)
+            if max_loaded_at_raw
+            else None,
             bytes_written=ti.xcom_pull(task_ids=extract_task_id, key="bytes_written"),
-            duration_seconds=ti.xcom_pull(task_ids=extract_task_id, key="duration_seconds"),
+            duration_seconds=ti.xcom_pull(
+                task_ids=extract_task_id, key="duration_seconds"
+            ),
             data_interval_start=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="data_interval_start")
             ),
@@ -166,7 +219,9 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             effective_start=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="effective_start")
             ),
-            started_at=coerce_utc_datetime(ti.xcom_pull(task_ids=extract_task_id, key="started_at")),
+            started_at=coerce_utc_datetime(
+                ti.xcom_pull(task_ids=extract_task_id, key="started_at")
+            ),
             completed_at=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="completed_at")
             ),
@@ -178,7 +233,18 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             dataset_name=cfg.dataset.name,
         )
         ti.xcom_push(key="ingest_metadata_event_key", value=event_key)
+        status = "empty" if extract_result.records_fetched == 0 else "success"
+        ti.xcom_push(key="ingest_metadata_event_status", value=status)
         return event_key
+
+    def _mark_extract_failure_metadata(**context) -> str:
+        metadata_status = context["ti"].xcom_pull(
+            task_ids=metadata_task_id,
+            key="ingest_metadata_event_status",
+        )
+        if metadata_status != "failed":
+            raise AirflowSkipException("extract did not write failed ingest metadata")
+        return "failed ingest metadata recorded"
 
     with DAG(
         dag_id=f"ingest_{cfg.dataset.name}",
@@ -201,6 +267,14 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         record_metadata = PythonOperator(
             task_id=metadata_task_id,
             python_callable=_record_extract_metadata,
+            trigger_rule="all_done",
+        )
+
+        failure_marker = PythonOperator(
+            task_id=failure_marker_task_id,
+            python_callable=_mark_extract_failure_metadata,
+            trigger_rule="all_done",
+            outlets=[INGEST_FAILURE_METADATA_ASSET],
         )
 
         ingest_complete = EmptyOperator(
@@ -209,5 +283,7 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         )
 
         extract >> record_metadata >> ingest_complete
+        extract >> ingest_complete
+        [extract, record_metadata] >> failure_marker
 
     return dag

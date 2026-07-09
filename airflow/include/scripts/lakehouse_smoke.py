@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Local lakehouse promotion smoke test without AWS credentials."""
+
 from __future__ import annotations
 
 import shutil
@@ -31,7 +32,7 @@ _DATASETS = {
     "evictions": {
         "dataset_id": "5cei-gny5",
         "fixture": "evictions.ndjson",
-        "records": 2,
+        "records": 3,
     },
     "incidents": {
         "dataset_id": "wg3w-h783",

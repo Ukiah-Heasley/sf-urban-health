@@ -4,7 +4,35 @@
 
 If DataSF returns no records, the writer uploads no empty object. The extract
 returns null raw paths, zero row/byte counts, and a null maximum timestamp. The
-ingest DAG still succeeds and emits its asset.
+ingest DAG still succeeds and emits its asset. A no-op
+`promote_raw_to_bronze` run still compacts metadata so all-empty intervals reach
+the compacted observability layer.
+
+## Failed extraction intervals
+
+If an extract task fails, the metadata task still runs after the failed task,
+recomputes the interval bounds, and writes current plus attempt ingest metadata
+with `status="failed"`, null raw paths, and a non-null UTC `completed_at`. The
+ingest-complete asset is not emitted, so failed intervals do not trigger bronze
+promotion.
+
+The failed current event remains the planner-visible state for that dataset and
+interval. Rerun the failed interval with the same Airflow interval or matching
+manual `window_start`/`window_end`; a successful rerun overwrites the current
+failed event with `success` or `empty` and unblocks promotion planning.
+
+Failed ingest metadata triggers `handle_ingest_failure_metadata`, which compacts
+metadata and rebuilds `pipeline_health` and `data_trust` so the operational gold
+tables can show the failure.
+
+## Metadata compaction concurrency
+
+`compact_lakehouse_metadata` deletes and rebuilds the compacted metadata Parquet
+prefixes. It can be reached from `promote_raw_to_bronze` and
+`handle_ingest_failure_metadata`; both DAGs have `max_active_runs=1`, but they
+do not share an Airflow pool. At the current daily cadence this race is accepted.
+Use a shared one-slot Airflow pool if compaction becomes frequent enough that
+interleaved delete/write operations are realistic.
 
 ## Missing configured timestamps
 

@@ -1,4 +1,5 @@
 """Bronze promotion DAG: promote complete raw intervals to bronze Parquet."""
+
 from __future__ import annotations
 
 import os
@@ -72,14 +73,18 @@ class BranchOnBronzePlanOperator(BaseBranchOperator):
     """Skip promotion and asset emission when no interval is selected."""
 
     def choose_branch(self, context) -> str:
-        plan = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="bronze_interval_plan")
+        plan = context["ti"].xcom_pull(
+            task_ids=_SELECT_TASK_ID, key="bronze_interval_plan"
+        )
         if plan is None:
             return _NOOP_TASK_ID
         return _PROMOTE_PERMITS_TASK_ID
 
 
 def _promote_dataset(dataset_name: str, **context) -> str | None:
-    plan_payload = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="bronze_interval_plan")
+    plan_payload = context["ti"].xcom_pull(
+        task_ids=_SELECT_TASK_ID, key="bronze_interval_plan"
+    )
     if plan_payload is None:
         return None
 
@@ -101,9 +106,6 @@ def _promote_dataset(dataset_name: str, **context) -> str | None:
 
 
 def _compact_metadata(**context) -> None:
-    plan_payload = context["ti"].xcom_pull(task_ids=_SELECT_TASK_ID, key="bronze_interval_plan")
-    if plan_payload is None:
-        return
     compact_lakehouse_metadata()
 
 
@@ -149,6 +151,7 @@ with DAG(
     compact_lakehouse_metadata_task = PythonOperator(
         task_id="compact_lakehouse_metadata",
         python_callable=_compact_metadata,
+        trigger_rule="none_failed_min_one_success",
     )
     bronze_promotion_complete = EmptyOperator(
         task_id="bronze_promotion_complete",
@@ -165,5 +168,6 @@ with DAG(
         >> promote_evictions
         >> promote_incidents
         >> compact_lakehouse_metadata_task
-        >> bronze_promotion_complete
     )
+    bronze_promotion_noop >> compact_lakehouse_metadata_task
+    [promote_incidents, compact_lakehouse_metadata_task] >> bronze_promotion_complete

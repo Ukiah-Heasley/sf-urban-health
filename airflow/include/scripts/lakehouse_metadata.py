@@ -1,4 +1,5 @@
 """S3 metadata events and single-task compaction for the lakehouse path."""
+
 from __future__ import annotations
 
 import hashlib
@@ -167,7 +168,9 @@ def parse_ingest_run_event(payload: Mapping[str, Any]) -> IngestRunEvent:
         raw_s3_key=str(payload["raw_s3_key"]) if payload.get("raw_s3_key") else None,
         records_fetched=int(payload["records_fetched"]),
         max_loaded_at=_parse_event_datetime(payload.get("max_loaded_at")),
-        bytes_written=int(payload["bytes_written"]) if payload.get("bytes_written") is not None else None,
+        bytes_written=int(payload["bytes_written"])
+        if payload.get("bytes_written") is not None
+        else None,
         duration_seconds=float(payload["duration_seconds"])
         if payload.get("duration_seconds") is not None
         else None,
@@ -241,8 +244,12 @@ def read_file_manifest_event(storage: StorageConfig, key: str) -> FileManifestEv
 
 def lakehouse_interval_plan_to_dict(plan: LakehouseIntervalPlan) -> dict[str, Any]:
     return {
-        "data_interval_start": plan.data_interval_start.astimezone(timezone.utc).isoformat(),
-        "data_interval_end": plan.data_interval_end.astimezone(timezone.utc).isoformat(),
+        "data_interval_start": plan.data_interval_start.astimezone(
+            timezone.utc
+        ).isoformat(),
+        "data_interval_end": plan.data_interval_end.astimezone(
+            timezone.utc
+        ).isoformat(),
         "ingest_event_keys": dict(plan.ingest_event_keys),
         "existing_manifest_event_keys": dict(plan.existing_manifest_event_keys),
         "mode": plan.mode,
@@ -250,12 +257,16 @@ def lakehouse_interval_plan_to_dict(plan: LakehouseIntervalPlan) -> dict[str, An
     }
 
 
-def lakehouse_interval_plan_from_dict(payload: Mapping[str, Any]) -> LakehouseIntervalPlan:
+def lakehouse_interval_plan_from_dict(
+    payload: Mapping[str, Any],
+) -> LakehouseIntervalPlan:
     return LakehouseIntervalPlan(
         data_interval_start=coerce_utc_datetime(str(payload["data_interval_start"])),
         data_interval_end=coerce_utc_datetime(str(payload["data_interval_end"])),
         ingest_event_keys=dict(payload["ingest_event_keys"]),
-        existing_manifest_event_keys=dict(payload.get("existing_manifest_event_keys", {})),
+        existing_manifest_event_keys=dict(
+            payload.get("existing_manifest_event_keys", {})
+        ),
         mode=str(payload["mode"]),
         reason=str(payload["reason"]),
     )
@@ -323,7 +334,9 @@ def plan_lakehouse_intervals(
         for key in _iter_event_keys(storage, f"{METADATA_EVENTS_PREFIX}/file_manifest/")
     ]
 
-    grouped_ingest: dict[tuple[datetime, datetime], dict[str, tuple[str, IngestRunEvent]]] = {}
+    grouped_ingest: dict[
+        tuple[datetime, datetime], dict[str, tuple[str, IngestRunEvent]]
+    ] = {}
     for event in ingest_events:
         interval = (event.data_interval_start, event.data_interval_end)
         grouped_ingest.setdefault(interval, {})[event.dataset_name] = (
@@ -343,16 +356,26 @@ def plan_lakehouse_intervals(
         grouped_manifests.setdefault(interval, []).append(event)
 
     plans: list[LakehouseIntervalPlan] = []
-    for interval, dataset_events in sorted(grouped_ingest.items(), key=lambda item: item[0]):
+    required_dataset_set = set(required_datasets)
+    for interval, dataset_events in sorted(
+        grouped_ingest.items(), key=lambda item: item[0]
+    ):
         data_interval_start, data_interval_end = interval
         if start is not None and data_interval_start < start:
             continue
         if end is not None and data_interval_end > end:
             continue
-        if set(dataset_events) != set(required_datasets):
+        if not required_dataset_set.issubset(dataset_events):
+            continue
+        if any(
+            dataset_events[dataset_name][1].status == "failed"
+            for dataset_name in required_datasets
+        ):
             continue
 
-        ingest_event_keys = {name: key for name, (key, _) in dataset_events.items()}
+        ingest_event_keys = {
+            name: dataset_events[name][0] for name in required_datasets
+        }
         existing_manifest_event_keys = _bronze_manifests_for_interval(
             grouped_manifests.get(interval, [])
         )
@@ -435,6 +458,38 @@ def ingest_run_event_from_extract(
     )
 
 
+def ingest_run_event_from_failure(
+    *,
+    extract_window: Any,
+    ingest_run_id: str,
+    dag_id: str,
+    dataset_name: str,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+) -> IngestRunEvent:
+    completed = coerce_utc_datetime(completed_at or datetime.now(timezone.utc))
+    started = coerce_utc_datetime(started_at or completed)
+    return IngestRunEvent(
+        event_type="ingest_run",
+        event_version=EVENT_VERSION,
+        ingest_run_id=ingest_run_id,
+        dag_id=dag_id,
+        dataset_name=dataset_name,
+        data_interval_start=extract_window.data_interval_start,
+        data_interval_end=extract_window.data_interval_end,
+        effective_start=extract_window.effective_start,
+        raw_s3_path=None,
+        raw_s3_key=None,
+        records_fetched=0,
+        max_loaded_at=None,
+        bytes_written=None,
+        duration_seconds=None,
+        status="failed",
+        started_at=started,
+        completed_at=completed,
+    )
+
+
 def record_extract_metadata(
     *,
     extract_result: Any,
@@ -453,13 +508,37 @@ def record_extract_metadata(
     return write_ingest_run_event(storage, event)
 
 
+def record_extract_failed_metadata(
+    *,
+    extract_window: Any,
+    ingest_run_id: str,
+    dag_id: str,
+    dataset_name: str,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+    storage: StorageConfig | None = None,
+) -> str:
+    storage = storage or storage_from_env()
+    event = ingest_run_event_from_failure(
+        extract_window=extract_window,
+        ingest_run_id=ingest_run_id,
+        dag_id=dag_id,
+        dataset_name=dataset_name,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+    return write_ingest_run_event(storage, event)
+
+
 def _iter_event_keys(storage: StorageConfig, prefix: str) -> Iterator[str]:
     for key in storage.list_keys(prefix):
         if key.endswith(".json"):
             yield key
 
 
-def _contract_row_from_event(event: IngestRunEvent | FileManifestEvent, contract: TableContract) -> dict[str, Any]:
+def _contract_row_from_event(
+    event: IngestRunEvent | FileManifestEvent, contract: TableContract
+) -> dict[str, Any]:
     if isinstance(event, IngestRunEvent):
         source = {
             "ingest_run_id": event.ingest_run_id,
@@ -520,8 +599,11 @@ def compact_lakehouse_metadata(
 
     conn = duckdb.connect(":memory:")
     try:
+        conn.execute("SET TimeZone='UTC'")
         _load_events_into_duckdb(conn, ingest_events, ingest_contract, "ingest_runs")
-        _load_events_into_duckdb(conn, manifest_events, manifest_contract, "file_manifest")
+        _load_events_into_duckdb(
+            conn, manifest_events, manifest_contract, "file_manifest"
+        )
         _export_compacted_table(
             conn,
             table_name="ingest_runs",
@@ -557,7 +639,9 @@ def _load_events_into_duckdb(
     source_name = f"{table_name}_src"
     conn.register(source_name, arrow_table)
     column_list = ", ".join(column.name for column in contract.columns)
-    conn.execute(f"CREATE TABLE {table_name} AS SELECT {column_list} FROM {source_name}")
+    conn.execute(
+        f"CREATE TABLE {table_name} AS SELECT {column_list} FROM {source_name}"
+    )
 
 
 def _export_compacted_table(

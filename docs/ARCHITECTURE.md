@@ -16,18 +16,18 @@ S3 raw/{dataset}/data_interval_start=.../data_interval_end=.../records.ndjson
     │
     ▼
 record_{dataset}_extract_metadata
-    │  current ingest metadata event + attempt audit event
-    ▼
-Airflow ingest-complete asset
+    │  current ingest metadata event + attempt audit event, including failed extracts
+    ├─ success/empty extract ─> Airflow ingest-complete asset
+    └─ failed extract ───────> Airflow failed-ingest-metadata asset
 ```
 
 The three generated ingest DAGs are:
 
 | DAG | Schedule | Tasks |
 | --- | --- | --- |
-| `ingest_permits` | `0 6 * * *` | `extract_permits_to_raw -> record_permits_extract_metadata -> ingest_complete` |
-| `ingest_evictions` | `0 6 * * *` | `extract_evictions_to_raw -> record_evictions_extract_metadata -> ingest_complete` |
-| `ingest_incidents` | `0 6 * * *` | `extract_incidents_to_raw -> record_incidents_extract_metadata -> ingest_complete` |
+| `ingest_permits` | `0 6 * * *` | `extract_permits_to_raw -> record_permits_extract_metadata -> ingest_complete`; failed metadata also routes to `mark_permits_extract_failure_metadata` |
+| `ingest_evictions` | `0 6 * * *` | `extract_evictions_to_raw -> record_evictions_extract_metadata -> ingest_complete`; failed metadata also routes to `mark_evictions_extract_failure_metadata` |
+| `ingest_incidents` | `0 6 * * *` | `extract_incidents_to_raw -> record_incidents_extract_metadata -> ingest_complete`; failed metadata also routes to `mark_incidents_extract_failure_metadata` |
 
 `_shared/dag_factory.py` builds all three from `DatasetConfig` and `DagConfig` values.
 Scheduled runs derive the extraction window from Airflow data intervals. Manual
@@ -40,7 +40,9 @@ writes an attempt audit event under
 `lake/metadata/events/ingest_run_attempts/`, then overwrites the deterministic
 current JSON event under `lake/metadata/events/ingest_runs_current/`. Empty
 intervals return null raw paths, still write ingest metadata, and still emit the
-ingest asset.
+ingest asset. Failed extracts recompute the same interval bounds, write
+`status="failed"` current and attempt metadata events with null raw paths, and
+do not emit the ingest-complete asset.
 
 Ingest DAGs do not promote bronze Parquet or run dbt. A failure in lakehouse
 promotion or dbt transforms does not block raw capture.
@@ -67,9 +69,10 @@ events from S3 and selects the oldest complete interval missing bronze promotion
 (`LAKEHOUSE_PLAN_LIMIT` must be `1`). `promote_raw_to_bronze` sets
 `max_active_runs=1` so concurrent runs cannot select the same global interval.
 When no interval is selected,
-`branch_on_bronze_plan` skips promotion, compaction, and bronze promotion asset
-emission via `bronze_promotion_noop`. Promotion tasks load the selected current ingest
-event for each dataset, stream raw NDJSON into typed bronze Parquet under
+`branch_on_bronze_plan` skips promotion and bronze promotion asset emission via
+`bronze_promotion_noop`, but still runs metadata compaction. Promotion tasks
+load the selected current ingest event for each dataset, stream raw NDJSON into
+typed bronze Parquet under
 `lake/parquet/bronze/`, and write file-manifest metadata events under
 `lake/metadata/events/file_manifest/`. Bronze Parquet is written to a local temp
 file, row counts are validated against the ingest event, and only then uploaded
@@ -82,9 +85,27 @@ ingest or file-manifest event families produce no Parquet output.
 
 S3 JSON metadata events are the durable source of truth for promotion control
 flow. Current ingest events under `ingest_runs_current/` drive the planner;
-attempt audit events do not. Compacted metadata Parquet reflects the current
-ingest interval grain, is fully rebuilt from JSON on each compaction, and is a
-queryable export, not a planner input.
+attempt audit events do not. The planner requires the configured datasets as a
+subset of the current event set, ignores extra dataset events, and skips any
+interval where a required dataset has `status="failed"`. Compacted metadata
+Parquet reflects the current ingest interval grain, is fully rebuilt from JSON
+on each compaction, and is a queryable export, not a planner input.
+
+## Failure metadata path
+
+```text
+failed ingest metadata asset
+    → handle_ingest_failure_metadata
+        ├─> compact_failed_ingest_metadata
+        └─> dbt_build_observability_gold
+```
+
+`handle_ingest_failure_metadata` is asset-triggered by failed ingest metadata.
+It compacts current metadata JSON events, then runs
+`dbt build --select pipeline_health data_trust` inside the Astro Airflow
+runtime. This updates operational gold tables for failed extracts without
+emitting dataset ingest assets, bronze promotion assets, or the general gold
+transform completion asset.
 
 ## Gold transform path
 

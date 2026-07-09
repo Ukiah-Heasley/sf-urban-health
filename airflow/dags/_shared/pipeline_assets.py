@@ -1,4 +1,5 @@
 """Shared Airflow assets emitted by ingestion and consumed by dbt transforms."""
+
 from __future__ import annotations
 
 from airflow.sdk import Asset
@@ -25,6 +26,9 @@ BRONZE_ASSETS = {
 
 BRONZE_PROMOTION_ASSET = Asset("sf-urban-health://lakehouse/bronze/promotion_complete")
 GOLD_TRANSFORM_ASSET = Asset("sf-urban-health://lakehouse/gold/transform_complete")
+INGEST_FAILURE_METADATA_ASSET = Asset(
+    "sf-urban-health://lakehouse/metadata/ingest_failure"
+)
 
 
 def ingest_asset_for(dataset_name: str) -> Asset:

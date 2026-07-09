@@ -1,4 +1,5 @@
 """Run lakehouse dbt commands inside the Airflow runtime."""
+
 from __future__ import annotations
 
 import os
@@ -44,3 +45,8 @@ def run_dbt_lakehouse_debug() -> subprocess.CompletedProcess[str]:
 def run_dbt_lakehouse_build() -> subprocess.CompletedProcess[str]:
     """Build and test all lakehouse-tagged bronze/silver/gold dbt models."""
     return _run_dbt(["build", "--select", "tag:lakehouse"])
+
+
+def run_dbt_lakehouse_observability_build() -> subprocess.CompletedProcess[str]:
+    """Build and test operational observability gold models after failure metadata."""
+    return _run_dbt(["build", "--select", "pipeline_health", "data_trust"])

@@ -48,7 +48,8 @@ S3 JSON metadata events under `lake/metadata/events/` are the durable metadata
 source of truth for promotion control flow:
 
 - `ingest_runs_current/` holds one overwriteable current event per dataset
-  interval; the planner and compaction read this prefix only.
+  interval; the planner and compaction read this prefix only. Current events
+  can have `success`, `empty`, or `failed` status.
 - `ingest_run_attempts/` records per-run audit events and does not drive
   promotion.
 - `file_manifest/` records every emitted bronze Parquet object.
@@ -58,16 +59,19 @@ The compacted `ingest_runs` metadata table grain is
 descriptive lineage for the latest extract.
 
 `plan_lakehouse_intervals` groups current ingest events by
-`(data_interval_start, data_interval_end)`, requires all three datasets, and
-selects at most one interval per DAG run. Compacted metadata Parquet is a
-query/reporting layer only and is fully rebuilt from JSON on each compaction.
+`(data_interval_start, data_interval_end)`, requires all configured datasets as
+a subset of the interval event set, ignores extra dataset events, skips failed
+required events, and selects at most one interval per DAG run. Compacted
+metadata Parquet is a query/reporting layer only and is fully rebuilt from JSON
+on each compaction.
 
 `compact_lakehouse_metadata` deletes the full metadata Parquet output prefixes
 under `lake/parquet/metadata/ingest_runs/` and
 `lake/parquet/metadata/file_manifest/`, then compacts current JSON events into
 fresh metadata Parquet under `lake/parquet/metadata/`. Metadata export files are
 not self-manifested. DuckDB is used only inside that single compaction task as
-an in-memory engine.
+an in-memory engine. Compaction pins the DuckDB session timezone to UTC before
+deriving partition dates from timestamps.
 
 ## Medallion naming (dbt + contracts)
 

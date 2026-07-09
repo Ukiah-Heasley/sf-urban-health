@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import duckdb
 import pyarrow.parquet as pq
 import pytest
 
@@ -32,10 +33,12 @@ from scripts.lakehouse_metadata import (
     ingest_run_attempt_event_key,
     ingest_run_current_event_key,
     ingest_run_event_from_extract,
+    ingest_run_event_from_failure,
     load_ingest_run_event_for_interval,
     plan_lakehouse_intervals,
     read_file_manifest_event,
     read_ingest_run_event,
+    record_extract_failed_metadata,
     record_extract_metadata,
     parse_lakehouse_plan_limit,
     write_ingest_run_event,
@@ -86,7 +89,9 @@ def _extract_result(
     )
 
 
-def _seed_raw(storage: StorageConfig, dataset_name: str, fixture_name: str) -> tuple[str, str, int]:
+def _seed_raw(
+    storage: StorageConfig, dataset_name: str, fixture_name: str
+) -> tuple[str, str, int]:
     raw_key = (
         f"raw/{dataset_name}/"
         f"data_interval_start=20240315T060000Z/"
@@ -96,7 +101,11 @@ def _seed_raw(storage: StorageConfig, dataset_name: str, fixture_name: str) -> t
     destination = storage.local_root / raw_key
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(_FIXTURES / fixture_name, destination)
-    return storage.uri_for_key(raw_key), raw_key, sum(1 for _ in destination.read_text().splitlines() if _.strip())
+    return (
+        storage.uri_for_key(raw_key),
+        raw_key,
+        sum(1 for _ in destination.read_text().splitlines() if _.strip()),
+    )
 
 
 def _write_ingest_event(
@@ -119,6 +128,23 @@ def _write_ingest_event(
         dataset_name=dataset_name,
     )
     return write_ingest_run_event(storage, event)
+
+
+def _write_failed_ingest_event(
+    storage: StorageConfig,
+    *,
+    dataset_name: str,
+    ingest_run_id: str = "run-failed",
+) -> str:
+    return record_extract_failed_metadata(
+        extract_window=_extract_result(records_fetched=0),
+        ingest_run_id=ingest_run_id,
+        dag_id=f"ingest_{dataset_name}",
+        dataset_name=dataset_name,
+        started_at=_STARTED_AT,
+        completed_at=_COMPLETED_AT,
+        storage=storage,
+    )
 
 
 _INTERVAL_START_2 = datetime(2024, 3, 16, 6, 0, tzinfo=timezone.utc)
@@ -193,7 +219,11 @@ def _seed_raw_for_interval(
     destination = storage.local_root / raw_key
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(_FIXTURES / fixture_name, destination)
-    return storage.uri_for_key(raw_key), raw_key, sum(1 for _ in destination.read_text().splitlines() if _.strip())
+    return (
+        storage.uri_for_key(raw_key),
+        raw_key,
+        sum(1 for _ in destination.read_text().splitlines() if _.strip()),
+    )
 
 
 def _seed_all_datasets(
@@ -264,7 +294,10 @@ def test_typed_mappings_for_datasets(
         assert row["status"] == "issued"
         assert row["_extracted_at"] == _COMPLETED_AT
 
-def test_required_bronze_metadata_columns(contract_root: Path, storage: StorageConfig) -> None:
+
+def test_required_bronze_metadata_columns(
+    contract_root: Path, storage: StorageConfig
+) -> None:
     contract = lc.get_contract("bronze", "permits", contract_root)
     raw_path, raw_key, _ = _seed_raw(storage, "permits", "permits.ndjson")
     payload = json.loads((_FIXTURES / "permits.ndjson").read_text().splitlines()[0])
@@ -346,7 +379,9 @@ def test_permit_story_fields_accept_fractional_values(
     assert row["proposed_stories"] == 3.5
 
 
-def test_parquet_schema_matches_contract(contract_root: Path, storage: StorageConfig) -> None:
+def test_parquet_schema_matches_contract(
+    contract_root: Path, storage: StorageConfig
+) -> None:
     contract = lc.get_contract("bronze", "permits", contract_root)
     raw_path, raw_key, records = _seed_raw(storage, "permits", "permits.ndjson")
     _write_ingest_event(
@@ -385,14 +420,20 @@ def test_bronze_path_rendering_is_deterministic(contract_root: Path) -> None:
 
 
 def test_record_hash_is_deterministic() -> None:
-    payload = {"permit_number": "1", "status": "issued", "data_loaded_at": "2024-01-01T00:00:00.000"}
+    payload = {
+        "permit_number": "1",
+        "status": "issued",
+        "data_loaded_at": "2024-01-01T00:00:00.000",
+    }
     expected = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     assert canonical_record_hash(payload) == expected
 
 
-def test_extract_metadata_event_writes_current_and_attempt_keys(storage: StorageConfig) -> None:
+def test_extract_metadata_event_writes_current_and_attempt_keys(
+    storage: StorageConfig,
+) -> None:
     result = _extract_result(records_fetched=0)
     current_key = record_extract_metadata(
         extract_result=result,
@@ -424,7 +465,9 @@ def test_extract_metadata_event_writes_current_and_attempt_keys(storage: Storage
     assert storage.list_keys(f"{INGEST_RUN_ATTEMPTS_PREFIX}/") == [attempt_key]
 
 
-def test_current_ingest_event_overwrites_prior_for_same_interval(storage: StorageConfig) -> None:
+def test_current_ingest_event_overwrites_prior_for_same_interval(
+    storage: StorageConfig,
+) -> None:
     first_current = _write_ingest_event(
         storage,
         dataset_name="permits",
@@ -441,11 +484,15 @@ def test_current_ingest_event_overwrites_prior_for_same_interval(storage: Storag
     event = read_ingest_run_event(storage, second_current)
     assert event.ingest_run_id == "run-second"
     assert event.records_fetched == 5
-    attempt_keys = storage.list_keys(f"{INGEST_RUN_ATTEMPTS_PREFIX}/dataset_name=permits/")
+    attempt_keys = storage.list_keys(
+        f"{INGEST_RUN_ATTEMPTS_PREFIX}/dataset_name=permits/"
+    )
     assert len(attempt_keys) == 2
 
 
-def test_planner_reads_current_events_not_attempt_events(storage: StorageConfig) -> None:
+def test_planner_reads_current_events_not_attempt_events(
+    storage: StorageConfig,
+) -> None:
     for dataset_name in ("permits", "evictions", "incidents"):
         stale_event = ingest_run_event_from_extract(
             extract_result=_extract_result(records_fetched=999),
@@ -517,6 +564,60 @@ def test_extract_metadata_event_uses_extract_timestamps(storage: StorageConfig) 
     assert event.event_version == EVENT_VERSION
 
 
+def test_failed_extract_metadata_event_is_contract_compatible(
+    storage: StorageConfig,
+    contract_root: Path,
+    lake_root: Path,
+) -> None:
+    key = _write_failed_ingest_event(
+        storage,
+        dataset_name="permits",
+        ingest_run_id="run-failed-contract",
+    )
+
+    event = read_ingest_run_event(storage, key)
+    assert event.status == "failed"
+    assert event.raw_s3_path is None
+    assert event.raw_s3_key is None
+    assert event.records_fetched == 0
+    assert event.max_loaded_at is None
+    assert event.bytes_written is None
+    assert event.completed_at == _COMPLETED_AT
+    assert event.completed_at.tzinfo is not None
+
+    attempt_key = ingest_run_attempt_event_key(
+        dataset_name="permits",
+        data_interval_start=_INTERVAL_START,
+        data_interval_end=_INTERVAL_END,
+        ingest_run_id="run-failed-contract",
+    )
+    assert (storage.local_root / attempt_key).exists()
+
+    compact_lakehouse_metadata(storage=storage, contract_root=contract_root)
+    parquet_files = list(
+        (lake_root / "lake/parquet/metadata/ingest_runs").rglob("records.parquet")
+    )
+    assert len(parquet_files) == 1
+    table = pq.ParquetFile(parquet_files[0]).read()
+    expected = pyarrow_schema_for_contract(
+        lc.get_contract("metadata", "ingest_runs", contract_root)
+    )
+    assert table.schema.equals(expected, check_metadata=False)
+
+
+def test_failed_extract_metadata_defaults_completed_at(storage: StorageConfig) -> None:
+    event = ingest_run_event_from_failure(
+        extract_window=_extract_result(records_fetched=0),
+        ingest_run_id="run-failed-default-time",
+        dag_id="ingest_permits",
+        dataset_name="permits",
+    )
+    assert event.status == "failed"
+    assert event.completed_at.tzinfo is not None
+    assert event.completed_at.utcoffset() is not None
+    assert event.started_at == event.completed_at
+
+
 def test_empty_interval_writes_ingest_metadata_but_no_bronze_manifest(
     storage: StorageConfig,
     contract_root: Path,
@@ -553,7 +654,9 @@ def test_row_count_mismatch_fails_without_manifest_event(
         data_interval_end=_INTERVAL_END,
     )
     event = ingest_run_event_from_extract(
-        extract_result=_extract_result(records_fetched=3, raw_path=raw_path, raw_key=raw_key),
+        extract_result=_extract_result(
+            records_fetched=3, raw_path=raw_path, raw_key=raw_key
+        ),
         ingest_run_id="run-mismatch",
         dag_id="ingest_permits",
         dataset_name="permits",
@@ -634,7 +737,9 @@ def test_promotion_writes_file_manifest_event_without_duckdb(
         contract_root=contract_root,
     )
     assert result.manifest_event_key is not None
-    assert storage.list_keys("lake/metadata/events/file_manifest/") == [result.manifest_event_key]
+    assert storage.list_keys("lake/metadata/events/file_manifest/") == [
+        result.manifest_event_key
+    ]
 
 
 def test_promotion_batches_without_full_interval_accumulation(
@@ -708,8 +813,12 @@ def test_metadata_compaction_writes_contract_parquet(
         contract_root=contract_root,
     )
     compact_lakehouse_metadata(storage=storage, contract_root=contract_root)
-    assert any((lake_root / "lake/parquet/metadata/ingest_runs").rglob("records.parquet"))
-    assert any((lake_root / "lake/parquet/metadata/file_manifest").rglob("records.parquet"))
+    assert any(
+        (lake_root / "lake/parquet/metadata/ingest_runs").rglob("records.parquet")
+    )
+    assert any(
+        (lake_root / "lake/parquet/metadata/file_manifest").rglob("records.parquet")
+    )
     manifest_events = storage.list_keys("lake/metadata/events/file_manifest/")
     assert len(manifest_events) == 1
     from scripts.lakehouse_metadata import read_file_manifest_event
@@ -722,7 +831,10 @@ def test_metadata_compaction_writes_contract_parquet(
 def test_ingest_dag_task_order() -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
     from _shared.dag_factory import DagConfig, make_ingest_dag
-    from _shared.pipeline_assets import PERMITS_INGEST_ASSET
+    from _shared.pipeline_assets import (
+        INGEST_FAILURE_METADATA_ASSET,
+        PERMITS_INGEST_ASSET,
+    )
     from scripts.permits import PERMITS_CONFIG
 
     dag = make_ingest_dag(
@@ -736,11 +848,21 @@ def test_ingest_dag_task_order() -> None:
     assert [task.task_id for task in dag.tasks] == [
         "extract_permits_to_raw",
         "record_permits_extract_metadata",
+        "mark_permits_extract_failure_metadata",
         "ingest_complete",
     ]
     complete = dag.get_task("ingest_complete")
+    failure_marker = dag.get_task("mark_permits_extract_failure_metadata")
     assert complete.outlets == [PERMITS_INGEST_ASSET]
-    assert complete.upstream_task_ids == {"record_permits_extract_metadata"}
+    assert complete.upstream_task_ids == {
+        "extract_permits_to_raw",
+        "record_permits_extract_metadata",
+    }
+    assert failure_marker.outlets == [INGEST_FAILURE_METADATA_ASSET]
+    assert failure_marker.upstream_task_ids == {
+        "extract_permits_to_raw",
+        "record_permits_extract_metadata",
+    }
 
 
 def test_promote_raw_to_bronze_dag_depends_on_ingest_assets() -> None:
@@ -765,10 +887,22 @@ def test_promote_raw_to_bronze_dag_depends_on_ingest_assets() -> None:
     noop = dag.get_task("bronze_promotion_noop")
     complete = dag.get_task("bronze_promotion_complete")
     assert select.downstream_task_ids == {"branch_on_bronze_plan"}
-    assert branch.downstream_task_ids == {"promote_permits_to_bronze", "bronze_promotion_noop"}
+    assert branch.downstream_task_ids == {
+        "promote_permits_to_bronze",
+        "bronze_promotion_noop",
+    }
     assert promote_permits.upstream_task_ids == {"branch_on_bronze_plan"}
-    assert compact.upstream_task_ids == {"promote_incidents_to_bronze"}
+    assert compact.upstream_task_ids == {
+        "promote_incidents_to_bronze",
+        "bronze_promotion_noop",
+    }
+    assert compact.downstream_task_ids == {"bronze_promotion_complete"}
+    assert str(compact.trigger_rule) == "none_failed_min_one_success"
     assert noop.outlets == []
+    assert complete.upstream_task_ids == {
+        "compact_lakehouse_metadata",
+        "promote_incidents_to_bronze",
+    }
     assert complete.outlets
 
 
@@ -784,6 +918,30 @@ def test_planner_groups_complete_intervals(storage: StorageConfig) -> None:
     assert len(plans) == 1
     assert plans[0].data_interval_start == _INTERVAL_START
     assert set(plans[0].ingest_event_keys) == {"permits", "evictions", "incidents"}
+
+
+def test_planner_ignores_extra_dataset_events(storage: StorageConfig) -> None:
+    _seed_all_datasets(storage)
+    _write_ingest_event(storage, dataset_name="scratch", records_fetched=0)
+
+    plans = plan_lakehouse_intervals(storage, limit=1)
+
+    assert len(plans) == 1
+    assert set(plans[0].ingest_event_keys) == {"permits", "evictions", "incidents"}
+
+
+def test_planner_skips_intervals_with_failed_required_dataset(
+    storage: StorageConfig,
+) -> None:
+    _seed_all_datasets(storage)
+    _write_failed_ingest_event(
+        storage,
+        dataset_name="permits",
+        ingest_run_id="run-failed-planner",
+    )
+
+    assert plan_lakehouse_intervals(storage, mode="pending") == []
+    assert plan_lakehouse_intervals(storage, mode="refresh") == []
 
 
 def test_planner_pending_skips_complete_intervals(
@@ -835,8 +993,15 @@ def test_planner_refresh_includes_complete_intervals(
     assert "permits" in plans[0].existing_manifest_event_keys
 
 
-def test_planner_applies_start_end_limit_and_oldest_first(storage: StorageConfig) -> None:
-    _seed_all_datasets(storage, interval_start=_INTERVAL_START, interval_end=_INTERVAL_END, ingest_run_suffix="a")
+def test_planner_applies_start_end_limit_and_oldest_first(
+    storage: StorageConfig,
+) -> None:
+    _seed_all_datasets(
+        storage,
+        interval_start=_INTERVAL_START,
+        interval_end=_INTERVAL_END,
+        ingest_run_suffix="a",
+    )
     _seed_all_datasets(
         storage,
         interval_start=_INTERVAL_START_2,
@@ -864,11 +1029,45 @@ def test_compaction_succeeds_with_ingest_events_only(
 ) -> None:
     _write_ingest_event(storage, dataset_name="permits", records_fetched=0)
     compact_lakehouse_metadata(storage=storage, contract_root=contract_root)
-    assert any((lake_root / "lake/parquet/metadata/ingest_runs").rglob("records.parquet"))
+    assert any(
+        (lake_root / "lake/parquet/metadata/ingest_runs").rglob("records.parquet")
+    )
     assert not (lake_root / "lake/parquet/metadata/file_manifest").exists()
 
 
-def test_storage_streams_raw_reads(storage: StorageConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_metadata_compaction_partitions_timestamps_in_utc(
+    storage: StorageConfig,
+    contract_root: Path,
+    lake_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_connect = duckdb.connect
+
+    def _connect_with_pacific_timezone(*args, **kwargs):
+        conn = original_connect(*args, **kwargs)
+        conn.execute("SET TimeZone='America/Los_Angeles'")
+        return conn
+
+    monkeypatch.setattr(
+        "scripts.lakehouse_metadata.duckdb.connect", _connect_with_pacific_timezone
+    )
+    _write_ingest_event_with_completed_at(
+        storage,
+        dataset_name="permits",
+        records_fetched=0,
+        completed_at=_COMPLETED_AT,
+    )
+
+    compact_lakehouse_metadata(storage=storage, contract_root=contract_root)
+
+    ingest_root = lake_root / "lake/parquet/metadata/ingest_runs"
+    assert (ingest_root / "ingest_date=20240316" / "records.parquet").exists()
+    assert not (ingest_root / "ingest_date=20240315").exists()
+
+
+def test_storage_streams_raw_reads(
+    storage: StorageConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
     raw_path, raw_key, _ = _seed_raw(storage, "permits", "permits.ndjson")
     read_calls: list[str] = []
 
@@ -885,7 +1084,9 @@ def test_storage_streams_raw_reads(storage: StorageConfig, monkeypatch: pytest.M
     assert len(lines) == 5
 
 
-def test_storage_write_file_uploads_local_copy(storage: StorageConfig, tmp_path: Path) -> None:
+def test_storage_write_file_uploads_local_copy(
+    storage: StorageConfig, tmp_path: Path
+) -> None:
     source = tmp_path / "payload.parquet"
     source.write_bytes(b"parquet-bytes")
     size = storage.write_file("lake/parquet/bronze/permits/records.parquet", source)
@@ -916,6 +1117,11 @@ def test_promote_raw_to_bronze_noop_when_no_interval_selected(
         "promote.raw_to_bronze.plan_lakehouse_intervals",
         lambda *args, **kwargs: [],
     )
+    compact_calls = []
+    monkeypatch.setattr(
+        "promote.raw_to_bronze.compact_lakehouse_metadata",
+        lambda: compact_calls.append("compacted"),
+    )
 
     class _Ti:
         def __init__(self) -> None:
@@ -931,13 +1137,18 @@ def test_promote_raw_to_bronze_noop_when_no_interval_selected(
     assert _select_bronze_interval(**context) is None
     assert _promote_dataset("permits", **context) is None
     _compact_metadata(**context)
+    assert compact_calls == ["compacted"]
     branch = BranchOnBronzePlanOperator(task_id="branch_on_bronze_plan")
     assert branch.choose_branch(context) == "bronze_promotion_noop"
 
 
 def test_ingest_runs_contract_grain_matches_current_state(contract_root: Path) -> None:
     contract = lc.get_contract("metadata", "ingest_runs", contract_root)
-    assert contract.grain == ("dataset_name", "data_interval_start", "data_interval_end")
+    assert contract.grain == (
+        "dataset_name",
+        "data_interval_start",
+        "data_interval_end",
+    )
 
 
 def test_lakehouse_plan_limit_must_be_one() -> None:
@@ -1165,10 +1376,7 @@ def test_metadata_compaction_deletes_prefixes_before_rebuild(
         METADATA_PARQUET_FILE_MANIFEST_PREFIX,
     ]
     assert write_calls
-    assert all(
-        call.startswith("lake/parquet/metadata/")
-        for call in write_calls
-    )
+    assert all(call.startswith("lake/parquet/metadata/") for call in write_calls)
 
 
 def test_promote_raw_to_bronze_max_active_runs_is_one() -> None:
@@ -1215,7 +1423,10 @@ def test_s3_delete_prefix_raises_on_partial_delete_errors() -> None:
 
 def test_s3_delete_prefix_batches_and_succeeds_without_errors() -> None:
     prefix = "lake/parquet/metadata/ingest_runs/"
-    keys = [f"lake/parquet/metadata/ingest_runs/key_{index:04d}.parquet" for index in range(1001)]
+    keys = [
+        f"lake/parquet/metadata/ingest_runs/key_{index:04d}.parquet"
+        for index in range(1001)
+    ]
     client = MagicMock()
     client.list_objects_v2.return_value = {
         "Contents": [{"Key": key} for key in keys],
