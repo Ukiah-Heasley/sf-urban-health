@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reset the local MinIO lakehouse sandbox and seed fixture data for dbt."""
+
 from __future__ import annotations
 
 import json
@@ -152,7 +153,9 @@ def prepare_lakehouse_fixtures() -> None:
     assert storage.bucket is not None
 
     deleted = reset_lakehouse_bucket(storage)
-    print(f"reset local lakehouse bucket {storage.bucket!r}; deleted {deleted} object(s)")
+    print(
+        f"reset local lakehouse bucket {storage.bucket!r}; deleted {deleted} object(s)"
+    )
 
     for dataset in FIXTURE_DATASETS:
         _seed_and_promote_dataset(dataset=dataset, storage=storage)

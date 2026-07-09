@@ -92,11 +92,13 @@ def test_extract_to_raw_returns_s3_path_and_observed_max_loaded_at():
     client = MagicMock()
     client.fetch_records.return_value = iter(records)
     writer = MagicMock()
-    writer.write_records.side_effect = lambda _config, _window, recs: soda_ingest.WriteResult(
-        "s3://bucket/key",
-        "raw/permits/key.ndjson",
-        len(list(recs)),
-        128,
+    writer.write_records.side_effect = (
+        lambda _config, _window, recs: soda_ingest.WriteResult(
+            "s3://bucket/key",
+            "raw/permits/key.ndjson",
+            len(list(recs)),
+            128,
+        )
     )
 
     result = soda_ingest.extract_to_raw(
@@ -121,11 +123,13 @@ def test_extract_to_raw_handles_empty_fetch_without_upload_or_loaded_at():
     client = MagicMock()
     client.fetch_records.return_value = iter([])
     writer = MagicMock()
-    writer.write_records.side_effect = lambda _config, _window, recs: soda_ingest.WriteResult(
-        None,
-        None,
-        len(list(recs)),
-        0,
+    writer.write_records.side_effect = (
+        lambda _config, _window, recs: soda_ingest.WriteResult(
+            None,
+            None,
+            len(list(recs)),
+            0,
+        )
     )
 
     result = soda_ingest.extract_to_raw(
@@ -189,7 +193,9 @@ def test_ndjson_s3_writer_skips_empty_upload():
     s3.upload_file.assert_not_called()
 
 
-def test_s3_ndjson_writer_from_env_requires_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_s3_ndjson_writer_from_env_requires_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("AWS_S3_BUCKET", raising=False)
 
     with pytest.raises(RuntimeError, match="AWS_S3_BUCKET must be set"):

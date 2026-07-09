@@ -1,4 +1,5 @@
 """Polars helpers for the Data Trust dashboard page."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -6,13 +7,13 @@ from datetime import date, timedelta
 import polars as pl
 
 _DAG_TO_DATASET = {
-    "ingest_permits":   "Permits",
+    "ingest_permits": "Permits",
     "ingest_evictions": "Evictions",
     "ingest_incidents": "Incidents",
 }
 
 _DATASET_MODELS = {
-    "Permits":   "stg_permits",
+    "Permits": "stg_permits",
     "Evictions": "stg_evictions",
     "Incidents": "stg_incidents",
 }
@@ -35,10 +36,8 @@ def freshness_grid(pipeline_health: pl.DataFrame, days: int = 14) -> pl.DataFram
         pl.col("dag_id").replace(_DAG_TO_DATASET).alias("dataset_name")
     ).filter(pl.col("dataset_name").is_in(DATASET_ORDER))
 
-    return (
-        mapped
-        .select(["dataset_name", "run_date", "success_rate_pct"])
-        .sort(["dataset_name", "run_date"])
+    return mapped.select(["dataset_name", "run_date", "success_rate_pct"]).sort(
+        ["dataset_name", "run_date"]
     )
 
 
@@ -51,15 +50,13 @@ def staging_test_trend(test_health: pl.DataFrame, days: int = 30) -> pl.DataFram
     staging_models = list(_DATASET_MODELS.values())
 
     filtered = test_health.filter(
-        (pl.col("run_date") >= cutoff)
-        & pl.col("model_name").is_in(staging_models)
+        (pl.col("run_date") >= cutoff) & pl.col("model_name").is_in(staging_models)
     )
     if filtered.is_empty():
         return pl.DataFrame()
 
     return (
-        filtered
-        .group_by(["run_date", "model_name"])
+        filtered.group_by(["run_date", "model_name"])
         .agg(
             (pl.col("is_passing").cast(pl.Int32).sum() * 100.0 / pl.len())
             .round(1)
@@ -74,7 +71,9 @@ def staging_test_trend(test_health: pl.DataFrame, days: int = 30) -> pl.DataFram
     )
 
 
-def recent_test_failures(test_health: pl.DataFrame, days: int = 7, limit: int = 20) -> pl.DataFrame:
+def recent_test_failures(
+    test_health: pl.DataFrame, days: int = 7, limit: int = 20
+) -> pl.DataFrame:
     """Recent failures across staging models, enriched with dataset name."""
     if test_health.is_empty():
         return pl.DataFrame()
@@ -91,14 +90,22 @@ def recent_test_failures(test_health: pl.DataFrame, days: int = 7, limit: int = 
         return pl.DataFrame()
 
     return (
-        failed
-        .with_columns(
+        failed.with_columns(
             pl.col("model_name")
             .replace({v: k for k, v in _DATASET_MODELS.items()})
             .alias("dataset_name")
         )
         .sort("run_date", descending=True)
-        .select(["dataset_name", "model_name", "test_name", "column_name",
-                 "run_date", "failures", "pass_rate_30d"])
+        .select(
+            [
+                "dataset_name",
+                "model_name",
+                "test_name",
+                "column_name",
+                "run_date",
+                "failures",
+                "pass_rate_30d",
+            ]
+        )
         .head(limit)
     )

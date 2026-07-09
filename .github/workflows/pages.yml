@@ -8,6 +8,11 @@
 name: pages
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'reports/**'
+      - '.github/workflows/pages.yml'
   schedule:
     - cron: '0 9 * * *'
   workflow_dispatch:
@@ -28,7 +33,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: reports/package-lock.json
 

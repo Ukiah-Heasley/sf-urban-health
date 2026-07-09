@@ -1,4 +1,5 @@
 """Smoke tests for the evictions ingest config and shared raw extractor."""
+
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -33,11 +34,13 @@ def test_evictions_extract_to_raw_returns_extract_result():
     client = MagicMock()
     client.fetch_records.return_value = iter(records)
     writer = MagicMock()
-    writer.write_records.side_effect = lambda _config, _window, recs: soda_ingest.WriteResult(
-        "s3://bucket/evictions",
-        "raw/evictions/records.ndjson",
-        len(list(recs)),
-        128,
+    writer.write_records.side_effect = (
+        lambda _config, _window, recs: soda_ingest.WriteResult(
+            "s3://bucket/evictions",
+            "raw/evictions/records.ndjson",
+            len(list(recs)),
+            128,
+        )
     )
 
     result = soda_ingest.extract_to_raw(

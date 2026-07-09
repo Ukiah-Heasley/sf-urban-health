@@ -3,6 +3,7 @@ Analyst-facing view: per-dataset trust scores, freshness calendar,
 and test pass rate trends. Connected to data_trust and dbt_test_health /
 pipeline_health consumer frames.
 """
+
 from __future__ import annotations
 
 import dash_bootstrap_components as dbc
@@ -42,25 +43,28 @@ layout = dbc.Container(
             ],
             className="py-4",
         ),
-
         # ── Trust cards ───────────────────────────────────────────────────────
         html.Div(id="dt-trust-cards", className="mb-4"),
-
         # ── Freshness calendar + test trend ───────────────────────────────────
         dbc.Row(
             [
                 dbc.Col(
-                    dbc.Card(dbc.CardBody(dcc.Graph(id="dt-fig-calendar")), className="shadow-sm h-100"),
+                    dbc.Card(
+                        dbc.CardBody(dcc.Graph(id="dt-fig-calendar")),
+                        className="shadow-sm h-100",
+                    ),
                     md=6,
                 ),
                 dbc.Col(
-                    dbc.Card(dbc.CardBody(dcc.Graph(id="dt-fig-test-trend")), className="shadow-sm h-100"),
+                    dbc.Card(
+                        dbc.CardBody(dcc.Graph(id="dt-fig-test-trend")),
+                        className="shadow-sm h-100",
+                    ),
                     md=6,
                 ),
             ],
             className="g-3 mb-4",
         ),
-
         # ── Failure table ─────────────────────────────────────────────────────
         dbc.Card(
             dbc.CardBody(dcc.Graph(id="dt-fig-failures")),
@@ -91,10 +95,10 @@ def _freshness_badge(status: str) -> tuple[str, str]:
 
 
 @callback(
-    Output("dt-trust-cards",    "children"),
-    Output("dt-fig-calendar",   "figure"),
+    Output("dt-trust-cards", "children"),
+    Output("dt-fig-calendar", "figure"),
     Output("dt-fig-test-trend", "figure"),
-    Output("dt-fig-failures",   "figure"),
+    Output("dt-fig-failures", "figure"),
     Input("theme-store", "data"),
 )
 def refresh(theme: str):
@@ -102,8 +106,8 @@ def refresh(theme: str):
 
     trust_cards = _build_trust_cards(theme, template)
 
-    grid     = freshness_grid(PIPELINE_HEALTH)
-    trend    = staging_test_trend(DBT_TEST_HEALTH)
+    grid = freshness_grid(PIPELINE_HEALTH)
+    trend = staging_test_trend(DBT_TEST_HEALTH)
     failures = recent_test_failures(DBT_TEST_HEALTH)
 
     return (
@@ -117,12 +121,14 @@ def refresh(theme: str):
 def _build_trust_cards(theme: str, template: str) -> dbc.Row:
     """Build one card per dataset row from DATA_TRUST."""
     if DATA_TRUST.is_empty():
-        return dbc.Row(dbc.Col(
-            dbc.Alert(
-                "data_trust not yet loaded. Consumer wiring is pending the lakehouse rebuild.",
-                color="warning",
-            ),
-        ))
+        return dbc.Row(
+            dbc.Col(
+                dbc.Alert(
+                    "data_trust not yet loaded. Consumer wiring is pending the lakehouse rebuild.",
+                    color="warning",
+                ),
+            )
+        )
 
     _DATASET_ORDER = ["Permits", "Evictions", "Incidents"]
     cols = []
@@ -133,14 +139,14 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
             continue
         r = row.row(0, named=True)
 
-        score    = int(r.get("trust_score") or 0)
-        status   = r.get("trust_status", "untrusted")
-        fresh_s  = r.get("freshness_status", "critical")
-        pass_rt  = r.get("test_pass_rate_7d")
-        total_t  = int(r.get("total_tests_7d") or 0)
+        score = int(r.get("trust_score") or 0)
+        status = r.get("trust_status", "untrusted")
+        fresh_s = r.get("freshness_status", "critical")
+        pass_rt = r.get("test_pass_rate_7d")
+        total_t = int(r.get("total_tests_7d") or 0)
         failed_t = int(r.get("failed_tests_7d") or 0)
-        records  = r.get("last_loaded_date")
-        dag_id   = r.get("dag_id", "")
+        records = r.get("last_loaded_date")
+        dag_id = r.get("dag_id", "")
 
         score_color = _status_color(status, theme)
         fresh_label, fresh_badge_color = _freshness_badge(fresh_s)
@@ -161,15 +167,24 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
                                 [
                                     html.H5(ds_name, className="mb-0"),
                                     dbc.Badge(
-                                        {"trusted": "✓ Trusted", "degraded": "⚠ Degraded"}.get(status, "✗ Untrusted"),
-                                        color={"trusted": "success", "degraded": "warning"}.get(status, "danger"),
+                                        {
+                                            "trusted": "✓ Trusted",
+                                            "degraded": "⚠ Degraded",
+                                        }.get(status, "✗ Untrusted"),
+                                        color={
+                                            "trusted": "success",
+                                            "degraded": "warning",
+                                        }.get(status, "danger"),
                                         className="ms-2",
                                     ),
                                 ],
                                 className="d-flex align-items-center mb-1",
                             ),
-                            html.Div(dag_id, className="text-muted mb-3", style={"fontSize": "0.75rem"}),
-
+                            html.Div(
+                                dag_id,
+                                className="text-muted mb-3",
+                                style={"fontSize": "0.75rem"},
+                            ),
                             # Score ring + metrics
                             html.Div(
                                 [
@@ -179,15 +194,22 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
                                             dcc.Graph(
                                                 figure=ring_fig,
                                                 config={"displayModeBar": False},
-                                                style={"height": "130px", "width": "130px"},
+                                                style={
+                                                    "height": "130px",
+                                                    "width": "130px",
+                                                },
                                             ),
                                             html.Div(
                                                 str(score),
                                                 style={
-                                                    "position": "absolute", "top": "50%", "left": "50%",
+                                                    "position": "absolute",
+                                                    "top": "50%",
+                                                    "left": "50%",
                                                     "transform": "translate(-50%, -50%)",
-                                                    "fontSize": "2rem", "fontWeight": 800,
-                                                    "color": score_color, "lineHeight": 1,
+                                                    "fontSize": "2rem",
+                                                    "fontWeight": 800,
+                                                    "color": score_color,
+                                                    "lineHeight": 1,
                                                     "textAlign": "center",
                                                     "pointerEvents": "none",
                                                 },
@@ -195,24 +217,48 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
                                             html.Div(
                                                 "trust score",
                                                 style={
-                                                    "position": "absolute", "top": "62%", "left": "50%",
+                                                    "position": "absolute",
+                                                    "top": "62%",
+                                                    "left": "50%",
                                                     "transform": "translateX(-50%)",
-                                                    "fontSize": "0.6rem", "color": "#9A8B6E",
-                                                    "textTransform": "uppercase", "letterSpacing": "0.05em",
+                                                    "fontSize": "0.6rem",
+                                                    "color": "#9A8B6E",
+                                                    "textTransform": "uppercase",
+                                                    "letterSpacing": "0.05em",
                                                     "pointerEvents": "none",
                                                 },
                                             ),
                                         ],
-                                        style={"position": "relative", "width": "130px", "flexShrink": 0},
+                                        style={
+                                            "position": "relative",
+                                            "width": "130px",
+                                            "flexShrink": 0,
+                                        },
                                     ),
                                     # Metric grid
                                     html.Div(
                                         [
                                             html.Div(
                                                 [
-                                                    html.Div("Freshness", className="text-muted", style={"fontSize": "0.65rem", "textTransform": "uppercase", "letterSpacing": "0.07em"}),
-                                                    dbc.Badge(fresh_label, color=fresh_badge_color, className="mt-1"),
-                                                    html.Div(f"Last loaded {last_date_str}", className="text-muted mt-1", style={"fontSize": "0.7rem"}),
+                                                    html.Div(
+                                                        "Freshness",
+                                                        className="text-muted",
+                                                        style={
+                                                            "fontSize": "0.65rem",
+                                                            "textTransform": "uppercase",
+                                                            "letterSpacing": "0.07em",
+                                                        },
+                                                    ),
+                                                    dbc.Badge(
+                                                        fresh_label,
+                                                        color=fresh_badge_color,
+                                                        className="mt-1",
+                                                    ),
+                                                    html.Div(
+                                                        f"Last loaded {last_date_str}",
+                                                        className="text-muted mt-1",
+                                                        style={"fontSize": "0.7rem"},
+                                                    ),
                                                 ],
                                                 style={"flex": 1},
                                             ),
@@ -227,10 +273,20 @@ def _build_trust_cards(theme: str, template: str) -> dbc.Row:
                     # Footer: test pass rate
                     html.Div(
                         [
-                            html.Span("Test pass rate (7d)", className="text-muted", style={"fontSize": "0.75rem"}),
                             html.Span(
-                                f"{pass_rt:.1f}%  ({failed_t} failures / {total_t} runs)" if pass_rt is not None else "—",
-                                style={"fontWeight": 700, "color": score_color, "marginLeft": "auto"},
+                                "Test pass rate (7d)",
+                                className="text-muted",
+                                style={"fontSize": "0.75rem"},
+                            ),
+                            html.Span(
+                                f"{pass_rt:.1f}%  ({failed_t} failures / {total_t} runs)"
+                                if pass_rt is not None
+                                else "—",
+                                style={
+                                    "fontWeight": 700,
+                                    "color": score_color,
+                                    "marginLeft": "auto",
+                                },
                             ),
                         ],
                         className="d-flex align-items-center px-3 py-2",

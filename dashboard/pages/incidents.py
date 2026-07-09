@@ -23,12 +23,18 @@ _NEIGHBORHOODS = (
     else []
 )
 _CATEGORIES = (
-    sorted(c for c in SAFETY_MART["incident_category"].unique().to_list() if c is not None)
+    sorted(
+        c for c in SAFETY_MART["incident_category"].unique().to_list() if c is not None
+    )
     if not SAFETY_MART.is_empty()
     else []
 )
-_MIN_DATE: date = SAFETY_MART["incident_month"].min() if not SAFETY_MART.is_empty() else date.today()
-_MAX_DATE: date = SAFETY_MART["incident_month"].max() if not SAFETY_MART.is_empty() else date.today()
+_MIN_DATE: date = (
+    SAFETY_MART["incident_month"].min() if not SAFETY_MART.is_empty() else date.today()
+)
+_MAX_DATE: date = (
+    SAFETY_MART["incident_month"].max() if not SAFETY_MART.is_empty() else date.today()
+)
 
 
 def _filter_bar() -> dbc.Row:
@@ -155,7 +161,9 @@ def refresh(start_date, end_date, neighborhoods, categories, theme):
     start = _parse(start_date) or _MIN_DATE
     end = _parse(end_date) or _MAX_DATE
 
-    filtered = apply_incident_filters(SAFETY_MART, start, end, neighborhoods, categories)
+    filtered = apply_incident_filters(
+        SAFETY_MART, start, end, neighborhoods, categories
+    )
     kpis = incident_kpi_summary(filtered)
 
     cards = [
@@ -164,11 +172,15 @@ def refresh(start_date, end_date, neighborhoods, categories, theme):
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("Top category", kpis["top_category"] or "—", None, "#ffb300"),
+            build_kpi_card(
+                "Top category", kpis["top_category"] or "—", None, "#ffb300"
+            ),
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("% resolved", _fmt_pct(kpis["pct_resolved"]), None, "#4caf66"),
+            build_kpi_card(
+                "% resolved", _fmt_pct(kpis["pct_resolved"]), None, "#4caf66"
+            ),
             md=4,
         ),
     ]

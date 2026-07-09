@@ -63,7 +63,8 @@ Each filename matches its source gold Iceberg table. `pipeline_health` and
 `data_trust` are built from compacted lakehouse metadata before export.
 
 Repository Pages must use **GitHub Actions** as its source. The workflow runs on
-manual dispatch, relevant pull requests, and its daily schedule.
+main pushes that touch report files, manual dispatch, relevant pull requests,
+and its daily schedule.
 
 ## Plotly Dash
 

@@ -33,7 +33,9 @@ def test_housing_snapshot_query_targets_gold_table() -> None:
         "SELECT * FROM sf_urban_health.housing_production"
     )
     housing_spec = next(
-        spec for spec in snapshot_specs() if spec.filename == "housing_production.parquet"
+        spec
+        for spec in snapshot_specs()
+        if spec.filename == "housing_production.parquet"
     )
     assert housing_spec.source is SnapshotSource.SPARK_GOLD
     assert housing_spec.spark_query == housing_production_query()
@@ -80,7 +82,10 @@ def test_export_snapshots_honors_output_dir_override(tmp_path: Path) -> None:
     with (
         patch("scripts.evidence_snapshots.load_lakehouse_env"),
         patch("scripts.evidence_snapshots.require_local_lakehouse_stack"),
-        patch("scripts.evidence_snapshots.open_spark_connection", return_value=fake_connection),
+        patch(
+            "scripts.evidence_snapshots.open_spark_connection",
+            return_value=fake_connection,
+        ),
     ):
         counts = export_snapshots(tmp_path, skip_stack_check=True)
 
@@ -105,11 +110,16 @@ def test_fetch_spark_table_raises_clear_error_on_query_failure() -> None:
 def test_open_spark_connection_raises_clear_error_when_unreachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.importorskip(
+        "pyhive.hive", reason="lakehouse dependency group not installed"
+    )
     monkeypatch.setenv("DBT_SPARK_HOST", "127.0.0.1")
     monkeypatch.setenv("DBT_SPARK_PORT", "10000")
 
     with patch("pyhive.hive.Connection", side_effect=OSError("connection refused")):
-        with pytest.raises(EvidenceSnapshotsError, match="Spark Thrift Server is not reachable"):
+        with pytest.raises(
+            EvidenceSnapshotsError, match="Spark Thrift Server is not reachable"
+        ):
             open_spark_connection()
 
 

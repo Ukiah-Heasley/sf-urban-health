@@ -24,7 +24,9 @@ def build_kpi_card(
     issue" — fewer days is good.
     """
     if delta_pct is None:
-        delta_node = html.Span("— vs. prior 12mo", style={"color": MUTED, "fontSize": "0.85rem"})
+        delta_node = html.Span(
+            "— vs. prior 12mo", style={"color": MUTED, "fontSize": "0.85rem"}
+        )
     else:
         up = delta_pct > 0
         good = up if higher_is_better else not up
@@ -63,5 +65,9 @@ def build_kpi_card(
             ]
         ),
         className="",
-        style={"background": "#0f0c00", "border": "1px solid #2a1f00", "height": "100%"},
+        style={
+            "background": "#0f0c00",
+            "border": "1px solid #2a1f00",
+            "height": "100%",
+        },
     )

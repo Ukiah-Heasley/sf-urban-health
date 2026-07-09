@@ -28,7 +28,9 @@ def eviction_kpi_summary(df: pl.DataFrame) -> dict:
         return {"total": 0, "no_fault_pct": None, "ellis_act": 0}
 
     total = int(df["eviction_count"].sum())
-    no_fault = int(df.filter(pl.col("eviction_type") == "no_fault")["eviction_count"].sum())
+    no_fault = int(
+        df.filter(pl.col("eviction_type") == "no_fault")["eviction_count"].sum()
+    )
     ellis = int(df["ellis_act_count"].sum())
     no_fault_pct = no_fault / total * 100 if total else None
 

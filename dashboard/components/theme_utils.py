@@ -1,4 +1,5 @@
 """Shared theme helpers consumed by every figure-builder module."""
+
 from __future__ import annotations
 
 # ── Per-theme palettes ─────────────────────────────────────────────────────────

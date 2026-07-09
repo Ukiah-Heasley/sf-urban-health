@@ -250,7 +250,9 @@ def _parse_column(raw: Any, *, source: str) -> ColumnContract:
         name=str(column["name"]),
         type=str(column["type"]),
         nullable=_require_bool(column["nullable"], source=source, field="nullable"),
-        description=str(column["description"]) if column.get("description") is not None else None,
+        description=str(column["description"])
+        if column.get("description") is not None
+        else None,
     )
 
 
@@ -335,7 +337,9 @@ def _parse_contract(raw: Mapping[str, Any], *, source: Path) -> TableContract:
         ),
         natural_key=tuple(str(value) for value in natural_key_raw),
         table_format=table_format,
-        catalog_schema=str(raw["catalog_schema"]) if raw.get("catalog_schema") else None,
+        catalog_schema=str(raw["catalog_schema"])
+        if raw.get("catalog_schema")
+        else None,
         catalog_name=str(raw["catalog_name"]) if raw.get("catalog_name") else None,
         source_path=source,
     )
@@ -348,7 +352,11 @@ def _scan_contract_paths(root: Path) -> list[Path]:
 def _assert_path_template(contract: TableContract) -> None:
     if contract.table_format == "iceberg":
         return
-    normalized = contract.path_template if contract.path_template.startswith("/") else f"/{contract.path_template}"
+    normalized = (
+        contract.path_template
+        if contract.path_template.startswith("/")
+        else f"/{contract.path_template}"
+    )
     match = PATH_LAYER_NAME_RE.search(normalized.replace("\\", "/"))
     if match is None:
         raise ContractValidationError(
@@ -408,7 +416,9 @@ def _assert_bronze_natural_key(contract: TableContract) -> None:
             f"{contract.source_path}: bronze natural_key must be [{expected!r}], "
             f"got {list(contract.natural_key)!r}"
         )
-    key_column = next((column for column in contract.columns if column.name == expected), None)
+    key_column = next(
+        (column for column in contract.columns if column.name == expected), None
+    )
     if key_column is None:
         raise ContractValidationError(
             f"{contract.source_path}: bronze contract missing natural key column {expected!r}"
@@ -438,7 +448,9 @@ def validate_contract(contract: TableContract) -> None:
             f"{contract.source_path}: invalid layer {contract.layer!r}"
         )
     if not contract.columns:
-        raise ContractValidationError(f"{contract.source_path}: contract must declare columns")
+        raise ContractValidationError(
+            f"{contract.source_path}: contract must declare columns"
+        )
     if len(contract.column_names) != len(contract.columns):
         raise ContractValidationError(
             f"{contract.source_path}: duplicate column names are not allowed"

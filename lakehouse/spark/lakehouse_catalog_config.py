@@ -70,9 +70,9 @@ def spark_sql_warehouse_dir(env: Mapping[str, str] | None = None) -> str:
 
 def _add_s3a_aws_settings(confs: dict[str, str]) -> None:
     confs["spark.hadoop.fs.s3a.impl"] = "org.apache.hadoop.fs.s3a.S3AFileSystem"
-    confs[
-        "spark.hadoop.fs.s3a.aws.credentials.provider"
-    ] = "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+    confs["spark.hadoop.fs.s3a.aws.credentials.provider"] = (
+        "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+    )
 
 
 def _add_parquet_stability_settings(confs: dict[str, str]) -> None:
@@ -105,9 +105,9 @@ def spark_thrift_conf_args(env: Mapping[str, str] | None = None) -> list[str]:
 
     if mode == "glue":
         confs["spark.sql.catalog.spark_catalog.type"] = "glue"
-        confs[
-            "spark.sql.catalog.spark_catalog.io-impl"
-        ] = "org.apache.iceberg.aws.s3.S3FileIO"
+        confs["spark.sql.catalog.spark_catalog.io-impl"] = (
+            "org.apache.iceberg.aws.s3.S3FileIO"
+        )
         _add_s3a_aws_settings(confs)
     else:
         confs["spark.sql.catalog.spark_catalog.type"] = "hadoop"

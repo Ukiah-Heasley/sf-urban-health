@@ -3,6 +3,7 @@
 Input:    DataSF SODA resource wg3w-h783, filtered by data_loaded_at.
 Output:   Raw interval NDJSON under s3://$AWS_S3_BUCKET/raw/incidents/.
 """
+
 from __future__ import annotations
 
 from datetime import date
