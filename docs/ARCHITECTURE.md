@@ -177,8 +177,9 @@ make dbt-lakehouse-smoke
 ## Consumers
 
 - Evidence reads committed local Parquet snapshots with DuckDB during its static
-  build. The public report pages display the domain gold snapshots:
-  `housing_production`, `permit_pipeline`, `evictions`, and `public_safety`.
-  The Pages workflow builds from committed snapshots only.
+  build. The snapshots are exported from the six lakehouse gold tables:
+  `housing_production`, `permit_pipeline`, `evictions`, `public_safety`,
+  `pipeline_health`, and `data_trust`. The Pages workflow builds from those
+  snapshots only.
 
 This consumer path is separate from the ingest DAGs.

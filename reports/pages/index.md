@@ -159,3 +159,5 @@ limit 10
 ```
 
 <BarChart data={incident_categories} x=incident_category y=total_incidents swapXY=true/>
+
+See also [Pipeline Health & Data Trust](/pipeline).

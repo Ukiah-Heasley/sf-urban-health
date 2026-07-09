@@ -44,8 +44,8 @@ Failed ingest metadata asset
 The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Evidence
 reads committed Parquet snapshots. `make export-evidence-snapshots` regenerates
 exact-name snapshots from selected lakehouse gold tables. The public Evidence
-site currently displays the committed domain snapshots for `housing_production`,
-`permit_pipeline`, `evictions`, and `public_safety`.
+site displays committed snapshots for `housing_production`, `permit_pipeline`,
+`evictions`, `public_safety`, `pipeline_health`, and `data_trust`.
 
 ## Ingest behavior
 
@@ -302,8 +302,8 @@ in `airflow/include/scripts/lakehouse_metadata.py`.
 
 - [Evidence](reports/README.md) reads committed local Parquet snapshots with
   DuckDB. `make export-evidence-snapshots` regenerates exact-name snapshots from
-  selected lakehouse gold after `make dbt-lakehouse-gold`. GitHub Pages displays
-  the committed domain snapshots and does not query Spark or Iceberg at deploy
+  selected lakehouse gold after `make dbt-lakehouse-gold`. GitHub Pages builds
+  from the committed snapshots and does not query Spark or Iceberg at deploy
   time.
 
 ## Documentation

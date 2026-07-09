@@ -60,9 +60,7 @@ npm run build
 - `data_trust.parquet`
 
 Each filename matches its source gold Iceberg table. `pipeline_health` and
-`data_trust` are built from compacted lakehouse metadata before export. The
-public Evidence report currently displays the four domain snapshots:
-`housing_production`, `permit_pipeline`, `evictions`, and `public_safety`.
+`data_trust` are built from compacted lakehouse metadata before export.
 
 Repository Pages must use **GitHub Actions** as its source. The workflow runs on
 main pushes that touch report files, manual dispatch, relevant pull requests,

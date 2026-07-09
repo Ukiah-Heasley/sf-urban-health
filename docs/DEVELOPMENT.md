@@ -236,6 +236,4 @@ exports exact-name Parquet snapshots for `housing_production`,
 `data_trust` from gold Iceberg tables in `DBT_SPARK_SCHEMA`.
 
 `reports/scripts/make_sample_data.py` remains a fallback demo-data generator
-when Spark is unavailable. GitHub Pages builds from committed snapshots only,
-and the public Evidence report currently displays the four domain snapshots:
-`housing_production`, `permit_pipeline`, `evictions`, and `public_safety`.
+when Spark is unavailable. GitHub Pages builds from committed snapshots only.
