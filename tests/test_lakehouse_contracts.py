@@ -39,7 +39,9 @@ def test_bronze_natural_keys_present(contract_root: Path) -> None:
     for contract in lc.bronze_contracts(contract_root):
         expected = lc.BRONZE_NATURAL_KEYS[contract.name]
         assert contract.natural_key == (expected,)
-        key_column = next(column for column in contract.columns if column.name == expected)
+        key_column = next(
+            column for column in contract.columns if column.name == expected
+        )
         assert key_column.nullable is False
 
 
@@ -80,7 +82,9 @@ def test_get_contract_returns_single_table(contract_root: Path) -> None:
     assert contract.path_template == ""
 
 
-def test_permits_current_contract_nullable_lifecycle_fields(contract_root: Path) -> None:
+def test_permits_current_contract_nullable_lifecycle_fields(
+    contract_root: Path,
+) -> None:
     contract = lc.get_contract("silver", "permits_current", contract_root)
     by_name = {column.name: column for column in contract.columns}
     assert by_name["current_status"].nullable is True
@@ -93,7 +97,11 @@ def test_permits_current_contract_nullable_lifecycle_fields(contract_root: Path)
 def test_bronze_and_gold_helpers(contract_root: Path) -> None:
     bronze = lc.bronze_contracts(contract_root)
     gold = lc.gold_contracts(contract_root)
-    assert {contract.name for contract in bronze} == {"permits", "evictions", "incidents"}
+    assert {contract.name for contract in bronze} == {
+        "permits",
+        "evictions",
+        "incidents",
+    }
     assert {contract.name for contract in gold} == {
         "housing_production",
         "permit_pipeline",
@@ -234,9 +242,7 @@ def _invalid_contract(name: str) -> str:
     if name == "missing_bronze_metadata.yml":
         payload = yaml.safe_load(valid_bronze)
         payload["columns"] = [
-            column
-            for column in payload["columns"]
-            if column["name"] != "_record_hash"
+            column for column in payload["columns"] if column["name"] != "_record_hash"
         ]
         return yaml.safe_dump(payload, sort_keys=False)
 

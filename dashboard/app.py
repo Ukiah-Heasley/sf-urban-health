@@ -1,4 +1,5 @@
 """SF Urban Health dashboard — multi-page shell."""
+
 from __future__ import annotations
 
 import os
@@ -29,10 +30,15 @@ server = app.server  # WSGI handle for gunicorn
 _BRIDGE_ICON = html.Div(
     html.Img(src="/assets/bridge.svg", width=24, height=20, alt="SF"),
     style={
-        "width": "36px", "height": "36px", "borderRadius": "8px",
+        "width": "36px",
+        "height": "36px",
+        "borderRadius": "8px",
         "background": "#FDB515",
-        "display": "flex", "alignItems": "center", "justifyContent": "center",
-        "flexShrink": 0, "boxShadow": "0 2px 6px rgba(253,181,21,0.4)",
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "center",
+        "flexShrink": 0,
+        "boxShadow": "0 2px 6px rgba(253,181,21,0.4)",
     },
 )
 
@@ -46,8 +52,18 @@ _NAVBAR = dbc.Navbar(
                         _BRIDGE_ICON,
                         html.Div(
                             [
-                                html.Div("SF Urban Health", style={"fontWeight": 700, "fontSize": "13px", "letterSpacing": "0.02em"}),
-                                html.Div("Data Platform",   style={"fontSize": "11px", "opacity": 0.7}),
+                                html.Div(
+                                    "SF Urban Health",
+                                    style={
+                                        "fontWeight": 700,
+                                        "fontSize": "13px",
+                                        "letterSpacing": "0.02em",
+                                    },
+                                ),
+                                html.Div(
+                                    "Data Platform",
+                                    style={"fontSize": "11px", "opacity": 0.7},
+                                ),
                             ],
                             style={"marginLeft": "10px"},
                         ),
@@ -60,12 +76,12 @@ _NAVBAR = dbc.Navbar(
             dbc.Collapse(
                 dbc.Nav(
                     [
-                        dbc.NavItem(dbc.NavLink("Housing",         href="/")),
-                        dbc.NavItem(dbc.NavLink("Incidents",       href="/incidents")),
-                        dbc.NavItem(dbc.NavLink("Evictions",       href="/evictions")),
+                        dbc.NavItem(dbc.NavLink("Housing", href="/")),
+                        dbc.NavItem(dbc.NavLink("Incidents", href="/incidents")),
+                        dbc.NavItem(dbc.NavLink("Evictions", href="/evictions")),
                         dbc.NavItem(dbc.NavLink("Pipeline Health", href="/pipeline")),
-                        dbc.NavItem(dbc.NavLink("Eng Health",      href="/engineer")),
-                        dbc.NavItem(dbc.NavLink("Data Trust",      href="/data-trust")),
+                        dbc.NavItem(dbc.NavLink("Eng Health", href="/engineer")),
+                        dbc.NavItem(dbc.NavLink("Data Trust", href="/data-trust")),
                         # ── Theme toggle ──
                         dbc.NavItem(
                             dbc.Button(

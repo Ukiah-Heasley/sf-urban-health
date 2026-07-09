@@ -11,7 +11,10 @@ from dash import Input, Output, callback, dcc, html
 from dashboard.components import evictions_figures as efig
 from dashboard.components.kpi import build_kpi_card
 from dashboard.data.cache import EVICTIONS, MART
-from dashboard.data.evictions_transforms import apply_eviction_filters, eviction_kpi_summary
+from dashboard.data.evictions_transforms import (
+    apply_eviction_filters,
+    eviction_kpi_summary,
+)
 
 ACCENT = "#ef5350"
 
@@ -20,8 +23,12 @@ _NEIGHBORHOODS = (
     if not EVICTIONS.is_empty()
     else []
 )
-_MIN_DATE: date = EVICTIONS["filed_month"].min() if not EVICTIONS.is_empty() else date.today()
-_MAX_DATE: date = EVICTIONS["filed_month"].max() if not EVICTIONS.is_empty() else date.today()
+_MIN_DATE: date = (
+    EVICTIONS["filed_month"].min() if not EVICTIONS.is_empty() else date.today()
+)
+_MAX_DATE: date = (
+    EVICTIONS["filed_month"].max() if not EVICTIONS.is_empty() else date.today()
+)
 
 
 def _filter_bar() -> dbc.Row:
@@ -72,9 +79,16 @@ layout = dbc.Container(
         ),
         _filter_bar(),
         dbc.Row(id="ev-kpi-row", className="g-3 mb-4"),
-        dbc.Card(dbc.CardBody(dcc.Graph(id="ev-fig-vs-units")), className="mb-4 shadow-sm"),
-        dbc.Card(dbc.CardBody(dcc.Graph(id="ev-fig-type-trend")), className="mb-4 shadow-sm"),
-        dbc.Card(dbc.CardBody(dcc.Graph(id="ev-fig-neighborhoods")), className="mb-5 shadow-sm"),
+        dbc.Card(
+            dbc.CardBody(dcc.Graph(id="ev-fig-vs-units")), className="mb-4 shadow-sm"
+        ),
+        dbc.Card(
+            dbc.CardBody(dcc.Graph(id="ev-fig-type-trend")), className="mb-4 shadow-sm"
+        ),
+        dbc.Card(
+            dbc.CardBody(dcc.Graph(id="ev-fig-neighborhoods")),
+            className="mb-5 shadow-sm",
+        ),
     ],
     fluid=True,
     style={"maxWidth": "1400px"},
@@ -112,9 +126,7 @@ def refresh(start_date, end_date, neighborhoods, theme):
 
     filtered = apply_eviction_filters(EVICTIONS, start, end, neighborhoods)
     housing_filtered = (
-        MART.filter(
-            (pl.col("filed_month") >= start) & (pl.col("filed_month") <= end)
-        )
+        MART.filter((pl.col("filed_month") >= start) & (pl.col("filed_month") <= end))
         if not MART.is_empty()
         else MART
     )
@@ -126,11 +138,15 @@ def refresh(start_date, end_date, neighborhoods, theme):
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("No-fault share", _fmt_pct(kpis["no_fault_pct"]), None, "#ff6b35"),
+            build_kpi_card(
+                "No-fault share", _fmt_pct(kpis["no_fault_pct"]), None, "#ff6b35"
+            ),
             md=4,
         ),
         dbc.Col(
-            build_kpi_card("Ellis Act notices", _fmt_int(kpis["ellis_act"]), None, "#ffb300"),
+            build_kpi_card(
+                "Ellis Act notices", _fmt_int(kpis["ellis_act"]), None, "#ffb300"
+            ),
             md=4,
         ),
     ]

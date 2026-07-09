@@ -1,4 +1,5 @@
 """Gold lakehouse dbt transform DAG: silver/gold Iceberg models after bronze promotion."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone

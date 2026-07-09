@@ -1,4 +1,5 @@
 """Export Evidence Parquet snapshots from lakehouse gold tables."""
+
 from __future__ import annotations
 
 import argparse

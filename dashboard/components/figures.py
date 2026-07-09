@@ -4,6 +4,7 @@ Each function takes a Polars DataFrame already filtered by the global
 date range / neighborhood selection and returns a styled Figure. No
 Dash imports here — these are pure data → Figure transforms.
 """
+
 from __future__ import annotations
 
 import plotly.graph_objects as go
@@ -64,8 +65,18 @@ _TRANSITION_COLORS_LIGHT = {
     "renovation_same_use": "#9A8B6E",
     "other": "#E0D8C4",
 }
-_AGE_COLORS_DARK = {"<90d": "#ffe066", "90-180d": "#ffb300", "180-365d": "#ff6b35", ">365d": "#ef5350"}
-_AGE_COLORS_LIGHT = {"<90d": "#FDB515", "90-180d": "#C4820A", "180-365d": "#D9661F", ">365d": "#dc2626"}
+_AGE_COLORS_DARK = {
+    "<90d": "#ffe066",
+    "90-180d": "#ffb300",
+    "180-365d": "#ff6b35",
+    ">365d": "#ef5350",
+}
+_AGE_COLORS_LIGHT = {
+    "<90d": "#FDB515",
+    "90-180d": "#C4820A",
+    "180-365d": "#D9661F",
+    ">365d": "#dc2626",
+}
 
 
 def _empty(message: str, height: int, template: str = "terminal_amber") -> go.Figure:
@@ -73,11 +84,17 @@ def _empty(message: str, height: int, template: str = "terminal_amber") -> go.Fi
     fig.update_layout(
         **tu.base_layout(template),
         height=height,
-        annotations=[dict(
-            text=message, xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False,
-            font=dict(size=14, color=tu.empty_color(template)),
-        )],
+        annotations=[
+            dict(
+                text=message,
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=14, color=tu.empty_color(template)),
+            )
+        ],
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
     )
@@ -93,45 +110,61 @@ def trend_net_units(df: pl.DataFrame, template: str = "terminal_amber") -> go.Fi
 
     fig = go.Figure()
     fig.add_bar(
-        x=monthly["filed_month"], y=monthly["net_units_added"],
-        name="Monthly", marker_color=pal[1],
+        x=monthly["filed_month"],
+        y=monthly["net_units_added"],
+        name="Monthly",
+        marker_color=pal[1],
         hovertemplate="%{x|%b %Y}<br>%{y:,.0f} net units<extra></extra>",
     )
     fig.add_scatter(
-        x=monthly["filed_month"], y=monthly["net_units_added_rolling"],
-        name="12-month avg", mode="lines",
+        x=monthly["filed_month"],
+        y=monthly["net_units_added_rolling"],
+        name="12-month avg",
+        mode="lines",
         line=dict(color=pal[0], width=3),
         hovertemplate="%{x|%b %Y}<br>%{y:,.0f} avg<extra></extra>",
     )
     fig.update_layout(
         **tu.base_layout(template, margin=dict(l=60, r=20, t=80, b=40)),
         title="Net new units permitted, by month",
-        height=350, bargap=0.15,
+        height=350,
+        bargap=0.15,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        yaxis_title="Net new units", xaxis_title=None,
+        yaxis_title="Net new units",
+        xaxis_title=None,
     )
     return fig
 
 
-def top_neighborhoods(df: pl.DataFrame, n: int = 15, template: str = "terminal_amber") -> go.Figure:
+def top_neighborhoods(
+    df: pl.DataFrame, n: int = 15, template: str = "terminal_amber"
+) -> go.Figure:
     if df.is_empty():
         return _empty("No data in the selected window", 400, template)
 
     top = (
         df.group_by("neighborhood")
         .agg(pl.col("net_units_added").sum().alias("net_units"))
-        .sort("net_units", descending=True).head(n).sort("net_units")
+        .sort("net_units", descending=True)
+        .head(n)
+        .sort("net_units")
     )
     pal = tu.palette(template)
-    fig = go.Figure(go.Bar(
-        x=top["net_units"], y=top["neighborhood"], orientation="h",
-        marker_color=pal[0],
-        hovertemplate="%{y}<br>%{x:,.0f} net units<extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Bar(
+            x=top["net_units"],
+            y=top["neighborhood"],
+            orientation="h",
+            marker_color=pal[0],
+            hovertemplate="%{y}<br>%{x:,.0f} net units<extra></extra>",
+        )
+    )
     fig.update_layout(
         **tu.base_layout(template, margin=dict(l=180, r=20, t=50, b=40)),
         title=f"Top {n} neighborhoods by net new units",
-        height=400, xaxis_title="Net new units", yaxis_title=None,
+        height=400,
+        xaxis_title="Net new units",
+        yaxis_title=None,
     )
     return fig
 
@@ -146,47 +179,62 @@ def district_breakdown(df: pl.DataFrame, template: str = "terminal_amber") -> go
         .agg(pl.col("net_units_added").sum().alias("net_units"))
         .sort("supervisor_district")
     )
-    fig = go.Figure(go.Bar(
-        x=by_district["supervisor_district"].cast(pl.Utf8),
-        y=by_district["net_units"],
-        marker_color=tu.palette(template)[0],
-        hovertemplate="District %{x}<br>%{y:,.0f} net units<extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Bar(
+            x=by_district["supervisor_district"].cast(pl.Utf8),
+            y=by_district["net_units"],
+            marker_color=tu.palette(template)[0],
+            hovertemplate="District %{x}<br>%{y:,.0f} net units<extra></extra>",
+        )
+    )
     fig.update_layout(
         **tu.base_layout(template),
         title="Supervisor districts by net new units",
-        height=400, xaxis_title="Supervisor district",
-        yaxis_title="Net new units", xaxis=dict(type="category"),
+        height=400,
+        xaxis_title="Supervisor district",
+        yaxis_title="Net new units",
+        xaxis=dict(type="category"),
     )
     return fig
 
 
-def median_days_to_issue_trend(df: pl.DataFrame, template: str = "terminal_amber") -> go.Figure:
+def median_days_to_issue_trend(
+    df: pl.DataFrame, template: str = "terminal_amber"
+) -> go.Figure:
     if df.is_empty():
         return _empty("No data in the selected window", 350, template)
 
     monthly = (
         df.filter(pl.col("median_days_to_issue").is_not_null())
-        .with_columns((pl.col("median_days_to_issue") * pl.col("permits_filed")).alias("_w"))
+        .with_columns(
+            (pl.col("median_days_to_issue") * pl.col("permits_filed")).alias("_w")
+        )
         .group_by("filed_month")
         .agg((pl.col("_w").sum() / pl.col("permits_filed").sum()).alias("median_days"))
         .sort("filed_month")
     )
-    fig = go.Figure(go.Scatter(
-        x=monthly["filed_month"], y=monthly["median_days"],
-        mode="lines",
-        line=dict(color=tu.bad_color(template), width=2.5),
-        hovertemplate="%{x|%b %Y}<br>%{y:.0f} days<extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Scatter(
+            x=monthly["filed_month"],
+            y=monthly["median_days"],
+            mode="lines",
+            line=dict(color=tu.bad_color(template), width=2.5),
+            hovertemplate="%{x|%b %Y}<br>%{y:.0f} days<extra></extra>",
+        )
+    )
     fig.update_layout(
         **tu.base_layout(template),
         title="Median days from filing to issuance",
-        height=350, yaxis_title="Days", xaxis_title=None,
+        height=350,
+        yaxis_title="Days",
+        xaxis_title=None,
     )
     return fig
 
 
-def completion_rate_by_district(df: pl.DataFrame, template: str = "terminal_amber") -> go.Figure:
+def completion_rate_by_district(
+    df: pl.DataFrame, template: str = "terminal_amber"
+) -> go.Figure:
     if df.is_empty():
         return _empty("No data in the selected window", 350, template)
 
@@ -200,16 +248,19 @@ def completion_rate_by_district(df: pl.DataFrame, template: str = "terminal_ambe
         .with_columns((pl.col("completed") / pl.col("filed")).alias("rate"))
         .sort("supervisor_district")
     )
-    fig = go.Figure(go.Bar(
-        x=by_district["supervisor_district"].cast(pl.Utf8),
-        y=by_district["rate"],
-        marker_color=tu.ok_color(template),
-        hovertemplate="District %{x}<br>%{y:.1%} completed<extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Bar(
+            x=by_district["supervisor_district"].cast(pl.Utf8),
+            y=by_district["rate"],
+            marker_color=tu.ok_color(template),
+            hovertemplate="District %{x}<br>%{y:.1%} completed<extra></extra>",
+        )
+    )
     fig.update_layout(
         **tu.base_layout(template),
         title="Completion rate by supervisor district",
-        height=350, xaxis_title="Supervisor district",
+        height=350,
+        xaxis_title="Supervisor district",
         yaxis_title="Completed / filed",
         yaxis=dict(tickformat=".0%", range=[0, 1], gridcolor=tu.grid_color(template)),
         xaxis=dict(type="category"),
@@ -217,7 +268,9 @@ def completion_rate_by_district(df: pl.DataFrame, template: str = "terminal_ambe
     return fig
 
 
-def use_transition_breakdown(df: pl.DataFrame, template: str = "terminal_amber") -> go.Figure:
+def use_transition_breakdown(
+    df: pl.DataFrame, template: str = "terminal_amber"
+) -> go.Figure:
     if df.is_empty():
         return _empty("No data in the selected window", 350, template)
 
@@ -225,7 +278,9 @@ def use_transition_breakdown(df: pl.DataFrame, template: str = "terminal_amber")
     if monthly.is_empty():
         return _empty("No transition data available", 350, template)
 
-    color_map = _TRANSITION_COLORS_LIGHT if template == "cal_light" else _TRANSITION_COLORS_DARK
+    color_map = (
+        _TRANSITION_COLORS_LIGHT if template == "cal_light" else _TRANSITION_COLORS_DARK
+    )
     neutral = tu.empty_color(template)
     transitions = sorted(monthly["use_transition"].drop_nulls().unique().to_list())
     fig = go.Figure()
@@ -233,21 +288,28 @@ def use_transition_breakdown(df: pl.DataFrame, template: str = "terminal_amber")
         subset = monthly.filter(pl.col("use_transition") == transition)
         label = transition.replace("_", " ").title()
         fig.add_bar(
-            x=subset["filed_month"], y=subset["net_units_added"],
-            name=label, marker_color=color_map.get(transition, neutral),
+            x=subset["filed_month"],
+            y=subset["net_units_added"],
+            name=label,
+            marker_color=color_map.get(transition, neutral),
             hovertemplate=f"{label}<br>%{{x|%b %Y}}<br>%{{y:,.0f}} net units<extra></extra>",
         )
     fig.update_layout(
         **tu.base_layout(template, margin=dict(l=60, r=20, t=80, b=40)),
         title="Net new units by permit type, by month",
-        height=350, barmode="stack", bargap=0.1,
+        height=350,
+        barmode="stack",
+        bargap=0.1,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        yaxis_title="Net new units", xaxis_title=None,
+        yaxis_title="Net new units",
+        xaxis_title=None,
     )
     return fig
 
 
-def cost_per_unit_by_neighborhood(df: pl.DataFrame, n: int = 15, template: str = "terminal_amber") -> go.Figure:
+def cost_per_unit_by_neighborhood(
+    df: pl.DataFrame, n: int = 15, template: str = "terminal_amber"
+) -> go.Figure:
     if df.is_empty():
         return _empty("No data in the selected window", 400, template)
 
@@ -255,16 +317,22 @@ def cost_per_unit_by_neighborhood(df: pl.DataFrame, n: int = 15, template: str =
     if data.is_empty():
         return _empty("No cost data available", 400, template)
 
-    fig = go.Figure(go.Bar(
-        x=data["avg_cost_per_unit"], y=data["neighborhood"],
-        orientation="h", marker_color=tu.ok_color(template),
-        hovertemplate="%{y}<br>$%{x:,.0f} per unit<extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Bar(
+            x=data["avg_cost_per_unit"],
+            y=data["neighborhood"],
+            orientation="h",
+            marker_color=tu.ok_color(template),
+            hovertemplate="%{y}<br>$%{x:,.0f} per unit<extra></extra>",
+        )
+    )
     fig.update_layout(
         **tu.base_layout(template, margin=dict(l=180, r=20, t=50, b=40)),
         title=f"Avg cost per new unit — top {n} neighborhoods (new construction only)",
-        height=400, xaxis_title="Avg cost per net unit ($)",
-        yaxis_title=None, xaxis=dict(tickformat="$,.0f"),
+        height=400,
+        xaxis_title="Avg cost per net unit ($)",
+        yaxis_title=None,
+        xaxis=dict(tickformat="$,.0f"),
     )
     return fig
 
@@ -287,15 +355,19 @@ def pipeline_backlog(df: pl.DataFrame, template: str = "terminal_amber") -> go.F
         fig.add_bar(
             x=subset["lifecycle_stage"].cast(pl.Utf8),
             y=subset["permit_count"],
-            name=bucket, marker_color=age_map[bucket],
+            name=bucket,
+            marker_color=age_map[bucket],
             hovertemplate=f"{bucket}<br>%{{x}}<br>%{{y:,.0f}} permits<extra></extra>",
         )
     fig.update_layout(
         **tu.base_layout(template, margin=dict(l=60, r=20, t=80, b=40)),
         title="In-flight residential permits by stage and age",
-        height=350, barmode="group", bargap=0.2,
+        height=350,
+        barmode="group",
+        bargap=0.2,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        yaxis_title="Permits", xaxis_title=None,
+        yaxis_title="Permits",
+        xaxis_title=None,
         xaxis=dict(type="category"),
     )
     return fig

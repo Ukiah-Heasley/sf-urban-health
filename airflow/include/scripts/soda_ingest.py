@@ -10,6 +10,7 @@ This module owns the source-system side of ingestion only:
 It deliberately stops at the raw layer. Bronze Parquet promotion and dbt
 transform work belong downstream of the ingest asset.
 """
+
 from __future__ import annotations
 
 import json
@@ -171,7 +172,11 @@ class WriteResult:
 
 def _format_soda_timestamp(value: date | datetime | str) -> str:
     """Format a UTC timestamp for a SODA calendar-date query literal."""
-    return coerce_utc_datetime(value).replace(tzinfo=None).isoformat(timespec="milliseconds")
+    return (
+        coerce_utc_datetime(value)
+        .replace(tzinfo=None)
+        .isoformat(timespec="milliseconds")
+    )
 
 
 def _parse_soda_timestamp(value: object) -> datetime:
@@ -282,7 +287,9 @@ class SodaClient:
         }
 
         while True:
-            resp = self._session.get(config.endpoint, params=params, timeout=self._timeout)
+            resp = self._session.get(
+                config.endpoint, params=params, timeout=self._timeout
+            )
             resp.raise_for_status()
             batch = resp.json()
             if not batch:
@@ -298,7 +305,11 @@ class SodaClient:
 
 def _s3_endpoint_url() -> str | None:
     """Return a custom S3 endpoint when configured for MinIO or other S3-compatible stores."""
-    return os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT_URL") or None
+    return (
+        os.environ.get("AWS_ENDPOINT_URL")
+        or os.environ.get("AWS_S3_ENDPOINT_URL")
+        or None
+    )
 
 
 def _build_s3_client():
@@ -519,7 +530,9 @@ def cli(config: DatasetConfig) -> None:
     args = parser.parse_args()
 
     load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     window = ExtractWindow(
         data_interval_start=args.window_start,

@@ -1,4 +1,5 @@
 """Transform helpers for the pipeline health dashboard page."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -37,7 +38,9 @@ def pipeline_kpis(pipeline: pl.DataFrame, tests: pl.DataFrame, days: int = 7) ->
         if not recent_tests.is_empty():
             passing = recent_tests.filter(pl.col("is_passing"))["test_name"].n_unique()
             total_tests = recent_tests["test_name"].n_unique()
-            test_pass_rate = round(passing * 100.0 / total_tests, 1) if total_tests else None
+            test_pass_rate = (
+                round(passing * 100.0 / total_tests, 1) if total_tests else None
+            )
 
     return {
         "success_rate_pct": success_rate,
@@ -51,10 +54,9 @@ def dag_run_timeline(pipeline: pl.DataFrame) -> pl.DataFrame:
     """Rows: run_date × dag_id with success/failed counts for stacked bar."""
     if pipeline.is_empty():
         return pl.DataFrame()
-    return (
-        pipeline.select(["run_date", "dag_id", "successful_runs", "failed_runs"])
-        .sort("run_date")
-    )
+    return pipeline.select(
+        ["run_date", "dag_id", "successful_runs", "failed_runs"]
+    ).sort("run_date")
 
 
 def dag_avg_duration(pipeline: pl.DataFrame) -> pl.DataFrame:
@@ -62,8 +64,7 @@ def dag_avg_duration(pipeline: pl.DataFrame) -> pl.DataFrame:
     if pipeline.is_empty():
         return pl.DataFrame()
     return (
-        pipeline
-        .group_by("dag_id")
+        pipeline.group_by("dag_id")
         .agg(pl.col("avg_duration_seconds").mean().alias("avg_duration_seconds"))
         .sort("avg_duration_seconds", descending=True)
     )
@@ -74,11 +75,11 @@ def test_pass_rate_trend(tests: pl.DataFrame) -> pl.DataFrame:
     if tests.is_empty():
         return pl.DataFrame()
     return (
-        tests
-        .group_by(["run_date", "model_name"])
+        tests.group_by(["run_date", "model_name"])
         .agg(
-            (pl.col("is_passing").cast(pl.Int32).sum() * 100.0
-             / pl.len()).round(1).alias("pass_rate_pct")
+            (pl.col("is_passing").cast(pl.Int32).sum() * 100.0 / pl.len())
+            .round(1)
+            .alias("pass_rate_pct")
         )
         .sort("run_date")
     )
@@ -92,8 +93,17 @@ def failing_tests(tests: pl.DataFrame, limit: int = 20) -> pl.DataFrame:
     if failed.is_empty():
         return pl.DataFrame()
     return (
-        failed
-        .sort("run_date", descending=True)
-        .select(["run_date", "test_name", "model_name", "column_name", "test_type", "failures", "pass_rate_30d"])
+        failed.sort("run_date", descending=True)
+        .select(
+            [
+                "run_date",
+                "test_name",
+                "model_name",
+                "column_name",
+                "test_type",
+                "failures",
+                "pass_rate_30d",
+            ]
+        )
         .head(limit)
     )

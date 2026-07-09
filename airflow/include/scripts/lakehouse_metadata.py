@@ -574,6 +574,12 @@ def _contract_row_from_event(
     return {column.name: source.get(column.name) for column in contract.columns}
 
 
+def _utc_partition_value(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).strftime("%Y%m%d")
+    return coerce_utc_datetime(value).strftime("%Y%m%d")
+
+
 def compact_lakehouse_metadata(
     storage: StorageConfig | None = None,
     *,
@@ -653,14 +659,7 @@ def _export_compacted_table(
     partition_source: str,
     storage: StorageConfig,
 ) -> None:
-    conn.execute(
-        f"""
-        SELECT
-            *,
-            strftime(CAST({partition_source} AS TIMESTAMPTZ), '%Y%m%d') AS {partition_column}
-        FROM {table_name}
-        """
-    )
+    conn.execute(f"SELECT * FROM {table_name}")
     rows = conn.fetchall()
     if not rows:
         return
@@ -668,8 +667,8 @@ def _export_compacted_table(
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         payload = dict(zip(columns, row, strict=True))
-        partition_value = payload.pop(partition_column)
-        grouped.setdefault(str(partition_value), []).append(payload)
+        partition_value = _utc_partition_value(payload[partition_source])
+        grouped.setdefault(partition_value, []).append(payload)
 
     schema = pyarrow_schema_for_contract(contract)
     for partition_value, partition_rows in grouped.items():

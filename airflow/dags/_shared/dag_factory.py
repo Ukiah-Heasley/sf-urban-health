@@ -11,7 +11,7 @@ Each DAG built here owns raw capture only:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from airflow.exceptions import AirflowSkipException
 from airflow.providers.standard.operators.empty import EmptyOperator
@@ -36,7 +36,6 @@ from scripts.time_utils import coerce_utc_datetime
 
 _MANUAL_LOAD_MODES = frozenset({"full", "backfill"})
 _MANUAL_WINDOW_CONF_KEYS = frozenset({"window_start", "window_end", "lookback_hours"})
-_FAILED_EXTRACT_STATES = frozenset({"failed", "upstream_failed"})
 
 
 def resolve_extract_window(
@@ -123,26 +122,6 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             dag_run_conf=dag_run_conf,
         )
 
-    def _task_instance_for(context, task_id: str):
-        dag_run = context.get("dag_run")
-        if dag_run is None or not hasattr(dag_run, "get_task_instance"):
-            return None
-        return dag_run.get_task_instance(task_id)
-
-    def _normalized_task_state(task_instance) -> str | None:
-        if task_instance is None:
-            return None
-        state = getattr(task_instance, "state", None)
-        if state is None:
-            return None
-        return str(getattr(state, "value", state)).lower()
-
-    def _task_datetime(task_instance, attribute: str) -> datetime | None:
-        value = getattr(task_instance, attribute, None)
-        if value is None:
-            return None
-        return coerce_utc_datetime(value)
-
     def _extract_to_raw(**context) -> str | None:
         window = _window_from_context(context)
         result = extract_to_raw(
@@ -178,19 +157,17 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         from scripts.soda_ingest import ExtractResult
 
         ti = context["ti"]
-        extract_ti = _task_instance_for(context, extract_task_id)
-        extract_state = _normalized_task_state(extract_ti)
-        if extract_state in _FAILED_EXTRACT_STATES:
+        # The extract task pushes its XComs only after a successful return, and
+        # the Airflow 3 Task SDK gives task processes no way to read another
+        # task's state, so a missing completed_at XCom is the failure signal.
+        completed_at_raw = ti.xcom_pull(task_ids=extract_task_id, key="completed_at")
+        if completed_at_raw is None:
             window = _window_from_context(context)
             event_key = record_extract_failed_metadata(
                 extract_window=window,
                 ingest_run_id=context["run_id"],
                 dag_id=context["dag"].dag_id,
                 dataset_name=cfg.dataset.name,
-                started_at=_task_datetime(extract_ti, "start_date"),
-                completed_at=(
-                    _task_datetime(extract_ti, "end_date") or datetime.now(timezone.utc)
-                ),
             )
             ti.xcom_push(key="ingest_metadata_event_key", value=event_key)
             ti.xcom_push(key="ingest_metadata_event_status", value="failed")
@@ -222,9 +199,7 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
             started_at=coerce_utc_datetime(
                 ti.xcom_pull(task_ids=extract_task_id, key="started_at")
             ),
-            completed_at=coerce_utc_datetime(
-                ti.xcom_pull(task_ids=extract_task_id, key="completed_at")
-            ),
+            completed_at=coerce_utc_datetime(completed_at_raw),
         )
         event_key = record_extract_metadata(
             extract_result=extract_result,

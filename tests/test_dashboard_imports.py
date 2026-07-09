@@ -15,6 +15,7 @@ Implementation notes
 * Skipped automatically when the heavy dashboard deps aren't installed
   (the import probe at the top of each test handles it).
 """
+
 from __future__ import annotations
 
 import os
@@ -69,9 +70,9 @@ def test_dashboard_app_imports_without_warehouse():
         "assert hasattr(m, 'app'), 'dashboard.app must expose `app`'; "
         "assert hasattr(m, 'server'), 'dashboard.app must expose `server`'"
     )
-    assert result.returncode == 0, (
-        f"dashboard.app failed to import:\n{result.stderr.decode(errors='replace')}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"dashboard.app failed to import:\n{result.stderr.decode(errors='replace')}"
 
 
 def test_transform_modules_import_pure():

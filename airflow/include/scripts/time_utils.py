@@ -1,4 +1,5 @@
 """Shared timestamp parsing and normalization helpers."""
+
 from __future__ import annotations
 
 from datetime import date, datetime, time as datetime_time, timezone

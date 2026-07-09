@@ -1,4 +1,5 @@
 """Local MinIO lakehouse helpers for fixture preparation and Spark registration."""
+
 from __future__ import annotations
 
 import os
@@ -26,7 +27,9 @@ def repo_root() -> Path:
     for candidate in (current, *current.parents):
         if (candidate / "lakehouse" / "docker-compose.yml").is_file():
             return candidate
-    raise FileNotFoundError("could not locate lakehouse/docker-compose.yml from module path")
+    raise FileNotFoundError(
+        "could not locate lakehouse/docker-compose.yml from module path"
+    )
 
 
 def load_lakehouse_env() -> None:
@@ -42,7 +45,9 @@ def minio_api_port() -> int:
 
 
 def spark_thrift_port() -> int:
-    return int(os.environ.get("SPARK_THRIFT_PORT", os.environ.get("DBT_SPARK_PORT", "10000")))
+    return int(
+        os.environ.get("SPARK_THRIFT_PORT", os.environ.get("DBT_SPARK_PORT", "10000"))
+    )
 
 
 def spark_thrift_host() -> str:
@@ -179,6 +184,8 @@ def refresh_spark_catalog_after_bucket_reset(*, timeout_seconds: float = 180.0) 
         env=env,
     )
     if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown compose failure"
+        detail = (
+            result.stderr.strip() or result.stdout.strip() or "unknown compose failure"
+        )
         raise LakehouseLocalError(f"failed to restart spark-thrift: {detail}")
     _wait_for_spark_thrift(timeout_seconds=timeout_seconds)

@@ -20,7 +20,12 @@ from lakehouse_catalog_config import (  # noqa: E402
     warehouse_uri,
 )
 
-CATALOG_CONFIG = Path(__file__).resolve().parents[1] / "lakehouse" / "spark" / "lakehouse_catalog_config.py"
+CATALOG_CONFIG = (
+    Path(__file__).resolve().parents[1]
+    / "lakehouse"
+    / "spark"
+    / "lakehouse_catalog_config.py"
+)
 
 
 def test_catalog_mode_defaults_to_hadoop() -> None:
@@ -47,11 +52,16 @@ def test_bronze_base_uri_honors_explicit_override() -> None:
 
 def test_bronze_dataset_prefix_trims_and_appends_dataset() -> None:
     env = {"LAKEHOUSE_BRONZE_BASE_URI": "s3a://bucket/lake/parquet/bronze/"}
-    assert bronze_dataset_prefix("permits", env) == "s3a://bucket/lake/parquet/bronze/permits/"
+    assert (
+        bronze_dataset_prefix("permits", env)
+        == "s3a://bucket/lake/parquet/bronze/permits/"
+    )
 
 
 def test_warehouse_uri_hadoop_uses_s3a_bucket_path() -> None:
-    assert warehouse_uri({"LAKEHOUSE_BUCKET": "lakehouse"}) == "s3a://lakehouse/warehouse"
+    assert (
+        warehouse_uri({"LAKEHOUSE_BUCKET": "lakehouse"}) == "s3a://lakehouse/warehouse"
+    )
 
 
 def test_warehouse_uri_glue_requires_explicit_uri() -> None:
@@ -87,7 +97,10 @@ def test_spark_thrift_conf_args_hadoop_includes_minio_s3a_settings() -> None:
     )
     joined = " ".join(args)
     assert "--conf=spark.sql.catalog.spark_catalog.type=hadoop" in joined
-    assert "--conf=spark.sql.catalog.spark_catalog.warehouse=s3a://lakehouse/warehouse" in joined
+    assert (
+        "--conf=spark.sql.catalog.spark_catalog.warehouse=s3a://lakehouse/warehouse"
+        in joined
+    )
     assert "--conf=spark.hadoop.fs.s3a.endpoint=http://minio:9000" in joined
     assert "--conf=spark.sql.parquet.compression.codec=snappy" in joined
     assert (
@@ -120,7 +133,10 @@ def test_spark_thrift_conf_args_glue_uses_glue_and_s3_file_io() -> None:
         in joined
     )
     assert "--conf=spark.sql.warehouse.dir=s3a://sf-urban-health/warehouse" in joined
-    assert "--conf=spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" in joined
+    assert (
+        "--conf=spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
+        in joined
+    )
     assert "--conf=spark.hadoop.fs.s3a.aws.credentials.provider=" in joined
     assert "--conf=spark.sql.parquet.compression.codec=snappy" in joined
     assert (

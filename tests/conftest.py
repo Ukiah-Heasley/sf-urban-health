@@ -5,6 +5,7 @@ Most ingest paths fail-fast on missing env vars (`AWS_S3_BUCKET`,
 real credentials, so the autouse fixture below sets safe placeholders
 before any test imports the module under test.
 """
+
 from __future__ import annotations
 
 import os

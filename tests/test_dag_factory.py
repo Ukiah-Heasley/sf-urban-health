@@ -77,6 +77,78 @@ def test_make_ingest_dag_extracts_raw_and_emits_asset():
     assert failure_marker.outlets == [INGEST_FAILURE_METADATA_ASSET]
 
 
+def test_record_extract_metadata_writes_failed_event_without_extract_xcoms(
+    tmp_path, monkeypatch
+):
+    """A failed extract pushes no XComs, and the Airflow 3 Task SDK dag_run
+    exposes no task-state lookup. The metadata task must still record a failed
+    ingest event from context alone and mark the status XCom as failed."""
+    import json
+
+    from _shared.dag_factory import DagConfig, make_ingest_dag
+    from scripts.soda_ingest import DatasetConfig
+
+    monkeypatch.setenv("LAKE_LOCAL_ROOT", str(tmp_path))
+
+    cfg = DagConfig(
+        dataset=DatasetConfig(
+            name="permits",
+            dataset_id="i98e-djp9",
+            date_field="data_loaded_at",
+            order_field="permit_number",
+            epoch=date(2013, 1, 1),
+        ),
+        schedule="0 6 * * *",
+        start_date=datetime(2026, 5, 1),
+        tags=["test"],
+    )
+    dag = make_ingest_dag(cfg)
+    record_metadata = dag.get_task("record_permits_extract_metadata")
+
+    class FailedExtractTaskInstance:
+        def __init__(self):
+            self.pushed = {}
+
+        def xcom_pull(self, task_ids=None, key=None):
+            return None
+
+        def xcom_push(self, key, value):
+            self.pushed[key] = value
+
+    class TaskSdkDagRun:
+        """Plain data like the Task SDK DagRun: conf only, no ORM methods."""
+
+        conf = None
+
+    assert not hasattr(TaskSdkDagRun(), "get_task_instance")
+
+    ti = FailedExtractTaskInstance()
+    context = {
+        "ti": ti,
+        "dag_run": TaskSdkDagRun(),
+        "dag": dag,
+        "run_id": "scheduled__2026-07-08T06:00:00+00:00",
+        "data_interval_start": datetime(2026, 7, 7, 6, tzinfo=timezone.utc),
+        "data_interval_end": datetime(2026, 7, 8, 6, tzinfo=timezone.utc),
+    }
+
+    event_key = record_metadata.python_callable(**context)
+
+    assert ti.pushed["ingest_metadata_event_status"] == "failed"
+    assert ti.pushed["ingest_metadata_event_key"] == event_key
+
+    payload = json.loads((tmp_path / event_key).read_text())
+    assert payload["status"] == "failed"
+    assert payload["dataset_name"] == "permits"
+    assert payload["dag_id"] == "ingest_permits"
+    assert payload["records_fetched"] == 0
+    assert payload["raw_s3_path"] is None
+    assert payload["completed_at"] is not None
+
+    event_files = sorted(p.name for p in tmp_path.rglob("*.json"))
+    assert len(event_files) == 2  # current event plus attempt audit event
+
+
 def test_resolve_extract_window_uses_scheduled_interval_by_default():
     from _shared.dag_factory import resolve_extract_window
 

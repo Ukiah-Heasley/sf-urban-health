@@ -3,6 +3,7 @@
 Input:    DataSF SODA resource 5cei-gny5, filtered by data_loaded_at.
 Output:   Raw interval NDJSON under s3://$AWS_S3_BUCKET/raw/evictions/.
 """
+
 from __future__ import annotations
 
 from datetime import date

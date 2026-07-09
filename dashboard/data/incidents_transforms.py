@@ -82,8 +82,6 @@ def resolution_rate_by_district(df: pl.DataFrame) -> pl.DataFrame:
             pl.col("total_incidents").sum().alias("total"),
             pl.col("resolved_count").sum().alias("resolved"),
         )
-        .with_columns(
-            (pl.col("resolved") / pl.col("total")).alias("resolution_rate")
-        )
+        .with_columns((pl.col("resolved") / pl.col("total")).alias("resolution_rate"))
         .sort("police_district")
     )

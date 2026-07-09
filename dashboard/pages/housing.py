@@ -125,7 +125,8 @@ layout = dbc.Container(
         ),
         # Section 4: housing mix over time
         dbc.Card(
-            dbc.CardBody(dcc.Graph(id="h-fig-use-transition")), className="mb-4 shadow-sm"
+            dbc.CardBody(dcc.Graph(id="h-fig-use-transition")),
+            className="mb-4 shadow-sm",
         ),
         # Section 5: cost efficiency + pipeline backlog
         dbc.Row(
@@ -226,9 +227,9 @@ def refresh(start_date, end_date, neighborhoods, theme):
     )
     stalled = (
         int(
-            pipeline_filtered.filter(
-                pl.col("age_bucket").is_in(["180-365d", ">365d"])
-            )["permit_count"].sum()
+            pipeline_filtered.filter(pl.col("age_bucket").is_in(["180-365d", ">365d"]))[
+                "permit_count"
+            ].sum()
             or 0
         )
         if _pipeline_has_data

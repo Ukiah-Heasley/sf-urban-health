@@ -4,6 +4,7 @@ Reads one raw interval object per dataset, materializes contract-aligned bronze
 Parquet under ``lake/parquet/bronze/``, and writes immutable file-manifest
 metadata events to S3. Metadata compaction is handled separately.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -61,7 +62,9 @@ class StorageConfig:
             path.write_bytes(payload)
             return len(payload)
         if self.s3_client is None or not self.bucket:
-            raise LakehouseLoadError("S3 client and bucket are required for remote writes")
+            raise LakehouseLoadError(
+                "S3 client and bucket are required for remote writes"
+            )
         self.s3_client.put_object(Bucket=self.bucket, Key=normalized, Body=payload)
         return len(payload)
 
@@ -70,7 +73,9 @@ class StorageConfig:
         if self.local_root is not None:
             return (self.local_root / normalized).read_bytes()
         if self.s3_client is None or not self.bucket:
-            raise LakehouseLoadError("S3 client and bucket are required for remote reads")
+            raise LakehouseLoadError(
+                "S3 client and bucket are required for remote reads"
+            )
         response = self.s3_client.get_object(Bucket=self.bucket, Key=normalized)
         return response["Body"].read()
 
@@ -82,7 +87,9 @@ class StorageConfig:
                     yield raw_line.decode("utf-8")
             return
         if self.s3_client is None or not self.bucket:
-            raise LakehouseLoadError("S3 client and bucket are required for remote reads")
+            raise LakehouseLoadError(
+                "S3 client and bucket are required for remote reads"
+            )
         response = self.s3_client.get_object(Bucket=self.bucket, Key=normalized)
         for raw_line in response["Body"].iter_lines():
             yield raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
@@ -95,7 +102,9 @@ class StorageConfig:
             shutil.copyfile(source_path, destination)
             return destination.stat().st_size
         if self.s3_client is None or not self.bucket:
-            raise LakehouseLoadError("S3 client and bucket are required for remote writes")
+            raise LakehouseLoadError(
+                "S3 client and bucket are required for remote writes"
+            )
         self.s3_client.upload_file(str(source_path), self.bucket, normalized)
         return source_path.stat().st_size
 
@@ -111,7 +120,9 @@ class StorageConfig:
                 if path.is_file()
             )
         if self.s3_client is None or not self.bucket:
-            raise LakehouseLoadError("S3 client and bucket are required for remote listing")
+            raise LakehouseLoadError(
+                "S3 client and bucket are required for remote listing"
+            )
         keys: list[str] = []
         continuation: str | None = None
         while True:
@@ -134,7 +145,9 @@ class StorageConfig:
                 shutil.rmtree(target)
             return
         if self.s3_client is None or not self.bucket:
-            raise LakehouseLoadError("S3 client and bucket are required for remote deletes")
+            raise LakehouseLoadError(
+                "S3 client and bucket are required for remote deletes"
+            )
         keys = self.list_keys(normalized)
         for index in range(0, len(keys), 1000):
             batch = [{"Key": key} for key in keys[index : index + 1000]]
@@ -150,7 +163,11 @@ class StorageConfig:
                 failed_key = str(first.get("Key", "unknown"))
                 error_code = str(first.get("Code", ""))
                 error_message = str(first.get("Message", ""))
-                suffix = f" and {len(errors) - 1} more failed keys" if len(errors) > 1 else ""
+                suffix = (
+                    f" and {len(errors) - 1} more failed keys"
+                    if len(errors) > 1
+                    else ""
+                )
                 raise LakehouseLoadError(
                     f"failed to delete objects under prefix {normalized!r}: "
                     f"key {failed_key!r} failed with {error_code!r} ({error_message!r}){suffix}"
@@ -294,13 +311,19 @@ def contract_type_to_pyarrow(type_name: str) -> pa.DataType:
     try:
         return mapping[type_name]
     except KeyError as exc:
-        raise LakehouseLoadError(f"unsupported contract column type: {type_name!r}") from exc
+        raise LakehouseLoadError(
+            f"unsupported contract column type: {type_name!r}"
+        ) from exc
 
 
 def pyarrow_schema_for_contract(contract: TableContract) -> pa.Schema:
     return pa.schema(
         [
-            pa.field(column.name, contract_type_to_pyarrow(column.type), nullable=column.nullable)
+            pa.field(
+                column.name,
+                contract_type_to_pyarrow(column.type),
+                nullable=column.nullable,
+            )
             for column in contract.columns
         ]
     )
@@ -317,19 +340,29 @@ def _map_permits_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "issued_at": _parse_optional_timestamp(payload.get("issued_date")),
         "status_date": _parse_optional_timestamp(payload.get("status_date")),
         "approved_at": _parse_optional_timestamp(payload.get("approved_date")),
-        "last_activity_at": _parse_optional_timestamp(payload.get("last_permit_activity_date")),
+        "last_activity_at": _parse_optional_timestamp(
+            payload.get("last_permit_activity_date")
+        ),
         "is_adu": _parse_optional_bool(payload.get("adu")),
         "estimated_cost": _parse_optional_decimal(payload.get("estimated_cost")),
         "revised_cost": _parse_optional_decimal(payload.get("revised_cost")),
         "existing_units": _parse_optional_int(payload.get("existing_units")),
         "proposed_units": _parse_optional_int(payload.get("proposed_units")),
-        "existing_stories": _parse_optional_float(payload.get("number_of_existing_stories")),
-        "proposed_stories": _parse_optional_float(payload.get("number_of_proposed_stories")),
+        "existing_stories": _parse_optional_float(
+            payload.get("number_of_existing_stories")
+        ),
+        "proposed_stories": _parse_optional_float(
+            payload.get("number_of_proposed_stories")
+        ),
         "street_number": _parse_optional_string(payload.get("street_number")),
         "street_name": _parse_optional_string(payload.get("street_name")),
         "zipcode": _parse_optional_string(payload.get("zipcode")),
-        "supervisor_district": _parse_optional_string(payload.get("supervisor_district")),
-        "neighborhood": _parse_optional_string(payload.get("neighborhoods_analysis_boundaries")),
+        "supervisor_district": _parse_optional_string(
+            payload.get("supervisor_district")
+        ),
+        "neighborhood": _parse_optional_string(
+            payload.get("neighborhoods_analysis_boundaries")
+        ),
         "existing_use": _parse_optional_string(payload.get("existing_use")),
         "proposed_use": _parse_optional_string(payload.get("proposed_use")),
     }
@@ -342,15 +375,21 @@ def _map_evictions_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "filed_at": _parse_optional_date(payload.get("file_date")),
         "address": _parse_optional_string(payload.get("address")),
         "zipcode": _parse_optional_string(payload.get("zip")),
-        "supervisor_district": _parse_optional_string(payload.get("supervisor_district")),
+        "supervisor_district": _parse_optional_string(
+            payload.get("supervisor_district")
+        ),
         "neighborhood": _parse_optional_string(payload.get("neighborhood")),
         "non_payment": _parse_optional_bool(payload.get("non_payment")),
         "breach": _parse_optional_bool(payload.get("breach")),
         "nuisance": _parse_optional_bool(payload.get("nuisance")),
         "illegal_use": _parse_optional_bool(payload.get("illegal_use")),
-        "failure_to_sign_renewal": _parse_optional_bool(payload.get("failure_to_sign_renewal")),
+        "failure_to_sign_renewal": _parse_optional_bool(
+            payload.get("failure_to_sign_renewal")
+        ),
         "access_denial": _parse_optional_bool(payload.get("access_denial")),
-        "unapproved_subtenant": _parse_optional_bool(payload.get("unapproved_subtenant")),
+        "unapproved_subtenant": _parse_optional_bool(
+            payload.get("unapproved_subtenant")
+        ),
         "late_payments": _parse_optional_bool(payload.get("late_payments")),
         "roommate_same_unit": _parse_optional_bool(payload.get("roommate_same_unit")),
         "other_cause": _parse_optional_bool(payload.get("other_cause")),
@@ -358,7 +397,9 @@ def _map_evictions_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "demolition": _parse_optional_bool(payload.get("demolition")),
         "capital_improvement": _parse_optional_bool(payload.get("capital_improvement")),
         "substantial_rehab": _parse_optional_bool(payload.get("substantial_rehab")),
-        "ellis_act_withdrawal": _parse_optional_bool(payload.get("ellis_act_withdrawal")),
+        "ellis_act_withdrawal": _parse_optional_bool(
+            payload.get("ellis_act_withdrawal")
+        ),
         "condo_conversion": _parse_optional_bool(payload.get("condo_conversion")),
         "lead_remediation": _parse_optional_bool(payload.get("lead_remediation")),
         "development": _parse_optional_bool(payload.get("development")),
@@ -380,17 +421,25 @@ def _map_incidents_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "incident_date": _parse_optional_date(payload.get("incident_date")),
         "incident_time": _parse_optional_string(payload.get("incident_time")),
         "incident_year": _parse_optional_int(payload.get("incident_year")),
-        "incident_day_of_week": _parse_optional_string(payload.get("incident_day_of_week")),
+        "incident_day_of_week": _parse_optional_string(
+            payload.get("incident_day_of_week")
+        ),
         "reported_at": _parse_optional_timestamp(payload.get("report_datetime")),
         "incident_code": _parse_optional_string(payload.get("incident_code")),
         "incident_category": _parse_optional_string(payload.get("incident_category")),
-        "incident_subcategory": _parse_optional_string(payload.get("incident_subcategory")),
-        "incident_description": _parse_optional_string(payload.get("incident_description")),
+        "incident_subcategory": _parse_optional_string(
+            payload.get("incident_subcategory")
+        ),
+        "incident_description": _parse_optional_string(
+            payload.get("incident_description")
+        ),
         "resolution": _parse_optional_string(payload.get("resolution")),
         "intersection": _parse_optional_string(payload.get("intersection")),
         "police_district": _parse_optional_string(payload.get("police_district")),
         "neighborhood": _parse_optional_string(payload.get("analysis_neighborhood")),
-        "supervisor_district": _parse_optional_string(payload.get("supervisor_district")),
+        "supervisor_district": _parse_optional_string(
+            payload.get("supervisor_district")
+        ),
         "latitude": _parse_optional_float(payload.get("latitude")),
         "longitude": _parse_optional_float(payload.get("longitude")),
     }
@@ -412,7 +461,9 @@ def map_bronze_row(
 ) -> dict[str, Any]:
     mapper = _FIELD_MAPPERS.get(dataset_name)
     if mapper is None:
-        raise LakehouseLoadError(f"unsupported dataset for bronze promotion: {dataset_name!r}")
+        raise LakehouseLoadError(
+            f"unsupported dataset for bronze promotion: {dataset_name!r}"
+        )
 
     natural_key = contract.natural_key[0]
     typed_fields = mapper(payload)
@@ -463,7 +514,11 @@ def hash_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
 
 def s3_endpoint_url() -> str | None:
     """Return a custom S3 endpoint when configured for local MinIO or other S3-compatible stores."""
-    return os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT_URL") or None
+    return (
+        os.environ.get("AWS_ENDPOINT_URL")
+        or os.environ.get("AWS_S3_ENDPOINT_URL")
+        or None
+    )
 
 
 def local_minio_host() -> str:
@@ -603,7 +658,11 @@ def promote_raw_to_bronze(
     contract_root: Path | None = None,
 ) -> PromoteResult:
     """Promote one raw interval into bronze Parquet and a file-manifest event."""
-    from scripts.lakehouse_metadata import EVENT_VERSION, FileManifestEvent, write_file_manifest_event
+    from scripts.lakehouse_metadata import (
+        EVENT_VERSION,
+        FileManifestEvent,
+        write_file_manifest_event,
+    )
 
     storage = storage or storage_from_env()
     contract = get_contract("bronze", dataset_name, contract_root)
@@ -653,7 +712,9 @@ def promote_raw_to_bronze(
 
     bronze_path = storage.uri_for_key(bronze_key)
     promotion_completed_at = datetime.now(timezone.utc)
-    manifest_id = build_manifest_id(layer="bronze", table_name=dataset_name, s3_key=bronze_key)
+    manifest_id = build_manifest_id(
+        layer="bronze", table_name=dataset_name, s3_key=bronze_key
+    )
     manifest_event_key = write_file_manifest_event(
         storage,
         FileManifestEvent(

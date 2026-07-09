@@ -1,4 +1,5 @@
 """Pipeline Health page — /pipeline"""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -53,21 +54,32 @@ layout = dbc.Container(
         ),
         _days_selector(),
         dbc.Row(id="pl-kpi-row", className="g-3 mb-4"),
-        dbc.Card(dbc.CardBody(dcc.Graph(id="pl-fig-timeline")), className="mb-4 shadow-sm"),
+        dbc.Card(
+            dbc.CardBody(dcc.Graph(id="pl-fig-timeline")), className="mb-4 shadow-sm"
+        ),
         dbc.Row(
             [
                 dbc.Col(
-                    dbc.Card(dbc.CardBody(dcc.Graph(id="pl-fig-duration")), className="shadow-sm"),
+                    dbc.Card(
+                        dbc.CardBody(dcc.Graph(id="pl-fig-duration")),
+                        className="shadow-sm",
+                    ),
                     md=5,
                 ),
                 dbc.Col(
-                    dbc.Card(dbc.CardBody(dcc.Graph(id="pl-fig-test-trend")), className="shadow-sm"),
+                    dbc.Card(
+                        dbc.CardBody(dcc.Graph(id="pl-fig-test-trend")),
+                        className="shadow-sm",
+                    ),
                     md=7,
                 ),
             ],
             className="mb-4 g-3",
         ),
-        dbc.Card(dbc.CardBody(dcc.Graph(id="pl-fig-failing-tests")), className="mb-5 shadow-sm"),
+        dbc.Card(
+            dbc.CardBody(dcc.Graph(id="pl-fig-failing-tests")),
+            className="mb-5 shadow-sm",
+        ),
     ],
     fluid=True,
     style={"maxWidth": "1400px"},
@@ -116,10 +128,40 @@ def refresh(days, theme):
     kpis = pipeline_kpis(pipeline, tests, days=days)
 
     cards = [
-        dbc.Col(build_kpi_card("Success rate", _fmt_pct(kpis["success_rate_pct"]), None, ACCENT), md=3),
-        dbc.Col(build_kpi_card("Avg run duration", _fmt_dur(kpis["avg_duration_seconds"]), None, "#ffb300", higher_is_better=False), md=3),
-        dbc.Col(build_kpi_card("dbt test pass rate", _fmt_pct(kpis["test_pass_rate_pct"]), None, "#4caf66"), md=3),
-        dbc.Col(build_kpi_card("Records ingested", _fmt_int(kpis["total_records_ingested"]), None, "#ab47bc"), md=3),
+        dbc.Col(
+            build_kpi_card(
+                "Success rate", _fmt_pct(kpis["success_rate_pct"]), None, ACCENT
+            ),
+            md=3,
+        ),
+        dbc.Col(
+            build_kpi_card(
+                "Avg run duration",
+                _fmt_dur(kpis["avg_duration_seconds"]),
+                None,
+                "#ffb300",
+                higher_is_better=False,
+            ),
+            md=3,
+        ),
+        dbc.Col(
+            build_kpi_card(
+                "dbt test pass rate",
+                _fmt_pct(kpis["test_pass_rate_pct"]),
+                None,
+                "#4caf66",
+            ),
+            md=3,
+        ),
+        dbc.Col(
+            build_kpi_card(
+                "Records ingested",
+                _fmt_int(kpis["total_records_ingested"]),
+                None,
+                "#ab47bc",
+            ),
+            md=3,
+        ),
     ]
 
     return (
