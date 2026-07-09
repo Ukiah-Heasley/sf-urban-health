@@ -7,313 +7,86 @@
 [![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-2ea44f)](https://ukiah-heasley.github.io/sf-urban-health/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-SF Urban Health ingests three DataSF civic datasets—building permits,
-eviction notices, and police incident reports—and supports housing, public
-safety, eviction, pipeline-health, and data-trust analysis.
+SF Urban Health turns San Francisco building permits, eviction notices, and
+police incident data into a documented lakehouse and public evidence site. It
+is a practical reference implementation for interval-based ingestion,
+metadata-driven orchestration, dbt + Iceberg modeling, and static reporting.
 
-The active runtime ingests DataSF responses into durable newline-delimited JSON
-in S3, promotes complete intervals to bronze Parquet, and compacts lakehouse
-metadata. The repository also keeps a lakehouse-first dbt project with a local
-Spark + Iceberg smoke path and an Evidence site built from committed Parquet
-snapshots.
+## Explore
 
-## Current runtime boundary
+- [Live Evidence site](https://ukiah-heasley.github.io/sf-urban-health/) — public views built from committed Parquet snapshots.
+- [Interactive architecture whiteboard](https://ukiah-heasley.github.io/sf-urban-health/architecture/sf-urban-health.pipeflow.html) — explore the system and its data contracts.
+- [Documentation guide](docs/README.md) — setup, architecture, data model, operations, and deployment.
+
+The whiteboard's [PipeFlow JSON source](reports/static/architecture/sf-urban-health.pipeflow.json)
+is version controlled for review and future edits.
+
+## At a glance
 
 ```text
-DataSF SODA API
+DataSF APIs
     → Airflow ingest DAGs
-    → S3 raw interval NDJSON + S3 ingest metadata events
-    → ingest Airflow assets
-
-Airflow ingest assets
-    → promote_raw_to_bronze (plans intervals from S3 JSON metadata events)
-    → bronze Parquet + S3 file-manifest events
-    → compacted metadata Parquet
-    → bronze promotion asset
-
-Bronze promotion asset
-    → build_lakehouse_gold (dbt inside Astro Airflow)
-    → silver/gold Iceberg tables
-    → gold transform completion asset
-
-Failed ingest metadata asset
-    → handle_ingest_failure_metadata
-    → compacted metadata Parquet + pipeline_health/data_trust refresh
+    → S3 raw NDJSON + JSON metadata events
+    → bronze Parquet + compacted metadata
+    → dbt / Spark Thrift / Iceberg silver and gold tables
+    → committed Evidence Parquet snapshots
+    → GitHub Pages
 ```
 
-The ingest DAGs land raw NDJSON in S3 and do not load a warehouse. Evidence
-reads committed Parquet snapshots. `make export-evidence-snapshots` regenerates
-exact-name snapshots from selected lakehouse gold tables. The public Evidence
-site displays committed snapshots for `housing_production`, `permit_pipeline`,
-`evictions`, `public_safety`, `pipeline_health`, and `data_trust`.
+Ingest runs daily, keeps raw records source-faithful, and records both current
+and attempt-level metadata. Promotion selects complete intervals, and failed
+extracts still refresh operational health reporting. See the
+[architecture guide](docs/ARCHITECTURE.md) for the full runtime and trigger
+details.
 
-## Ingest behavior
+## Start here
 
-Three generated DAGs run daily at 06:00 UTC:
-
-```text
-extract_{dataset}_to_raw → record_{dataset}_extract_metadata → ingest_complete
-                         ↘ mark_{dataset}_extract_failure_metadata
-```
-
-Each extractor:
-
-- queries a half-open interval `[effective_start, data_interval_end)`;
-- on schedule, uses the Airflow data interval; manual triggers may override it
-  with JSON conf (`load_mode`, `window_start`, `window_end`, `lookback_hours`);
-- paginates in timestamp plus source-key order;
-- streams records through a temporary NDJSON file;
-- uploads a deterministic S3 object; and
-- returns row, byte, timing, interval, and observed maximum-timestamp metadata.
-
-Raw objects use this shape:
-
-```text
-raw/{dataset}/
-  data_interval_start=YYYYMMDDTHHMMSSZ/
-  data_interval_end=YYYYMMDDTHHMMSSZ/
-  records.ndjson
-```
-
-An empty interval is successful, uploads no raw object, still writes an ingest
-metadata event, and emits its ingest asset. A failed extract writes a current
-and attempt metadata event with `status="failed"` after recomputing the same
-interval bounds, but it does not emit the dataset ingest asset.
-
-`promote_raw_to_bronze` runs after all three ingest assets update. It selects
-the oldest pending complete interval from current S3 ingest metadata events
-(default `LAKEHOUSE_PLAN_MODE=pending`, `LAKEHOUSE_PLAN_LIMIT=1`), promotes that
-interval to bronze Parquet, writes file-manifest metadata events, compacts
-current metadata events into contract-compatible Parquet, and emits a bronze
-promotion asset. When no interval is selected, the DAG branches to a no-op path
-that still compacts metadata but emits no bronze or bronze promotion assets.
-Intervals with a failed required dataset are not promotable; rerunning the
-failed interval successfully overwrites the current failed event and unblocks
-planning. After bronze promotion completes,
-`build_lakehouse_gold` runs `dbt debug` and `dbt build --select tag:lakehouse`
-inside the Astro Airflow runtime against the mirrored project at
-`airflow/include/dbt/`, materializing silver and gold Iceberg tables through
-Spark Thrift, and emits a gold transform completion asset. Set
-`LAKEHOUSE_PLAN_MODE=refresh` with optional start/end bounds to reprocess
-intervals without a separate code path. Current JSON metadata events are the
-promotion source of truth; attempt audit events and compacted metadata Parquet
-are not planner inputs.
-
-`handle_ingest_failure_metadata` runs after a failed ingest metadata asset. It
-compacts current metadata events and rebuilds only `pipeline_health` and
-`data_trust` so operational gold tables can show failed extracts even though no
-bronze promotion asset was emitted.
-
-See [Architecture](docs/ARCHITECTURE.md) for the complete current-state flow.
-
-## Repository layout
-
-```text
-airflow/                 Astro project, DAGs, and extractors
-contracts/lakehouse/     YAML contracts for parquet lake table layouts
-dbt/                     Lakehouse-first dbt project (Spark + Iceberg locally)
-lakehouse/               Local MinIO + Spark Thrift; AWS Glue catalog mode via spark-up-aws
-reports/                 Static Evidence site and sample Parquet snapshots
-tests/                   Extractor, DAG, lakehouse, and snapshot export tests
-docs/                    Current behavior and operator documentation
-.codex/skills/           Repository-specific Codex workflows
-```
-
-`dbt/` and `contracts/` are canonical at the repo root. `make sync-dbt` mirrors
-them into gitignored `airflow/include/` directories for the Astro Docker build
-context.
-
-## Prerequisites
-
-- Python 3.11 and [uv](https://docs.astral.sh/uv/)
-- AWS credentials and an S3 bucket for extraction
-- Docker Desktop and the Astro CLI for local Airflow
-- Docker Desktop for the local lakehouse stack (`make spark-up`)
-- A DataSF app token is optional but recommended
-- Node.js 20 for the Evidence site
-
-## Setup
+The quickest code-only check is:
 
 ```bash
 uv sync --all-groups
-cp airflow/.env.local.example airflow/.env.local
-cp lakehouse/.env.local.example lakehouse/.env.local
+make test
 ```
 
-Fill in the mode-specific private env files you need. Make targets select the
-active mode without commenting blocks in a shared file:
+The production-oriented data path uses AWS S3 for raw and Parquet storage and
+the AWS Glue catalog for Iceberg. Configure the private AWS environment files
+and follow the [AWS S3 + Glue workflow](docs/DEVELOPMENT.md#aws-s3--glue-workflow)
+to run the supported ingestion and transform commands.
 
-- `make airflow-up-local` / `make airflow-up` copies `airflow/.env.local` to
-  gitignored `airflow/.env` (Astro reads the active file).
-- `make airflow-up-aws` copies `airflow/.env.aws` to `airflow/.env`.
-- `make spark-up` passes `lakehouse/.env.local` to Docker Compose.
-- `make spark-up-aws` passes `lakehouse/.env.aws`.
+The MinIO/Spark Compose stack is an optional local fixture harness, not the
+primary data path. [Development](docs/DEVELOPMENT.md) covers AWS configuration,
+Airflow, manual backfills, local smoke testing, and the full command reference.
 
-Committed templates: `airflow/.env.local.example`, `airflow/.env.aws.example`,
-`lakehouse/.env.local.example`, and `lakehouse/.env.aws.example`.
+## Common tasks
 
-## Common commands
+| Goal | Command |
+| --- | --- |
+| Run tests | `make test` |
+| Run all project quality checks | `make pre-commit` |
+| Start AWS-configured Airflow | `make airflow-up-aws` |
+| Start Spark Thrift with the Glue catalog | `make spark-up-aws` |
+| Build lakehouse models | `make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` |
+| Export Evidence snapshots | `make export-evidence-snapshots` |
 
-```bash
-make ingest            # permits: DataSF → raw S3
-make test              # pytest
-make lakehouse-smoke   # promote fixture NDJSON locally without AWS
-make lint              # Ruff
-make yamllint          # YAML lint
-make pre-commit        # all configured hooks
-make docs-check        # documentation consistency checks
+## Repository map
 
-make spark-up          # local MinIO + Spark Thrift Server
-make spark-up-aws      # Spark Thrift in AWS Glue catalog mode (no MinIO)
-make spark-down
-make lakehouse-prepare-fixtures       # destructive: reset MinIO, seed all fixtures, promote bronze
-make lakehouse-prepare-permits-fixture  # alias for lakehouse-prepare-fixtures
-make dbt-lakehouse-debug
-make dbt-lakehouse-smoke
-make dbt-lakehouse-permits              # build/test permits_current silver Iceberg
-make dbt-lakehouse-gold                 # build/test all lakehouse bronze/silver/gold Iceberg models
-make export-evidence-snapshots          # export Evidence Parquet snapshots from selected lakehouse gold
-
-make airflow-up        # alias for airflow-up-local
-make airflow-up-local  # local MinIO-oriented Airflow env
-make airflow-up-aws    # AWS S3 + Glue-oriented Airflow env
-make airflow-down
-make airflow-logs
-```
-
-For an explicit raw interval from the CLI:
-
-```bash
-uv run airflow/include/scripts/permits.py \
-  --window-start 2024-01-01T00:00:00Z \
-  --window-end 2024-02-01T00:00:00Z
-```
-
-The Airflow UI is available at <http://localhost:8080> with the local
-`admin` / `admin` development credentials.
-
-For a manual full/backfill ingest run in the Airflow UI, trigger any ingest DAG
-with JSON conf:
-
-```json
-{
-  "load_mode": "full",
-  "window_start": "2018-01-01T00:00:00Z",
-  "window_end": "2026-06-29T00:00:00Z",
-  "lookback_hours": 0
-}
-```
-
-Use `"load_mode": "backfill"` for the same bounded window shape. Scheduled runs
-ignore conf and keep using the Airflow data interval. To promote the manual
-window, set matching `LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` on
-`promote_raw_to_bronze` when needed.
-
-For a local ingest-to-bronze smoke against MinIO instead of AWS S3, see
-[Development — Local MinIO Airflow smoke](docs/DEVELOPMENT.md#local-minio-airflow-smoke).
-For local dbt from Astro Airflow containers, set `DBT_SPARK_HOST=host.docker.internal`
-and `DBT_SPARK_PORT` to the host port published by `make spark-up` (see
-`airflow/.env.local.example`).
-
-## Local lakehouse (Spark + Iceberg + dbt)
-
-`lakehouse/docker-compose.yml` runs MinIO, a one-shot bucket initializer, and a
-repo-built Spark Thrift Server with Iceberg enabled. `make spark-up` uses the
-default Hadoop Iceberg catalog with S3A pointed at MinIO. Spark bootstraps
-`default` and `sf_urban_health` namespaces in the MinIO warehouse before Thrift
-starts. Iceberg warehouse data is stored under `s3a://lakehouse/warehouse/` in
-the local bucket.
-
-`make spark-up-aws` starts only Spark Thrift with `LAKEHOUSE_CATALOG=glue`,
-Iceberg `S3FileIO`, and the warehouse at `LAKEHOUSE_WAREHOUSE_URI` (typically
-`s3://<bucket>/warehouse`). It does not start MinIO and does not use Glue
-crawlers or Glue ETL jobs. Bronze and compacted metadata Parquet must already
-exist in AWS S3. dbt reads bronze from `LAKEHOUSE_BRONZE_BASE_URI` (typically
-`s3a://<bucket>/lake/parquet/bronze`) and derives the metadata base URI by
-replacing the trailing `/bronze` with `/metadata` unless
-`LAKEHOUSE_METADATA_BASE_URI` is set explicitly.
-Set AWS credentials and region in `lakehouse/.env.aws`; see
-`lakehouse/.env.aws.example`. For host CLI dbt after `make spark-up-aws`, run
-`make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` (local dbt
-targets default to `lakehouse/.env.local`).
-Airflow does not orchestrate the AWS Glue build path yet.
-
-```bash
-make spark-up
-make lakehouse-prepare-fixtures         # destructive local-only reset + bronze fixtures (all datasets)
-make dbt-lakehouse-debug
-make dbt-lakehouse-permits
-make dbt-lakehouse-gold
-make dbt-lakehouse-smoke
-make spark-down
-```
-
-AWS Glue proof from host CLI (requires existing AWS bronze Parquet):
-
-```bash
-make spark-up-aws
-make dbt-lakehouse-debug LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
-make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws
-make spark-down
-```
-
-`lakehouse-prepare-fixtures` deletes every object in the local `lakehouse` MinIO
-bucket, seeds `tests/fixtures/lakehouse/{permits,evictions,incidents}.ndjson` as
-raw NDJSON under the production interval key shape, writes ingest metadata events,
-promotes bronze Parquet for all three datasets through the existing Python
-promotion code, and restarts Spark Thrift so catalog namespaces are rebuilt after
-the bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
-dbt reads bronze through ephemeral `bronze_*` models over Parquet at
-`LAKEHOUSE_BRONZE_BASE_URI` (default `s3a://lakehouse/lake/parquet/bronze` for
-local MinIO). It reads compacted lakehouse metadata through ephemeral
-`metadata_*` models over Parquet at `LAKEHOUSE_METADATA_BASE_URI`, or by
-deriving the metadata base from `LAKEHOUSE_BRONZE_BASE_URI` when that override
-is unset. `lakehouse-prepare-fixtures` is local-only and requires
-`make spark-up`.
-
-The dbt project uses medallion folder names (`bronze/`, `silver/`, `gold/`) and
-does not mix `staging/`, `intermediate/`, or `mart_*` model names in the
-lakehouse path. Gold tables are business-facing analytical relations; the `gold`
-layer carries that meaning without a `mart_` prefix.
-
-`dbt/profiles.yml` connects to Spark Thrift on `localhost:10000` by default.
-`SPARK_THRIFT_PORT` in `lakehouse/.env.local` sets the host port exposed by Compose; the
-container always listens on port `10000`. Override `DBT_SPARK_HOST`, `DBT_SPARK_PORT`
-(to match `SPARK_THRIFT_PORT`), and `DBT_SPARK_SCHEMA` when needed.
-The `lakehouse` uv dependency group installs `dbt-core` and `dbt-spark`. Bronze
-remains Parquet in object storage. dbt materializes silver and gold models as Iceberg
-catalog tables through Spark Thrift. Silver current models deduplicate bronze by
-natural key; gold models aggregate silver for housing production, permit
-pipeline, evictions, and public safety, and aggregate lakehouse metadata for
-pipeline health and operational data trust. The `smoke_iceberg` model is tagged
-`smoke` and remains a harmless Iceberg connectivity check.
-
-## Lakehouse contracts
-
-Lakehouse table contracts live under `contracts/lakehouse/` and are validated by
-`airflow/include/scripts/lakehouse_contracts.py`. Bronze promotion lives in
-`airflow/include/scripts/lakehouse_load.py`. Silver and gold lakehouse models
-(`permits_current`, `evictions_current`, `incidents_current`, `housing_production`,
-`permit_pipeline`, `evictions`, `public_safety`, `pipeline_health`, `data_trust`)
-are Iceberg catalog relation contracts. Immutable metadata events and compaction live
-in `airflow/include/scripts/lakehouse_metadata.py`.
-
-## Reports
-
-- [Evidence](reports/README.md) reads committed local Parquet snapshots with
-  DuckDB. `make export-evidence-snapshots` regenerates exact-name snapshots from
-  selected lakehouse gold after `make dbt-lakehouse-gold`. GitHub Pages builds
-  from the committed snapshots and does not query Spark or Iceberg at deploy
-  time.
+| Path | Purpose |
+| --- | --- |
+| `airflow/` | Astro project, generated DAGs, and extractors |
+| `contracts/lakehouse/` | Versioned Parquet and Iceberg contracts |
+| `dbt/` | Canonical bronze, silver, and gold models |
+| `lakehouse/` | Spark Thrift Compose runtime and optional MinIO harness |
+| `reports/` | Evidence site, snapshots, and PipeFlow architecture board |
+| `docs/` | Architecture, operations, and deployment guides |
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Data model](docs/DATA_MODEL.md)
-- [Edge cases](docs/EDGE_CASES.md)
-- [Development](docs/DEVELOPMENT.md)
-- [Deployment](docs/DEPLOY.md)
+- [Development](docs/DEVELOPMENT.md) — AWS configuration, commands, Airflow, and dbt workflows
+- [Architecture](docs/ARCHITECTURE.md) — runtime paths, assets, and orchestration
+- [Data model](docs/DATA_MODEL.md) — raw data, contracts, table grains, and snapshots
+- [Edge cases](docs/EDGE_CASES.md) — retry, failure, and extraction behavior
+- [Deployment](docs/DEPLOY.md) — GitHub Pages and supported runtime deployment paths
+- [Evidence reports](reports/README.md) — report development and snapshot regeneration
 
 ## License
 

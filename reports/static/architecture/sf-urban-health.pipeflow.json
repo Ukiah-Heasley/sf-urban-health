@@ -1,0 +1,2227 @@
+{
+  "schemaVersion": 3,
+  "title": "sf-urban-health Civic Data Lakehouse",
+  "nodes": [
+    {
+      "id": "area_sources",
+      "label": "External Civic Sources",
+      "type": "area",
+      "notes": "DataSF SODA API datasets used by the current checked-in pipeline.",
+      "x": 60,
+      "y": 90,
+      "width": 360,
+      "height": 780,
+      "details": {
+        "boundaryKind": "source",
+        "platform": "datasf",
+        "scope": "domain",
+        "owner": "City and County of San Francisco"
+      }
+    },
+    {
+      "id": "area_ingest",
+      "label": "Airflow Raw Ingest",
+      "type": "area",
+      "notes": "Generated Astro Airflow DAGs extract daily half-open intervals and emit dataset ingest assets.",
+      "x": 460,
+      "y": 90,
+      "width": 390,
+      "height": 780,
+      "details": {
+        "boundaryKind": "ingestion",
+        "platform": "airflow",
+        "scope": "deployment",
+        "owner": "data-platform",
+        "freshness": "daily 06:00 UTC"
+      }
+    },
+    {
+      "id": "area_s3",
+      "label": "S3 Raw and Metadata Event Lake",
+      "type": "area",
+      "notes": "Raw interval NDJSON plus JSON metadata events that drive bronze promotion.",
+      "x": 890,
+      "y": 90,
+      "width": 520,
+      "height": 780,
+      "details": {
+        "boundaryKind": "warehouse",
+        "platform": "s3",
+        "scope": "bucket",
+        "owner": "data-platform"
+      }
+    },
+    {
+      "id": "area_bronze",
+      "label": "Bronze Promotion",
+      "type": "area",
+      "notes": "Asset-triggered promotion of the oldest complete interval missing bronze Parquet.",
+      "x": 1450,
+      "y": 90,
+      "width": 470,
+      "height": 780,
+      "details": {
+        "boundaryKind": "transformation",
+        "platform": "airflow",
+        "scope": "dag",
+        "owner": "data-platform",
+        "maxActiveRuns": "1"
+      }
+    },
+    {
+      "id": "area_lakehouse",
+      "label": "Spark / Iceberg / dbt Lakehouse",
+      "type": "area",
+      "notes": "Local MinIO + Spark Thrift + Iceberg Hadoop catalog today; AWS Glue catalog path exists but is not yet Airflow-orchestrated.",
+      "x": 1960,
+      "y": 90,
+      "width": 600,
+      "height": 780,
+      "details": {
+        "boundaryKind": "lakehouse",
+        "platform": "spark-iceberg-dbt",
+        "scope": "warehouse",
+        "owner": "data-platform"
+      }
+    },
+    {
+      "id": "area_gold",
+      "label": "Gold Analytics Tables",
+      "type": "area",
+      "notes": "Six gold Iceberg outputs for civic health reporting and operational trust.",
+      "x": 2600,
+      "y": 90,
+      "width": 680,
+      "height": 780,
+      "details": {
+        "boundaryKind": "mart",
+        "platform": "iceberg",
+        "scope": "schema",
+        "owner": "analytics-engineering",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "area_consumers",
+      "label": "Consumers and Deployment",
+      "type": "area",
+      "notes": "Evidence reads exported Parquet snapshots and deploys to GitHub Pages; Dash is present as a disabled/live-future shell.",
+      "x": 3320,
+      "y": 90,
+      "width": 430,
+      "height": 780,
+      "details": {
+        "boundaryKind": "serving",
+        "platform": "evidence-dash-github-pages",
+        "scope": "site",
+        "owner": "analytics"
+      }
+    },
+    {
+      "id": "area_ops_future",
+      "label": "Observability, Quality, and Future Work",
+      "type": "area",
+      "notes": "Checked-in trust outputs plus future work kept visually distinct from current behavior.",
+      "x": 3790,
+      "y": 90,
+      "width": 600,
+      "height": 780,
+      "details": {
+        "boundaryKind": "governance",
+        "platform": "dbt-airflow",
+        "scope": "program",
+        "owner": "data-platform"
+      }
+    },
+    {
+      "id": "src_permits",
+      "label": "Building Permits",
+      "type": "source",
+      "notes": "DataSF SODA resource i98e-djp9.",
+      "x": 95,
+      "y": 190,
+      "width": 290,
+      "height": 130,
+      "parentId": "area_sources",
+      "primaryKey": "permit_number",
+      "timestamps": "data_loaded_at",
+      "details": {
+        "platform": "datasf",
+        "objectKind": "soda-api-dataset",
+        "resourceId": "i98e-djp9",
+        "watermark": "data_loaded_at",
+        "stableKey": "permit_number"
+      }
+    },
+    {
+      "id": "src_evictions",
+      "label": "Eviction Notices",
+      "type": "source",
+      "notes": "DataSF SODA resource 5cei-gny5.",
+      "x": 95,
+      "y": 365,
+      "width": 290,
+      "height": 130,
+      "parentId": "area_sources",
+      "primaryKey": "eviction_id",
+      "timestamps": "data_loaded_at",
+      "details": {
+        "platform": "datasf",
+        "objectKind": "soda-api-dataset",
+        "resourceId": "5cei-gny5",
+        "watermark": "data_loaded_at",
+        "stableKey": "eviction_id"
+      }
+    },
+    {
+      "id": "src_incidents",
+      "label": "Police Incident Reports",
+      "type": "source",
+      "notes": "DataSF SODA resource wg3w-h783.",
+      "x": 95,
+      "y": 540,
+      "width": 290,
+      "height": 130,
+      "parentId": "area_sources",
+      "primaryKey": "row_id",
+      "timestamps": "data_loaded_at",
+      "details": {
+        "platform": "datasf",
+        "objectKind": "soda-api-dataset",
+        "resourceId": "wg3w-h783",
+        "watermark": "data_loaded_at",
+        "stableKey": "row_id"
+      }
+    },
+    {
+      "id": "orch_ingest_dags",
+      "label": "Generated Ingest DAGs",
+      "type": "orchestrate",
+      "notes": "ingest_permits, ingest_evictions, ingest_incidents; scheduled daily at 06:00 UTC.",
+      "x": 500,
+      "y": 180,
+      "width": 310,
+      "height": 145,
+      "parentId": "area_ingest",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "dag-family",
+        "dagIds": "ingest_permits, ingest_evictions, ingest_incidents",
+        "schedule": "0 6 * * *",
+        "pattern": "extract_{dataset}_to_raw -> record_{dataset}_extract_metadata -> ingest_complete"
+      }
+    },
+    {
+      "id": "ingest_complete_assets",
+      "label": "Dataset Ingest Assets",
+      "type": "ingest",
+      "notes": "Permits, evictions, and incidents assets signal complete interval metadata is available.",
+      "x": 520,
+      "y": 390,
+      "width": 270,
+      "height": 120,
+      "parentId": "area_ingest",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "asset",
+        "assetCount": "3",
+        "behavior": "empty extracts still emit ingest asset"
+      }
+    },
+    {
+      "id": "contract_interval_extract",
+      "label": "Interval Extract Contract",
+      "type": "contract",
+      "notes": "Half-open interval [effective_start, data_interval_end), timestamp plus stable-key pagination, deterministic S3 paths.",
+      "x": 505,
+      "y": 585,
+      "width": 300,
+      "height": 130,
+      "parentId": "area_ingest",
+      "details": {
+        "objectKind": "extract-contract",
+        "schemaPolicy": "compact NDJSON records; metadata event for every interval",
+        "idempotencyKey": "dataset + data_interval_start + data_interval_end",
+        "consumer": "bronze promotion planner"
+      }
+    },
+    {
+      "id": "store_raw_ndjson",
+      "label": "Raw Interval NDJSON",
+      "type": "store",
+      "notes": "raw/{dataset}/data_interval_start=YYYYMMDDTHHMMSSZ/data_interval_end=YYYYMMDDTHHMMSSZ/records.ndjson",
+      "x": 930,
+      "y": 160,
+      "width": 430,
+      "height": 125,
+      "parentId": "area_s3",
+      "details": {
+        "platform": "s3",
+        "objectKind": "object-prefix",
+        "layer": "raw",
+        "loadPattern": "deterministic interval write",
+        "emptyExtractBehavior": "no raw object, metadata still written"
+      }
+    },
+    {
+      "id": "store_ingest_runs_current",
+      "label": "ingest_runs_current",
+      "type": "store",
+      "notes": "lake/metadata/events/ingest_runs_current/; current overwriteable event per dataset interval and promotion planner source of truth.",
+      "x": 930,
+      "y": 330,
+      "width": 205,
+      "height": 145,
+      "parentId": "area_s3",
+      "details": {
+        "platform": "s3",
+        "objectKind": "json-events",
+        "layer": "metadata",
+        "drivesPromotion": "true"
+      }
+    },
+    {
+      "id": "store_ingest_attempts",
+      "label": "ingest_run_attempts",
+      "type": "store",
+      "notes": "lake/metadata/events/ingest_run_attempts/; audit history only and does not drive promotion.",
+      "x": 1155,
+      "y": 330,
+      "width": 205,
+      "height": 145,
+      "parentId": "area_s3",
+      "details": {
+        "platform": "s3",
+        "objectKind": "json-events",
+        "layer": "metadata",
+        "drivesPromotion": "false",
+        "purpose": "audit history"
+      }
+    },
+    {
+      "id": "store_file_manifest_events",
+      "label": "file_manifest Events",
+      "type": "store",
+      "notes": "lake/metadata/events/file_manifest/; bronze file manifest events.",
+      "x": 930,
+      "y": 520,
+      "width": 205,
+      "height": 130,
+      "parentId": "area_s3",
+      "details": {
+        "platform": "s3",
+        "objectKind": "json-events",
+        "layer": "metadata"
+      }
+    },
+    {
+      "id": "table_metadata_parquet",
+      "label": "Compacted Metadata Parquet",
+      "type": "table",
+      "notes": "metadata_ingest_runs and metadata_file_manifest; query/reporting output only, rebuilt from JSON events each compaction.",
+      "x": 1155,
+      "y": 520,
+      "width": 205,
+      "height": 150,
+      "parentId": "area_s3",
+      "grain": "one row per ingest run or file manifest event",
+      "details": {
+        "platform": "parquet",
+        "objectKind": "metadata-output",
+        "layer": "metadata",
+        "tables": "metadata_ingest_runs, metadata_file_manifest"
+      }
+    },
+    {
+      "id": "orch_bronze_promotion",
+      "label": "promote_raw_to_bronze",
+      "type": "orchestrate",
+      "notes": "Asset-triggered Airflow DAG selects the oldest complete interval missing bronze promotion.",
+      "x": 1490,
+      "y": 175,
+      "width": 350,
+      "height": 150,
+      "parentId": "area_bronze",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "dag",
+        "dagId": "promote_raw_to_bronze",
+        "maxActiveRuns": "1",
+        "planLimit": "LAKEHOUSE_PLAN_LIMIT=1",
+        "noOpBehavior": "no interval selected emits no bronze promotion asset"
+      }
+    },
+    {
+      "id": "table_bronze_permits",
+      "label": "bronze_permits",
+      "type": "table",
+      "notes": "Source-faithful permits Parquet with lineage columns and raw payload.",
+      "x": 1485,
+      "y": 380,
+      "width": 185,
+      "height": 135,
+      "parentId": "area_bronze",
+      "primaryKey": "permit_number",
+      "timestamps": "_data_interval_start, _loaded_at",
+      "tests": "source faithful; no dedupe",
+      "details": {
+        "platform": "parquet",
+        "objectKind": "table",
+        "layer": "bronze",
+        "lineageColumns": "_ingest_run_id, _raw_s3_path, _data_interval_start, _loaded_at, _record_hash, _raw_payload"
+      }
+    },
+    {
+      "id": "table_bronze_evictions",
+      "label": "bronze_evictions",
+      "type": "table",
+      "notes": "Source-faithful evictions Parquet with lineage columns and raw payload.",
+      "x": 1700,
+      "y": 380,
+      "width": 185,
+      "height": 135,
+      "parentId": "area_bronze",
+      "primaryKey": "eviction_id",
+      "timestamps": "_data_interval_start, _loaded_at",
+      "tests": "source faithful; no filtering",
+      "details": {
+        "platform": "parquet",
+        "objectKind": "table",
+        "layer": "bronze",
+        "lineageColumns": "_ingest_run_id, _raw_s3_path, _data_interval_start, _loaded_at, _record_hash, _raw_payload"
+      }
+    },
+    {
+      "id": "table_bronze_incidents",
+      "label": "bronze_incidents",
+      "type": "table",
+      "notes": "Source-faithful incidents Parquet with lineage columns and raw payload.",
+      "x": 1592,
+      "y": 560,
+      "width": 185,
+      "height": 135,
+      "parentId": "area_bronze",
+      "primaryKey": "row_id",
+      "timestamps": "_data_interval_start, _loaded_at",
+      "tests": "source faithful; no status normalization",
+      "details": {
+        "platform": "parquet",
+        "objectKind": "table",
+        "layer": "bronze",
+        "lineageColumns": "_ingest_run_id, _raw_s3_path, _data_interval_start, _loaded_at, _record_hash, _raw_payload"
+      }
+    },
+    {
+      "id": "bronze_promotion_asset",
+      "label": "Bronze Promotion Asset",
+      "type": "ingest",
+      "notes": "Emitted only when a selected interval is promoted to bronze.",
+      "x": 1490,
+      "y": 725,
+      "width": 350,
+      "height": 90,
+      "parentId": "area_bronze",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "asset",
+        "scope": "complete promoted interval"
+      }
+    },
+    {
+      "id": "compute_lakehouse_runtime",
+      "label": "Lakehouse Runtime",
+      "type": "compute",
+      "notes": "Local: MinIO + Spark Thrift + Iceberg Hadoop catalog, warehouse s3a://lakehouse/warehouse/. AWS mode: Spark Thrift + AWS Glue Iceberg catalog + S3FileIO.",
+      "x": 2000,
+      "y": 155,
+      "width": 250,
+      "height": 155,
+      "parentId": "area_lakehouse",
+      "details": {
+        "platform": "spark-thrift",
+        "objectKind": "runtime",
+        "localMode": "MinIO + Iceberg Hadoop catalog",
+        "awsMode": "AWS Glue catalog + S3FileIO",
+        "currentLimitation": "Airflow does not yet orchestrate AWS Glue path"
+      }
+    },
+    {
+      "id": "catalog_iceberg",
+      "label": "Iceberg Catalog",
+      "type": "catalog",
+      "notes": "Hadoop catalog locally; AWS Glue catalog in AWS mode.",
+      "x": 2280,
+      "y": 155,
+      "width": 240,
+      "height": 125,
+      "parentId": "area_lakehouse",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "catalog",
+        "warehouse": "s3a://lakehouse/warehouse/",
+        "localCatalog": "Hadoop",
+        "awsCatalog": "AWS Glue"
+      }
+    },
+    {
+      "id": "orch_gold_build",
+      "label": "build_lakehouse_gold",
+      "type": "orchestrate",
+      "notes": "Triggered by bronze promotion asset; runs dbt debug then dbt build --select tag:lakehouse.",
+      "x": 2000,
+      "y": 345,
+      "width": 250,
+      "height": 140,
+      "parentId": "area_lakehouse",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "dag",
+        "steps": "dbt debug -> dbt build --select tag:lakehouse -> gold transform completion asset"
+      }
+    },
+    {
+      "id": "transform_dbt_lakehouse",
+      "label": "dbt Lakehouse Models",
+      "type": "transform",
+      "notes": "dbt runs inside Astro Airflow against mirrored airflow/include/dbt/; canonical dbt lives at repo root dbt/.",
+      "x": 2280,
+      "y": 345,
+      "width": 240,
+      "height": 140,
+      "parentId": "area_lakehouse",
+      "details": {
+        "platform": "dbt",
+        "objectKind": "project",
+        "selector": "tag:lakehouse",
+        "canonicalPath": "dbt/",
+        "airflowMirrorPath": "airflow/include/dbt/"
+      }
+    },
+    {
+      "id": "table_silver_permits_current",
+      "label": "permits_current",
+      "type": "table",
+      "notes": "Latest permit per permit_number.",
+      "x": 1995,
+      "y": 560,
+      "width": 170,
+      "height": 115,
+      "parentId": "area_lakehouse",
+      "grain": "latest permit per permit_number",
+      "primaryKey": "permit_number",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "silver"
+      }
+    },
+    {
+      "id": "table_silver_evictions_current",
+      "label": "evictions_current",
+      "type": "table",
+      "notes": "Latest eviction per eviction_id and derives eviction_type.",
+      "x": 2185,
+      "y": 560,
+      "width": 170,
+      "height": 115,
+      "parentId": "area_lakehouse",
+      "grain": "latest eviction per eviction_id",
+      "primaryKey": "eviction_id",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "silver",
+        "derivedFields": "eviction_type"
+      }
+    },
+    {
+      "id": "table_silver_incidents_current",
+      "label": "incidents_current",
+      "type": "table",
+      "notes": "Latest incident per row_id.",
+      "x": 2375,
+      "y": 560,
+      "width": 170,
+      "height": 115,
+      "parentId": "area_lakehouse",
+      "grain": "latest incident per row_id",
+      "primaryKey": "row_id",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "silver"
+      }
+    },
+    {
+      "id": "gold_transform_complete_asset",
+      "label": "Gold Transform Completion Asset",
+      "type": "ingest",
+      "notes": "Signals successful dbt lakehouse build.",
+      "x": 2110,
+      "y": 730,
+      "width": 300,
+      "height": 90,
+      "parentId": "area_lakehouse",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "asset"
+      }
+    },
+    {
+      "id": "table_housing_production",
+      "label": "housing_production",
+      "type": "table",
+      "notes": "Monthly residential permit activity by neighborhood, district, and use transition.",
+      "x": 2640,
+      "y": 160,
+      "width": 190,
+      "height": 135,
+      "parentId": "area_gold",
+      "grain": "month x neighborhood x district x use transition",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "table_permit_pipeline",
+      "label": "permit_pipeline",
+      "type": "table",
+      "notes": "Daily in-flight residential permits by neighborhood, lifecycle stage, and age bucket.",
+      "x": 2860,
+      "y": 160,
+      "width": 190,
+      "height": 135,
+      "parentId": "area_gold",
+      "grain": "day x neighborhood x lifecycle stage x age bucket",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "table_evictions",
+      "label": "evictions",
+      "type": "table",
+      "notes": "Monthly eviction counts by neighborhood, district, and type.",
+      "x": 2640,
+      "y": 340,
+      "width": 190,
+      "height": 135,
+      "parentId": "area_gold",
+      "grain": "month x neighborhood x district x eviction type",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "table_public_safety",
+      "label": "public_safety",
+      "type": "table",
+      "notes": "Monthly incident counts by neighborhood, district, and category.",
+      "x": 2860,
+      "y": 340,
+      "width": 190,
+      "height": 135,
+      "parentId": "area_gold",
+      "grain": "month x neighborhood x district x incident category",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "table_pipeline_health",
+      "label": "pipeline_health",
+      "type": "table",
+      "notes": "Daily operational metrics from ingest metadata and file manifests.",
+      "x": 3080,
+      "y": 250,
+      "width": 160,
+      "height": 135,
+      "parentId": "area_gold",
+      "grain": "day x dataset x operational check",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "table_data_trust",
+      "label": "data_trust",
+      "type": "table",
+      "notes": "Operational trust checks from latest metadata intervals.",
+      "x": 3080,
+      "y": 430,
+      "width": 160,
+      "height": 135,
+      "parentId": "area_gold",
+      "grain": "latest interval x dataset x trust check",
+      "details": {
+        "platform": "iceberg",
+        "objectKind": "dbt-model",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "metric_civic_health",
+      "label": "Civic Health Metrics",
+      "type": "metric",
+      "notes": "Housing production, permitting backlog, eviction counts, public safety activity, pipeline health, and trust outputs.",
+      "x": 2745,
+      "y": 650,
+      "width": 380,
+      "height": 120,
+      "parentId": "area_gold",
+      "details": {
+        "platform": "dbt",
+        "objectKind": "metric-set",
+        "sources": "six gold tables"
+      }
+    },
+    {
+      "id": "serve_evidence",
+      "label": "Evidence Static Site",
+      "type": "serve",
+      "notes": "Reads committed Parquet snapshots exported from the six gold tables.",
+      "x": 3360,
+      "y": 190,
+      "width": 340,
+      "height": 135,
+      "parentId": "area_consumers",
+      "details": {
+        "platform": "evidence",
+        "objectKind": "static-site",
+        "loadPattern": "committed Parquet snapshots",
+        "status": "current checked-in consumer"
+      }
+    },
+    {
+      "id": "serve_github_pages",
+      "label": "GitHub Pages Deployment",
+      "type": "serve",
+      "notes": "Publishes the static Evidence build.",
+      "x": 3360,
+      "y": 385,
+      "width": 340,
+      "height": 120,
+      "parentId": "area_consumers",
+      "details": {
+        "platform": "github-pages",
+        "objectKind": "deployment",
+        "status": "current checked-in deployment path"
+      }
+    },
+    {
+      "id": "serve_dash_shell",
+      "label": "Plotly Dash Shell",
+      "type": "serve",
+      "notes": "Six pages exist, but live warehouse loading is disabled and pages render empty states without credentials.",
+      "x": 3360,
+      "y": 565,
+      "width": 340,
+      "height": 140,
+      "parentId": "area_consumers",
+      "details": {
+        "platform": "plotly-dash",
+        "objectKind": "app-shell",
+        "pages": "6",
+        "status": "consumer shell; live warehouse loading disabled"
+      }
+    },
+    {
+      "id": "quality_dbt_tests",
+      "label": "dbt Tests and Contracts",
+      "type": "quality",
+      "notes": "Model contracts and tests around current, gold, and trust outputs.",
+      "x": 3835,
+      "y": 160,
+      "width": 230,
+      "height": 130,
+      "parentId": "area_ops_future",
+      "details": {
+        "platform": "dbt",
+        "objectKind": "test-suite",
+        "targetScope": "silver and gold models"
+      }
+    },
+    {
+      "id": "monitor_pipeline_health",
+      "label": "pipeline_health Monitoring",
+      "type": "monitor",
+      "notes": "Operational metrics from ingest metadata and file manifests.",
+      "x": 4100,
+      "y": 160,
+      "width": 230,
+      "height": 130,
+      "parentId": "area_ops_future",
+      "details": {
+        "platform": "dbt",
+        "objectKind": "monitor",
+        "source": "pipeline_health"
+      }
+    },
+    {
+      "id": "metric_data_trust_check",
+      "label": "data_trust Checks",
+      "type": "metric",
+      "notes": "Latest metadata interval checks used for operational trust reporting.",
+      "x": 3835,
+      "y": 335,
+      "width": 230,
+      "height": 130,
+      "parentId": "area_ops_future",
+      "details": {
+        "platform": "dbt",
+        "objectKind": "trust-checks",
+        "source": "data_trust"
+      }
+    },
+    {
+      "id": "catalog_governance",
+      "label": "Catalog and Governance View",
+      "type": "catalog",
+      "notes": "Contracts, lineage, ownership, and deployment environments need richer future coverage.",
+      "x": 4100,
+      "y": 335,
+      "width": 230,
+      "height": 130,
+      "parentId": "area_ops_future",
+      "details": {
+        "platform": "future",
+        "objectKind": "catalog-view",
+        "status": "future-next"
+      }
+    },
+    {
+      "id": "area_future_next",
+      "label": "Future / Next",
+      "type": "area",
+      "notes": "Future-looking items distinct from checked-in behavior.",
+      "x": 3830,
+      "y": 520,
+      "width": 520,
+      "height": 300,
+      "parentId": "area_ops_future",
+      "details": {
+        "boundaryKind": "roadmap",
+        "platform": "future",
+        "scope": "next"
+      }
+    },
+    {
+      "id": "future_aws_glue_orchestration",
+      "label": "AWS Glue Airflow Orchestration",
+      "type": "orchestrate",
+      "notes": "Add Airflow orchestration for the AWS Glue/S3 Iceberg path.",
+      "x": 3860,
+      "y": 590,
+      "width": 220,
+      "height": 90,
+      "parentId": "area_future_next",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "future-dag",
+        "status": "future-next"
+      }
+    },
+    {
+      "id": "future_live_dash",
+      "label": "Live Dash Warehouse Connection",
+      "type": "serve",
+      "notes": "Connect Dash pages to gold Iceberg tables instead of empty Polars frames.",
+      "x": 4110,
+      "y": 590,
+      "width": 220,
+      "height": 90,
+      "parentId": "area_future_next",
+      "details": {
+        "platform": "plotly-dash",
+        "objectKind": "future-live-loader",
+        "status": "future-next"
+      }
+    },
+    {
+      "id": "future_snapshot_export",
+      "label": "Automated Evidence Export",
+      "type": "orchestrate",
+      "notes": "Automate Evidence snapshot export after gold builds.",
+      "x": 3860,
+      "y": 705,
+      "width": 220,
+      "height": 90,
+      "parentId": "area_future_next",
+      "details": {
+        "platform": "airflow",
+        "objectKind": "future-task",
+        "status": "future-next"
+      }
+    },
+    {
+      "id": "future_monitoring",
+      "label": "Richer Monitoring",
+      "type": "monitor",
+      "notes": "Freshness, missing bronze intervals, failed metadata checks, and dbt failures.",
+      "x": 4110,
+      "y": 705,
+      "width": 220,
+      "height": 90,
+      "parentId": "area_future_next",
+      "details": {
+        "platform": "future",
+        "objectKind": "monitoring",
+        "status": "future-next"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_permits_to_ingest",
+      "from": "src_permits",
+      "to": "orch_ingest_dags",
+      "label": "SODA API",
+      "kind": "api"
+    },
+    {
+      "id": "e_evictions_to_ingest",
+      "from": "src_evictions",
+      "to": "orch_ingest_dags",
+      "label": "SODA API",
+      "kind": "api"
+    },
+    {
+      "id": "e_incidents_to_ingest",
+      "from": "src_incidents",
+      "to": "orch_ingest_dags",
+      "label": "SODA API",
+      "kind": "api"
+    },
+    {
+      "id": "e_contract_governs_ingest",
+      "from": "contract_interval_extract",
+      "to": "orch_ingest_dags",
+      "label": "governs interval extraction",
+      "kind": "contracts",
+      "direction": "none"
+    },
+    {
+      "id": "e_ingest_writes_raw",
+      "from": "orch_ingest_dags",
+      "to": "store_raw_ndjson",
+      "label": "writes deterministic NDJSON",
+      "kind": "write",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_ingest_writes_current",
+      "from": "orch_ingest_dags",
+      "to": "store_ingest_runs_current",
+      "label": "writes current interval event",
+      "kind": "write",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_ingest_writes_attempts",
+      "from": "orch_ingest_dags",
+      "to": "store_ingest_attempts",
+      "label": "writes audit attempt",
+      "kind": "write"
+    },
+    {
+      "id": "e_ingest_emits_assets",
+      "from": "orch_ingest_dags",
+      "to": "ingest_complete_assets",
+      "label": "emits ingest_complete",
+      "kind": "emits",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_assets_trigger_bronze",
+      "from": "ingest_complete_assets",
+      "to": "orch_bronze_promotion",
+      "label": "all three assets trigger",
+      "kind": "triggers",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_current_metadata_planner",
+      "from": "store_ingest_runs_current",
+      "to": "orch_bronze_promotion",
+      "label": "planner source of truth",
+      "kind": "read",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_raw_to_bronze_planner",
+      "from": "store_raw_ndjson",
+      "to": "orch_bronze_promotion",
+      "label": "selected complete interval",
+      "kind": "read"
+    },
+    {
+      "id": "e_promote_permits",
+      "from": "orch_bronze_promotion",
+      "to": "table_bronze_permits",
+      "label": "promotes permits",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_promote_evictions",
+      "from": "orch_bronze_promotion",
+      "to": "table_bronze_evictions",
+      "label": "promotes evictions",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_promote_incidents",
+      "from": "orch_bronze_promotion",
+      "to": "table_bronze_incidents",
+      "label": "promotes incidents",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_bronze_file_manifest",
+      "from": "orch_bronze_promotion",
+      "to": "store_file_manifest_events",
+      "label": "writes bronze manifest",
+      "kind": "write"
+    },
+    {
+      "id": "e_compact_metadata",
+      "from": "store_ingest_runs_current",
+      "to": "table_metadata_parquet",
+      "label": "compacts current runs",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_compact_manifest",
+      "from": "store_file_manifest_events",
+      "to": "table_metadata_parquet",
+      "label": "compacts manifests",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_bronze_asset",
+      "from": "orch_bronze_promotion",
+      "to": "bronze_promotion_asset",
+      "label": "emits on promoted interval",
+      "kind": "emits",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_bronze_asset_triggers_gold",
+      "from": "bronze_promotion_asset",
+      "to": "orch_gold_build",
+      "label": "triggers gold build",
+      "kind": "triggers",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_runtime_catalog",
+      "from": "compute_lakehouse_runtime",
+      "to": "catalog_iceberg",
+      "label": "uses catalog",
+      "kind": "catalogs",
+      "direction": "none"
+    },
+    {
+      "id": "e_gold_runs_dbt",
+      "from": "orch_gold_build",
+      "to": "transform_dbt_lakehouse",
+      "label": "dbt debug + build",
+      "kind": "runs",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_bronze_permits_to_silver",
+      "from": "table_bronze_permits",
+      "to": "table_silver_permits_current",
+      "label": "latest permit",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_bronze_evictions_to_silver",
+      "from": "table_bronze_evictions",
+      "to": "table_silver_evictions_current",
+      "label": "latest eviction",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_bronze_incidents_to_silver",
+      "from": "table_bronze_incidents",
+      "to": "table_silver_incidents_current",
+      "label": "latest incident",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_dbt_builds_silver_permits",
+      "from": "transform_dbt_lakehouse",
+      "to": "table_silver_permits_current",
+      "label": "builds",
+      "kind": "builds",
+      "direction": "none"
+    },
+    {
+      "id": "e_dbt_builds_silver_evictions",
+      "from": "transform_dbt_lakehouse",
+      "to": "table_silver_evictions_current",
+      "label": "builds",
+      "kind": "builds",
+      "direction": "none"
+    },
+    {
+      "id": "e_dbt_builds_silver_incidents",
+      "from": "transform_dbt_lakehouse",
+      "to": "table_silver_incidents_current",
+      "label": "builds",
+      "kind": "builds",
+      "direction": "none"
+    },
+    {
+      "id": "e_permits_to_housing",
+      "from": "table_silver_permits_current",
+      "to": "table_housing_production",
+      "label": "monthly residential activity",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_permits_to_pipeline",
+      "from": "table_silver_permits_current",
+      "to": "table_permit_pipeline",
+      "label": "daily in-flight permits",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_evictions_to_gold",
+      "from": "table_silver_evictions_current",
+      "to": "table_evictions",
+      "label": "monthly counts",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_incidents_to_gold",
+      "from": "table_silver_incidents_current",
+      "to": "table_public_safety",
+      "label": "monthly counts",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_metadata_to_pipeline_health",
+      "from": "table_metadata_parquet",
+      "to": "table_pipeline_health",
+      "label": "operational metrics",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_metadata_to_data_trust",
+      "from": "table_metadata_parquet",
+      "to": "table_data_trust",
+      "label": "latest interval trust",
+      "kind": "materializes"
+    },
+    {
+      "id": "e_dbt_gold_complete",
+      "from": "transform_dbt_lakehouse",
+      "to": "gold_transform_complete_asset",
+      "label": "emits completion",
+      "kind": "emits"
+    },
+    {
+      "id": "e_gold_to_metrics",
+      "from": "metric_civic_health",
+      "to": "area_gold",
+      "label": "summarizes",
+      "kind": "documents",
+      "direction": "none"
+    },
+    {
+      "id": "e_gold_to_evidence",
+      "from": "metric_civic_health",
+      "to": "serve_evidence",
+      "label": "exports Parquet snapshots",
+      "kind": "serves",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_evidence_to_pages",
+      "from": "serve_evidence",
+      "to": "serve_github_pages",
+      "label": "static deploy",
+      "kind": "publishes"
+    },
+    {
+      "id": "e_dash_disabled_dependency",
+      "from": "serve_dash_shell",
+      "to": "metric_civic_health",
+      "label": "future live read disabled",
+      "kind": "depends",
+      "direction": "none",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_quality_tests_silver",
+      "from": "quality_dbt_tests",
+      "to": "transform_dbt_lakehouse",
+      "label": "tests",
+      "kind": "tests",
+      "direction": "none"
+    },
+    {
+      "id": "e_quality_tests_gold",
+      "from": "quality_dbt_tests",
+      "to": "metric_civic_health",
+      "label": "tests outputs",
+      "kind": "tests",
+      "direction": "none"
+    },
+    {
+      "id": "e_pipeline_health_monitor",
+      "from": "table_pipeline_health",
+      "to": "monitor_pipeline_health",
+      "label": "monitored by",
+      "kind": "monitors",
+      "direction": "none"
+    },
+    {
+      "id": "e_data_trust_metric",
+      "from": "table_data_trust",
+      "to": "metric_data_trust_check",
+      "label": "feeds checks",
+      "kind": "serves"
+    },
+    {
+      "id": "e_catalog_documents",
+      "from": "catalog_governance",
+      "to": "metric_civic_health",
+      "label": "future governance",
+      "kind": "documents",
+      "direction": "none"
+    },
+    {
+      "id": "e_future_glue_from_runtime",
+      "from": "compute_lakehouse_runtime",
+      "to": "future_aws_glue_orchestration",
+      "label": "not yet orchestrated",
+      "kind": "depends",
+      "direction": "none",
+      "labelPriority": "important"
+    },
+    {
+      "id": "e_future_dash_from_shell",
+      "from": "serve_dash_shell",
+      "to": "future_live_dash",
+      "label": "enable live loader",
+      "kind": "depends",
+      "direction": "none"
+    },
+    {
+      "id": "e_future_evidence_export",
+      "from": "gold_transform_complete_asset",
+      "to": "future_snapshot_export",
+      "label": "automate after gold build",
+      "kind": "triggers",
+      "direction": "none"
+    },
+    {
+      "id": "e_future_monitoring",
+      "from": "monitor_pipeline_health",
+      "to": "future_monitoring",
+      "label": "expand monitors",
+      "kind": "depends",
+      "direction": "none"
+    }
+  ],
+  "boards": {
+    "orch_ingest_dags": {
+      "title": "Airflow Ingest DAG Pattern",
+      "nodes": [
+        {
+          "id": "ingest_dataset_param",
+          "label": "Dataset Config",
+          "type": "source",
+          "notes": "resource id, timestamp column, stable key, and dataset name.",
+          "x": 80,
+          "y": 120,
+          "width": 240,
+          "height": 120,
+          "details": {
+            "platform": "python",
+            "objectKind": "generated-config"
+          }
+        },
+        {
+          "id": "extract_to_raw",
+          "label": "extract_{dataset}_to_raw",
+          "type": "ingest",
+          "notes": "Queries half-open intervals, paginates by timestamp plus stable key, streams compact NDJSON, and uploads deterministic raw objects.",
+          "x": 380,
+          "y": 120,
+          "width": 300,
+          "height": 145,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "task",
+            "interval": "[effective_start, data_interval_end)"
+          }
+        },
+        {
+          "id": "record_extract_metadata",
+          "label": "record_{dataset}_extract_metadata",
+          "type": "ingest",
+          "notes": "Writes metadata for successful and empty extracts.",
+          "x": 740,
+          "y": 120,
+          "width": 300,
+          "height": 130,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "task"
+          }
+        },
+        {
+          "id": "ingest_complete",
+          "label": "ingest_complete",
+          "type": "ingest",
+          "notes": "Emits the dataset ingest asset.",
+          "x": 1100,
+          "y": 120,
+          "width": 230,
+          "height": 110,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "asset-task"
+          }
+        },
+        {
+          "id": "raw_interval_object",
+          "label": "records.ndjson",
+          "type": "store",
+          "notes": "raw/{dataset}/data_interval_start=YYYYMMDDTHHMMSSZ/data_interval_end=YYYYMMDDTHHMMSSZ/records.ndjson",
+          "x": 420,
+          "y": 340,
+          "width": 280,
+          "height": 110,
+          "details": {
+            "platform": "s3",
+            "objectKind": "object",
+            "layer": "raw"
+          }
+        },
+        {
+          "id": "current_event",
+          "label": "Current Ingest Event",
+          "type": "store",
+          "notes": "Overwriteable current event per dataset interval.",
+          "x": 760,
+          "y": 340,
+          "width": 250,
+          "height": 110,
+          "details": {
+            "platform": "s3",
+            "objectKind": "json-event",
+            "layer": "metadata"
+          }
+        },
+        {
+          "id": "attempt_event",
+          "label": "Attempt Audit Event",
+          "type": "store",
+          "notes": "Historical attempts for audit only.",
+          "x": 1040,
+          "y": 340,
+          "width": 250,
+          "height": 110,
+          "details": {
+            "platform": "s3",
+            "objectKind": "json-event",
+            "layer": "metadata"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "ingest_d1",
+          "from": "ingest_dataset_param",
+          "to": "extract_to_raw",
+          "label": "generates",
+          "kind": "builds",
+          "direction": "none"
+        },
+        {
+          "id": "ingest_d2",
+          "from": "extract_to_raw",
+          "to": "record_extract_metadata",
+          "label": "then",
+          "kind": "depends"
+        },
+        {
+          "id": "ingest_d3",
+          "from": "record_extract_metadata",
+          "to": "ingest_complete",
+          "label": "then",
+          "kind": "emits"
+        },
+        {
+          "id": "ingest_d4",
+          "from": "extract_to_raw",
+          "to": "raw_interval_object",
+          "label": "writes when non-empty",
+          "kind": "write"
+        },
+        {
+          "id": "ingest_d5",
+          "from": "record_extract_metadata",
+          "to": "current_event",
+          "label": "writes",
+          "kind": "write"
+        },
+        {
+          "id": "ingest_d6",
+          "from": "record_extract_metadata",
+          "to": "attempt_event",
+          "label": "writes audit",
+          "kind": "write"
+        }
+      ]
+    },
+    "orch_bronze_promotion": {
+      "title": "Bronze Promotion Planner and Branching",
+      "nodes": [
+        {
+          "id": "select_bronze_interval",
+          "label": "select_bronze_interval",
+          "type": "orchestrate",
+          "notes": "Selects the oldest complete interval missing bronze promotion from current S3 JSON metadata.",
+          "x": 80,
+          "y": 150,
+          "width": 270,
+          "height": 130,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "task",
+            "planLimit": "1"
+          }
+        },
+        {
+          "id": "branch_on_bronze_plan",
+          "label": "branch_on_bronze_plan",
+          "type": "orchestrate",
+          "notes": "No selected interval takes a no-op branch and emits no bronze promotion asset.",
+          "x": 410,
+          "y": 150,
+          "width": 270,
+          "height": 130,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "branch-task"
+          }
+        },
+        {
+          "id": "promote_permits",
+          "label": "promote_permits_to_bronze",
+          "type": "transform",
+          "notes": "Writes source-faithful permits bronze Parquet.",
+          "x": 760,
+          "y": 80,
+          "width": 250,
+          "height": 110,
+          "details": {
+            "platform": "spark",
+            "objectKind": "task"
+          }
+        },
+        {
+          "id": "promote_evictions",
+          "label": "promote_evictions_to_bronze",
+          "type": "transform",
+          "notes": "Writes source-faithful evictions bronze Parquet.",
+          "x": 760,
+          "y": 230,
+          "width": 250,
+          "height": 110,
+          "details": {
+            "platform": "spark",
+            "objectKind": "task"
+          }
+        },
+        {
+          "id": "promote_incidents",
+          "label": "promote_incidents_to_bronze",
+          "type": "transform",
+          "notes": "Writes source-faithful incidents bronze Parquet.",
+          "x": 760,
+          "y": 380,
+          "width": 250,
+          "height": 110,
+          "details": {
+            "platform": "spark",
+            "objectKind": "task"
+          }
+        },
+        {
+          "id": "compact_lakehouse_metadata",
+          "label": "compact_lakehouse_metadata",
+          "type": "transform",
+          "notes": "Rebuilds compacted metadata Parquet from JSON events.",
+          "x": 1080,
+          "y": 230,
+          "width": 270,
+          "height": 120,
+          "details": {
+            "platform": "spark",
+            "objectKind": "task"
+          }
+        },
+        {
+          "id": "bronze_complete",
+          "label": "bronze_promotion_complete",
+          "type": "ingest",
+          "notes": "Emits promotion asset after real promotion work completes.",
+          "x": 1420,
+          "y": 230,
+          "width": 250,
+          "height": 110,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "asset-task"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "bronze_d1",
+          "from": "select_bronze_interval",
+          "to": "branch_on_bronze_plan",
+          "label": "plan",
+          "kind": "depends"
+        },
+        {
+          "id": "bronze_d2",
+          "from": "branch_on_bronze_plan",
+          "to": "promote_permits",
+          "label": "selected interval",
+          "kind": "triggers"
+        },
+        {
+          "id": "bronze_d3",
+          "from": "branch_on_bronze_plan",
+          "to": "promote_evictions",
+          "label": "selected interval",
+          "kind": "triggers"
+        },
+        {
+          "id": "bronze_d4",
+          "from": "branch_on_bronze_plan",
+          "to": "promote_incidents",
+          "label": "selected interval",
+          "kind": "triggers"
+        },
+        {
+          "id": "bronze_d5",
+          "from": "promote_permits",
+          "to": "compact_lakehouse_metadata",
+          "label": "after promotion",
+          "kind": "depends"
+        },
+        {
+          "id": "bronze_d6",
+          "from": "promote_evictions",
+          "to": "compact_lakehouse_metadata",
+          "label": "after promotion",
+          "kind": "depends"
+        },
+        {
+          "id": "bronze_d7",
+          "from": "promote_incidents",
+          "to": "compact_lakehouse_metadata",
+          "label": "after promotion",
+          "kind": "depends"
+        },
+        {
+          "id": "bronze_d8",
+          "from": "compact_lakehouse_metadata",
+          "to": "bronze_complete",
+          "label": "complete",
+          "kind": "emits"
+        }
+      ]
+    },
+    "area_s3": {
+      "title": "S3 Storage Layout",
+      "nodes": [
+        {
+          "id": "s3_raw",
+          "label": "raw/{dataset}/...",
+          "type": "store",
+          "notes": "Interval-partitioned compact NDJSON records.",
+          "x": 80,
+          "y": 130,
+          "width": 300,
+          "height": 120,
+          "details": {
+            "platform": "s3",
+            "objectKind": "prefix",
+            "layer": "raw"
+          }
+        },
+        {
+          "id": "s3_ingest_current",
+          "label": "metadata/events/ingest_runs_current/",
+          "type": "store",
+          "notes": "Current promotion source of truth.",
+          "x": 440,
+          "y": 130,
+          "width": 300,
+          "height": 120,
+          "details": {
+            "platform": "s3",
+            "objectKind": "prefix",
+            "layer": "metadata"
+          }
+        },
+        {
+          "id": "s3_attempts",
+          "label": "metadata/events/ingest_run_attempts/",
+          "type": "store",
+          "notes": "Audit history only.",
+          "x": 800,
+          "y": 130,
+          "width": 300,
+          "height": 120,
+          "details": {
+            "platform": "s3",
+            "objectKind": "prefix",
+            "layer": "metadata"
+          }
+        },
+        {
+          "id": "s3_bronze",
+          "label": "bronze Parquet",
+          "type": "store",
+          "notes": "Source-faithful Parquet tables for permits, evictions, and incidents.",
+          "x": 440,
+          "y": 340,
+          "width": 300,
+          "height": 120,
+          "details": {
+            "platform": "s3",
+            "objectKind": "parquet-prefix",
+            "layer": "bronze"
+          }
+        },
+        {
+          "id": "s3_file_manifest",
+          "label": "metadata/events/file_manifest/",
+          "type": "store",
+          "notes": "Bronze file manifest events.",
+          "x": 800,
+          "y": 340,
+          "width": 300,
+          "height": 120,
+          "details": {
+            "platform": "s3",
+            "objectKind": "prefix",
+            "layer": "metadata"
+          }
+        },
+        {
+          "id": "s3_metadata_parquet",
+          "label": "metadata Parquet",
+          "type": "table",
+          "notes": "metadata_ingest_runs and metadata_file_manifest rebuilt from JSON event prefixes.",
+          "x": 620,
+          "y": 540,
+          "width": 300,
+          "height": 120,
+          "details": {
+            "platform": "parquet",
+            "objectKind": "table-output",
+            "layer": "metadata"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "s3_e1",
+          "from": "s3_raw",
+          "to": "s3_bronze",
+          "label": "promotes",
+          "kind": "materializes"
+        },
+        {
+          "id": "s3_e2",
+          "from": "s3_ingest_current",
+          "to": "s3_bronze",
+          "label": "planner truth",
+          "kind": "read"
+        },
+        {
+          "id": "s3_e3",
+          "from": "s3_bronze",
+          "to": "s3_file_manifest",
+          "label": "emits manifests",
+          "kind": "write"
+        },
+        {
+          "id": "s3_e4",
+          "from": "s3_ingest_current",
+          "to": "s3_metadata_parquet",
+          "label": "compacts",
+          "kind": "materializes"
+        },
+        {
+          "id": "s3_e5",
+          "from": "s3_file_manifest",
+          "to": "s3_metadata_parquet",
+          "label": "compacts",
+          "kind": "materializes"
+        },
+        {
+          "id": "s3_e6",
+          "from": "s3_attempts",
+          "to": "s3_metadata_parquet",
+          "label": "audit context only",
+          "kind": "documents",
+          "direction": "none"
+        }
+      ]
+    },
+    "transform_dbt_lakehouse": {
+      "title": "dbt Medallion Model Lineage",
+      "nodes": [
+        {
+          "id": "dbt_bronze_adapters",
+          "label": "Bronze Adapters",
+          "type": "transform",
+          "notes": "dbt-facing adapters over bronze source-faithful Parquet.",
+          "x": 80,
+          "y": 160,
+          "width": 250,
+          "height": 120,
+          "details": {
+            "platform": "dbt",
+            "objectKind": "model",
+            "layer": "bronze"
+          }
+        },
+        {
+          "id": "dbt_silver_current",
+          "label": "Silver Current Models",
+          "type": "table",
+          "notes": "permits_current, evictions_current, incidents_current.",
+          "x": 410,
+          "y": 160,
+          "width": 270,
+          "height": 120,
+          "details": {
+            "platform": "dbt",
+            "objectKind": "models",
+            "layer": "silver"
+          }
+        },
+        {
+          "id": "dbt_gold_civic",
+          "label": "Gold Civic Analytics",
+          "type": "table",
+          "notes": "housing_production, permit_pipeline, evictions, public_safety.",
+          "x": 760,
+          "y": 90,
+          "width": 290,
+          "height": 120,
+          "details": {
+            "platform": "dbt",
+            "objectKind": "models",
+            "layer": "gold"
+          }
+        },
+        {
+          "id": "dbt_gold_ops",
+          "label": "Gold Operational Trust",
+          "type": "table",
+          "notes": "pipeline_health and data_trust.",
+          "x": 760,
+          "y": 270,
+          "width": 290,
+          "height": 120,
+          "details": {
+            "platform": "dbt",
+            "objectKind": "models",
+            "layer": "gold"
+          }
+        },
+        {
+          "id": "dbt_tests",
+          "label": "dbt Tests",
+          "type": "quality",
+          "notes": "Contracts and tests run with dbt build --select tag:lakehouse.",
+          "x": 1120,
+          "y": 180,
+          "width": 250,
+          "height": 120,
+          "details": {
+            "platform": "dbt",
+            "objectKind": "tests"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "dbt_e1",
+          "from": "dbt_bronze_adapters",
+          "to": "dbt_silver_current",
+          "label": "latest per natural key",
+          "kind": "materializes"
+        },
+        {
+          "id": "dbt_e2",
+          "from": "dbt_silver_current",
+          "to": "dbt_gold_civic",
+          "label": "civic marts",
+          "kind": "materializes"
+        },
+        {
+          "id": "dbt_e3",
+          "from": "dbt_silver_current",
+          "to": "dbt_gold_ops",
+          "label": "trust and health",
+          "kind": "materializes"
+        },
+        {
+          "id": "dbt_e4",
+          "from": "dbt_tests",
+          "to": "dbt_silver_current",
+          "label": "tests",
+          "kind": "tests",
+          "direction": "none"
+        },
+        {
+          "id": "dbt_e5",
+          "from": "dbt_tests",
+          "to": "dbt_gold_civic",
+          "label": "tests",
+          "kind": "tests",
+          "direction": "none"
+        },
+        {
+          "id": "dbt_e6",
+          "from": "dbt_tests",
+          "to": "dbt_gold_ops",
+          "label": "tests",
+          "kind": "tests",
+          "direction": "none"
+        }
+      ]
+    },
+    "area_lakehouse": {
+      "title": "Runtime Modes: Local MinIO vs AWS Glue",
+      "nodes": [
+        {
+          "id": "runtime_local",
+          "label": "Local Runtime",
+          "type": "compute",
+          "notes": "MinIO + Spark Thrift + Iceberg Hadoop catalog.",
+          "x": 90,
+          "y": 150,
+          "width": 270,
+          "height": 130,
+          "details": {
+            "platform": "minio-spark",
+            "objectKind": "runtime",
+            "warehouse": "s3a://lakehouse/warehouse/"
+          }
+        },
+        {
+          "id": "runtime_aws",
+          "label": "AWS Mode",
+          "type": "compute",
+          "notes": "Spark Thrift + AWS Glue Iceberg catalog + S3FileIO.",
+          "x": 90,
+          "y": 370,
+          "width": 270,
+          "height": 130,
+          "details": {
+            "platform": "aws-spark",
+            "objectKind": "runtime",
+            "status": "path exists; not yet Airflow-orchestrated"
+          }
+        },
+        {
+          "id": "catalog_hadoop",
+          "label": "Iceberg Hadoop Catalog",
+          "type": "catalog",
+          "notes": "Local catalog over MinIO-backed warehouse.",
+          "x": 450,
+          "y": 150,
+          "width": 280,
+          "height": 120,
+          "details": {
+            "platform": "iceberg",
+            "objectKind": "catalog"
+          }
+        },
+        {
+          "id": "catalog_glue",
+          "label": "AWS Glue Catalog",
+          "type": "catalog",
+          "notes": "AWS catalog for Iceberg tables with S3FileIO.",
+          "x": 450,
+          "y": 370,
+          "width": 280,
+          "height": 120,
+          "details": {
+            "platform": "aws-glue",
+            "objectKind": "catalog"
+          }
+        },
+        {
+          "id": "airflow_gap",
+          "label": "Airflow Glue Orchestration Gap",
+          "type": "monitor",
+          "notes": "Important current limitation: Airflow does not yet orchestrate the AWS Glue path.",
+          "x": 820,
+          "y": 365,
+          "width": 300,
+          "height": 130,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "limitation",
+            "status": "future-next"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "runtime_e1",
+          "from": "runtime_local",
+          "to": "catalog_hadoop",
+          "label": "uses",
+          "kind": "catalogs",
+          "direction": "none"
+        },
+        {
+          "id": "runtime_e2",
+          "from": "runtime_aws",
+          "to": "catalog_glue",
+          "label": "uses",
+          "kind": "catalogs",
+          "direction": "none"
+        },
+        {
+          "id": "runtime_e3",
+          "from": "runtime_aws",
+          "to": "airflow_gap",
+          "label": "not orchestrated",
+          "kind": "depends",
+          "direction": "none"
+        }
+      ]
+    },
+    "area_consumers": {
+      "title": "Consumers: Evidence Snapshots and Dash Shell",
+      "nodes": [
+        {
+          "id": "consumer_gold_tables",
+          "label": "Six Gold Tables",
+          "type": "table",
+          "notes": "housing_production, permit_pipeline, evictions, public_safety, pipeline_health, data_trust.",
+          "x": 80,
+          "y": 180,
+          "width": 300,
+          "height": 130,
+          "details": {
+            "platform": "iceberg",
+            "objectKind": "tables",
+            "layer": "gold"
+          }
+        },
+        {
+          "id": "snapshot_export",
+          "label": "Committed Parquet Snapshots",
+          "type": "store",
+          "notes": "Exported snapshots checked into the Evidence site.",
+          "x": 450,
+          "y": 180,
+          "width": 290,
+          "height": 120,
+          "details": {
+            "platform": "parquet",
+            "objectKind": "snapshot",
+            "layer": "gold"
+          }
+        },
+        {
+          "id": "evidence_pages",
+          "label": "Evidence Pages",
+          "type": "serve",
+          "notes": "Static site built from committed snapshots.",
+          "x": 810,
+          "y": 180,
+          "width": 260,
+          "height": 120,
+          "details": {
+            "platform": "evidence",
+            "objectKind": "site"
+          }
+        },
+        {
+          "id": "github_pages",
+          "label": "GitHub Pages",
+          "type": "serve",
+          "notes": "Static deployment target.",
+          "x": 1140,
+          "y": 180,
+          "width": 250,
+          "height": 120,
+          "details": {
+            "platform": "github-pages",
+            "objectKind": "deployment"
+          }
+        },
+        {
+          "id": "dash_empty_shell",
+          "label": "Dash Empty-State Shell",
+          "type": "serve",
+          "notes": "Six pages render empty states; live warehouse loading is disabled without credentials.",
+          "x": 810,
+          "y": 400,
+          "width": 300,
+          "height": 130,
+          "details": {
+            "platform": "plotly-dash",
+            "objectKind": "app-shell",
+            "status": "disabled live warehouse loading"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "consumer_e1",
+          "from": "consumer_gold_tables",
+          "to": "snapshot_export",
+          "label": "manual/exported snapshots",
+          "kind": "materializes"
+        },
+        {
+          "id": "consumer_e2",
+          "from": "snapshot_export",
+          "to": "evidence_pages",
+          "label": "reads",
+          "kind": "read"
+        },
+        {
+          "id": "consumer_e3",
+          "from": "evidence_pages",
+          "to": "github_pages",
+          "label": "deploys",
+          "kind": "publishes"
+        },
+        {
+          "id": "consumer_e4",
+          "from": "dash_empty_shell",
+          "to": "consumer_gold_tables",
+          "label": "future live connection disabled",
+          "kind": "depends",
+          "direction": "none"
+        }
+      ]
+    },
+    "area_ops_future": {
+      "title": "Quality, Observability, and Future Work",
+      "nodes": [
+        {
+          "id": "ops_contracts",
+          "label": "Contracts",
+          "type": "contract",
+          "notes": "Dataset keys, watermarks, interval metadata, and checked model contracts.",
+          "x": 80,
+          "y": 130,
+          "width": 260,
+          "height": 120,
+          "details": {
+            "objectKind": "contract-set"
+          }
+        },
+        {
+          "id": "ops_dbt_tests",
+          "label": "dbt Tests",
+          "type": "quality",
+          "notes": "Model checks run as part of dbt build --select tag:lakehouse.",
+          "x": 410,
+          "y": 130,
+          "width": 260,
+          "height": 120,
+          "details": {
+            "platform": "dbt",
+            "objectKind": "test-suite"
+          }
+        },
+        {
+          "id": "ops_pipeline_health",
+          "label": "pipeline_health",
+          "type": "metric",
+          "notes": "Daily operational metrics from ingest metadata and file manifests.",
+          "x": 740,
+          "y": 130,
+          "width": 260,
+          "height": 120,
+          "details": {
+            "platform": "iceberg",
+            "objectKind": "gold-table"
+          }
+        },
+        {
+          "id": "ops_data_trust",
+          "label": "data_trust",
+          "type": "metric",
+          "notes": "Operational trust checks from latest metadata intervals.",
+          "x": 1070,
+          "y": 130,
+          "width": 260,
+          "height": 120,
+          "details": {
+            "platform": "iceberg",
+            "objectKind": "gold-table"
+          }
+        },
+        {
+          "id": "ops_future",
+          "label": "Future / Next Backlog",
+          "type": "area",
+          "notes": "Keep future work visually distinct from checked-in behavior.",
+          "x": 80,
+          "y": 360,
+          "width": 1250,
+          "height": 260,
+          "details": {
+            "boundaryKind": "roadmap",
+            "platform": "future",
+            "scope": "next"
+          }
+        },
+        {
+          "id": "ops_future_glue",
+          "label": "Glue orchestration",
+          "type": "orchestrate",
+          "notes": "Airflow orchestration for AWS Glue/S3 Iceberg path.",
+          "x": 120,
+          "y": 435,
+          "width": 210,
+          "height": 90,
+          "parentId": "ops_future",
+          "details": {
+            "platform": "airflow",
+            "objectKind": "future"
+          }
+        },
+        {
+          "id": "ops_future_dash",
+          "label": "Live Dash",
+          "type": "serve",
+          "notes": "Live connection to gold Iceberg tables.",
+          "x": 370,
+          "y": 435,
+          "width": 210,
+          "height": 90,
+          "parentId": "ops_future",
+          "details": {
+            "platform": "plotly-dash",
+            "objectKind": "future"
+          }
+        },
+        {
+          "id": "ops_future_evidence",
+          "label": "Auto Evidence export",
+          "type": "orchestrate",
+          "notes": "Automated snapshot export after gold builds.",
+          "x": 620,
+          "y": 435,
+          "width": 210,
+          "height": 90,
+          "parentId": "ops_future",
+          "details": {
+            "platform": "airflow",
+            "objectKind": "future"
+          }
+        },
+        {
+          "id": "ops_future_alerts",
+          "label": "Richer alerts",
+          "type": "monitor",
+          "notes": "Freshness, missing bronze intervals, metadata failures, and dbt failures.",
+          "x": 870,
+          "y": 435,
+          "width": 210,
+          "height": 90,
+          "parentId": "ops_future",
+          "details": {
+            "platform": "future",
+            "objectKind": "future"
+          }
+        },
+        {
+          "id": "ops_future_catalog",
+          "label": "Catalog/governance",
+          "type": "catalog",
+          "notes": "Contracts, lineage, ownership, deployment environments, and expanded civic datasets.",
+          "x": 1120,
+          "y": 435,
+          "width": 190,
+          "height": 90,
+          "parentId": "ops_future",
+          "details": {
+            "platform": "future",
+            "objectKind": "future"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "ops_e1",
+          "from": "ops_contracts",
+          "to": "ops_dbt_tests",
+          "label": "govern checks",
+          "kind": "contracts",
+          "direction": "none"
+        },
+        {
+          "id": "ops_e2",
+          "from": "ops_dbt_tests",
+          "to": "ops_pipeline_health",
+          "label": "tests",
+          "kind": "tests",
+          "direction": "none"
+        },
+        {
+          "id": "ops_e3",
+          "from": "ops_dbt_tests",
+          "to": "ops_data_trust",
+          "label": "tests",
+          "kind": "tests",
+          "direction": "none"
+        },
+        {
+          "id": "ops_e4",
+          "from": "ops_pipeline_health",
+          "to": "ops_future_alerts",
+          "label": "expand monitor coverage",
+          "kind": "depends",
+          "direction": "none"
+        },
+        {
+          "id": "ops_e5",
+          "from": "ops_data_trust",
+          "to": "ops_future_catalog",
+          "label": "richer governance",
+          "kind": "documents",
+          "direction": "none"
+        }
+      ]
+    }
+  }
+}

@@ -87,22 +87,12 @@ Do not mix dbt `staging/`, `intermediate/`, `stg_*`, `int_*`, or `mart_*`
 model names with this lakehouse slice. Gold tables do not use a `mart_` prefix
 because the `gold` layer already denotes business-facing marts.
 
-## Local lakehouse development (dbt + Spark + Iceberg)
+## Catalog behavior (dbt + Spark + Iceberg)
 
-The `lakehouse/` Compose stack provides MinIO, deterministic bucket creation,
-and Spark Thrift Server with pinned Iceberg and S3A dependencies. dbt connects
-through `dbt/profiles.yml`.
-
-Local fixture preparation (`make lakehouse-prepare-fixtures`) is destructive to
-the local MinIO bucket. It seeds
-`tests/fixtures/lakehouse/{permits,evictions,incidents}.ndjson` as raw NDJSON
-under production-shaped interval keys, writes ingest metadata events, promotes
-bronze Parquet for all three datasets, and restarts Spark Thrift after the
-bucket wipe. `lakehouse-prepare-permits-fixture` is a compatibility alias.
-
-`bronze_*` models are ephemeral dbt read adapters over bronze Parquet prefixes.
-`metadata_*` models are ephemeral dbt read adapters over compacted metadata
-Parquet prefixes. They are inlined into downstream models because the Iceberg
+The AWS data path uses Spark Thrift with the AWS Glue Iceberg catalog. dbt reads
+bronze and compacted metadata Parquet from the configured S3 prefixes through
+ephemeral `bronze_*` and `metadata_*` adapters, then materializes silver and
+gold tables in `sf_urban_health`. The adapters are inlined because the Iceberg
 catalog does not support persisted views.
 
 Silver `*_current` models deduplicate bronze to one latest row per natural key
@@ -111,16 +101,15 @@ using `_loaded_at desc` with deterministic tie-breakers (`_extracted_at`,
 `current_status = lower(status)` and `completed_at` from `status_date` when
 status is complete. `evictions_current` coerces nullable boolean cause flags to
 false and derives `eviction_type` as `no_fault` when any no-fault flag is true,
-otherwise `at_fault`. All three silver models materialize as Iceberg tables in
-`sf_urban_health`.
+otherwise `at_fault`.
 
 Gold models aggregate silver for monthly housing production, in-flight permit
 pipeline snapshots, monthly eviction counts, and monthly public-safety incident
-counts. Gold also aggregates compacted metadata into `pipeline_health` and
-`data_trust`, which describe operational pipeline health and metadata trust
-rather than independent source-system quality. They materialize as Iceberg
-tables in `sf_urban_health`. The `smoke_iceberg` model remains a harmless local
-connectivity check and does not read bronze.
+counts. They also aggregate compacted metadata into `pipeline_health` and
+`data_trust`, which describe operational pipeline health and metadata trust,
+not independent source-system quality. `make spark-up` uses a local Hadoop
+catalog and deterministic MinIO fixtures only to exercise the same model path
+without AWS credentials.
 
 ## Consumer snapshot shapes
 
