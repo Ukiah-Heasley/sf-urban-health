@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator, Literal, Mapping
 
 import duckdb
 import pyarrow as pa
@@ -28,8 +29,15 @@ INGEST_RUNS_CURRENT_PREFIX = f"{METADATA_EVENTS_PREFIX}/ingest_runs_current"
 INGEST_RUN_ATTEMPTS_PREFIX = f"{METADATA_EVENTS_PREFIX}/ingest_run_attempts"
 METADATA_PARQUET_INGEST_RUNS_PREFIX = "lake/parquet/metadata/ingest_runs/"
 METADATA_PARQUET_FILE_MANIFEST_PREFIX = "lake/parquet/metadata/file_manifest/"
+PROMOTION_PLAN_SNAPSHOTS_PREFIX = "lake/metadata/promotion_plans"
 EVENT_VERSION = 1
-LAKEHOUSE_PLAN_LIMIT = 1
+PLAN_SNAPSHOT_VERSION = 1
+
+_DEFAULT_REQUIRED_DATASETS = ("permits", "evictions", "incidents")
+_PLAN_CONF_KEYS = frozenset(
+    {"plan_mode", "plan_start", "plan_end", "plan_max_intervals"}
+)
+_PLAN_MODES = frozenset({"pending", "refresh"})
 
 
 @dataclass(frozen=True)
@@ -61,6 +69,38 @@ class LakehouseIntervalPlan:
     existing_manifest_event_keys: dict[str, str]
     mode: str
     reason: str
+
+
+@dataclass(frozen=True)
+class LakehousePlanConfig:
+    """Validated promotion-planner inputs for one Airflow DAG run."""
+
+    mode: str
+    start: datetime | None
+    end: datetime | None
+    max_intervals: int | None
+
+
+@dataclass(frozen=True)
+class LakehouseIntervalResolution:
+    """Fresh planner state for one exact interval.
+
+    ``ready`` includes a plan that can be promoted now. ``complete`` means all
+    non-empty required datasets already have bronze manifest receipts.
+    ``blocked_failed`` and ``incomplete`` deliberately carry no plan so callers
+    cannot accidentally promote a stale snapshot after its current state changed.
+    """
+
+    data_interval_start: datetime
+    data_interval_end: datetime
+    state: Literal["ready", "complete", "blocked_failed", "incomplete"]
+    eligible: bool
+    reason: str
+    dataset_statuses: dict[str, str | None]
+    dataset_complete: dict[str, bool]
+    ingest_event_keys: dict[str, str]
+    existing_manifest_event_keys: dict[str, str]
+    plan: LakehouseIntervalPlan | None
 
 
 @dataclass(frozen=True)
@@ -272,6 +312,80 @@ def lakehouse_interval_plan_from_dict(
     )
 
 
+def promotion_plan_snapshot_key(*, dag_run_id: str) -> str:
+    """Return the durable, non-event key for one promotion-run snapshot."""
+
+    if not dag_run_id:
+        raise LakehouseLoadError("promotion plan snapshots require a DAG run id")
+    return (
+        f"{PROMOTION_PLAN_SNAPSHOTS_PREFIX}/"
+        f"run_id_hash={run_id_hash(dag_run_id)}/plans.json"
+    )
+
+
+def find_lakehouse_plan_snapshot(
+    storage: StorageConfig,
+    *,
+    dag_run_id: str,
+) -> str | None:
+    """Return an existing immutable promotion snapshot for this DAG run, if any."""
+
+    key = promotion_plan_snapshot_key(dag_run_id=dag_run_id)
+    return key if _key_exists(storage, key) else None
+
+
+def write_lakehouse_plan_snapshot(
+    storage: StorageConfig,
+    *,
+    dag_run_id: str,
+    plans: list[LakehouseIntervalPlan],
+) -> str:
+    """Persist a promotion discovery snapshot outside Airflow XCom.
+
+    A long catchup can contain hundreds of interval plans, which exceeds the
+    default Airflow XCom size. The snapshot is deliberately stored outside the
+    metadata event prefixes, so compaction never reads or deletes it. Retries
+    reread this exact key rather than discovering newly-arrived intervals.
+    """
+
+    key = promotion_plan_snapshot_key(dag_run_id=dag_run_id)
+    if _key_exists(storage, key):
+        return key
+    payload = {
+        "snapshot_version": PLAN_SNAPSHOT_VERSION,
+        "plans": [lakehouse_interval_plan_to_dict(plan) for plan in plans],
+    }
+    storage.write_bytes(
+        key,
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+    )
+    return key
+
+
+def read_lakehouse_plan_snapshot(
+    storage: StorageConfig,
+    key: str,
+) -> list[LakehouseIntervalPlan]:
+    """Load one immutable promotion discovery snapshot from object storage."""
+
+    payload = json.loads(storage.read_bytes(key).decode("utf-8"))
+    if not isinstance(payload, Mapping):
+        raise LakehouseLoadError(f"invalid promotion plan snapshot at {key!r}")
+    if payload.get("snapshot_version") != PLAN_SNAPSHOT_VERSION:
+        raise LakehouseLoadError(
+            f"unsupported promotion plan snapshot version at {key!r}"
+        )
+    raw_plans = payload.get("plans")
+    if not isinstance(raw_plans, list):
+        raise LakehouseLoadError(
+            f"promotion plan snapshot at {key!r} has no plans list"
+        )
+    try:
+        return [lakehouse_interval_plan_from_dict(plan) for plan in raw_plans]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LakehouseLoadError(f"invalid promotion plan snapshot at {key!r}") from exc
+
+
 def _interval_needs_bronze_manifest(ingest_event: IngestRunEvent) -> bool:
     return ingest_event.records_fetched > 0
 
@@ -295,36 +409,340 @@ def _bronze_manifests_for_interval(
     return by_table
 
 
-def parse_lakehouse_plan_limit(raw: str | int | None = None) -> int:
-    """Return the supported lakehouse plan limit for one interval per DAG run."""
+def parse_lakehouse_plan_max_intervals(raw: object = None) -> int | None:
+    """Parse the optional bounded-drain cap; ``None`` means drain all work."""
 
-    if raw is None:
-        value = LAKEHOUSE_PLAN_LIMIT
-    else:
-        value = int(raw)
-    if value != LAKEHOUSE_PLAN_LIMIT:
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool):
         raise LakehouseLoadError(
-            f"LAKEHOUSE_PLAN_LIMIT must be {LAKEHOUSE_PLAN_LIMIT} for the current "
-            f"promote_raw_to_bronze DAG; got {value}"
+            "LAKEHOUSE_PLAN_MAX_INTERVALS must be a positive integer when set"
+        )
+    if isinstance(raw, float) and not raw.is_integer():
+        raise LakehouseLoadError(
+            "LAKEHOUSE_PLAN_MAX_INTERVALS must be a positive integer when set"
+        )
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise LakehouseLoadError(
+            "LAKEHOUSE_PLAN_MAX_INTERVALS must be a positive integer when set"
+        ) from exc
+    if value < 1:
+        raise LakehouseLoadError(
+            "LAKEHOUSE_PLAN_MAX_INTERVALS must be a positive integer when set"
         )
     return value
 
 
-def plan_lakehouse_intervals(
+def _parse_optional_plan_timestamp(value: object) -> datetime | None:
+    if value is None or value == "":
+        return None
+    return coerce_utc_datetime(value)
+
+
+def _validate_lakehouse_plan_config(
+    *,
+    mode: object,
+    start_raw: object,
+    end_raw: object,
+    max_intervals_raw: object,
+) -> LakehousePlanConfig:
+    if not isinstance(mode, str) or mode not in _PLAN_MODES:
+        raise LakehouseLoadError(
+            "plan_mode must be 'pending' or 'refresh'; " f"got {mode!r}"
+        )
+    try:
+        start = _parse_optional_plan_timestamp(start_raw)
+        end = _parse_optional_plan_timestamp(end_raw)
+    except (TypeError, ValueError) as exc:
+        raise LakehouseLoadError(
+            "plan_start and plan_end must be valid UTC timestamps"
+        ) from exc
+    if (start is None) != (end is None):
+        raise LakehouseLoadError("plan_start and plan_end must be supplied together")
+    if start is not None and end is not None and start >= end:
+        raise LakehouseLoadError("plan_start must be earlier than plan_end")
+    return LakehousePlanConfig(
+        mode=mode,
+        start=start,
+        end=end,
+        max_intervals=parse_lakehouse_plan_max_intervals(max_intervals_raw),
+    )
+
+
+def resolve_lakehouse_plan_config(
+    *,
+    dag_run_conf: Mapping[str, Any] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> LakehousePlanConfig:
+    """Resolve promotion planner settings from run conf or the active environment.
+
+    Any plan-specific DAG run conf is a complete override of environment plan
+    settings. This prevents a manual trigger from accidentally inheriting stale
+    process-wide bounds. Manual plan conf requires ``plan_mode`` just as manual
+    extraction conf requires ``load_mode``.
+    """
+
+    env = environ if environ is not None else os.environ
+    if "LAKEHOUSE_PLAN_LIMIT" in env:
+        raise LakehouseLoadError(
+            "LAKEHOUSE_PLAN_LIMIT is retired; remove it and use "
+            "LAKEHOUSE_PLAN_MAX_INTERVALS for an optional positive cap"
+        )
+
+    conf = dag_run_conf or {}
+    supplied_conf_keys = sorted(_PLAN_CONF_KEYS.intersection(conf))
+    if supplied_conf_keys:
+        if "plan_mode" not in conf:
+            raise LakehouseLoadError(
+                "plan_mode is required when promotion plan conf is supplied; "
+                f"got keys {supplied_conf_keys!r}"
+            )
+        return _validate_lakehouse_plan_config(
+            mode=conf.get("plan_mode"),
+            start_raw=conf.get("plan_start"),
+            end_raw=conf.get("plan_end"),
+            max_intervals_raw=conf.get("plan_max_intervals"),
+        )
+
+    return _validate_lakehouse_plan_config(
+        mode=env.get("LAKEHOUSE_PLAN_MODE", "pending"),
+        start_raw=env.get("LAKEHOUSE_PLAN_START"),
+        end_raw=env.get("LAKEHOUSE_PLAN_END"),
+        max_intervals_raw=env.get("LAKEHOUSE_PLAN_MAX_INTERVALS"),
+    )
+
+
+def _interval_resolution(
+    *,
+    data_interval_start: datetime,
+    data_interval_end: datetime,
+    dataset_events: Mapping[str, tuple[str, IngestRunEvent]],
+    existing_manifest_event_keys: Mapping[str, str],
+    required_datasets: tuple[str, ...],
+    mode: str,
+) -> LakehouseIntervalResolution:
+    """Build an interval state from already-read current events and receipts."""
+
+    if mode not in _PLAN_MODES:
+        raise LakehouseLoadError(f"unsupported lakehouse plan mode: {mode!r}")
+
+    dataset_statuses = {
+        dataset_name: dataset_events[dataset_name][1].status
+        if dataset_name in dataset_events
+        else None
+        for dataset_name in required_datasets
+    }
+    ingest_event_keys = {
+        dataset_name: dataset_events[dataset_name][0]
+        for dataset_name in required_datasets
+        if dataset_name in dataset_events
+    }
+    dataset_complete = {
+        dataset_name: (
+            dataset_name in dataset_events
+            and dataset_events[dataset_name][1].status != "failed"
+            and (
+                not _interval_needs_bronze_manifest(dataset_events[dataset_name][1])
+                or dataset_name in existing_manifest_event_keys
+            )
+        )
+        for dataset_name in required_datasets
+    }
+    missing_datasets = [
+        dataset_name
+        for dataset_name in required_datasets
+        if dataset_name not in dataset_events
+    ]
+    if missing_datasets:
+        return LakehouseIntervalResolution(
+            data_interval_start=data_interval_start,
+            data_interval_end=data_interval_end,
+            state="incomplete",
+            eligible=False,
+            reason=f"missing current ingest events for {', '.join(missing_datasets)}",
+            dataset_statuses=dataset_statuses,
+            dataset_complete=dataset_complete,
+            ingest_event_keys=ingest_event_keys,
+            existing_manifest_event_keys=dict(existing_manifest_event_keys),
+            plan=None,
+        )
+
+    failed_datasets = [
+        dataset_name
+        for dataset_name in required_datasets
+        if dataset_events[dataset_name][1].status == "failed"
+    ]
+    if failed_datasets:
+        return LakehouseIntervalResolution(
+            data_interval_start=data_interval_start,
+            data_interval_end=data_interval_end,
+            state="blocked_failed",
+            eligible=False,
+            reason=f"failed current ingest events for {', '.join(failed_datasets)}",
+            dataset_statuses=dataset_statuses,
+            dataset_complete=dataset_complete,
+            ingest_event_keys=ingest_event_keys,
+            existing_manifest_event_keys=dict(existing_manifest_event_keys),
+            plan=None,
+        )
+
+    missing_manifests = [
+        dataset_name
+        for dataset_name in required_datasets
+        if _interval_needs_bronze_manifest(dataset_events[dataset_name][1])
+        and dataset_name not in existing_manifest_event_keys
+    ]
+    if mode == "pending" and not missing_manifests:
+        return LakehouseIntervalResolution(
+            data_interval_start=data_interval_start,
+            data_interval_end=data_interval_end,
+            state="complete",
+            eligible=False,
+            reason="all required bronze manifest receipts are present",
+            dataset_statuses=dataset_statuses,
+            dataset_complete=dataset_complete,
+            ingest_event_keys=ingest_event_keys,
+            existing_manifest_event_keys=dict(existing_manifest_event_keys),
+            plan=None,
+        )
+
+    reason = (
+        f"missing bronze manifests for {', '.join(missing_manifests)}"
+        if missing_manifests
+        else "refresh requested for complete interval"
+    )
+    plan = LakehouseIntervalPlan(
+        data_interval_start=data_interval_start,
+        data_interval_end=data_interval_end,
+        ingest_event_keys=ingest_event_keys,
+        existing_manifest_event_keys=dict(existing_manifest_event_keys),
+        mode=mode,
+        reason=reason,
+    )
+    return LakehouseIntervalResolution(
+        data_interval_start=data_interval_start,
+        data_interval_end=data_interval_end,
+        state="ready",
+        eligible=True,
+        reason=reason,
+        dataset_statuses=dataset_statuses,
+        dataset_complete=dataset_complete,
+        ingest_event_keys=ingest_event_keys,
+        existing_manifest_event_keys=dict(existing_manifest_event_keys),
+        plan=plan,
+    )
+
+
+def _key_exists(storage: StorageConfig, key: str) -> bool:
+    """Check a concrete object key without scanning an entire event family."""
+
+    prefix = key.rsplit("/", 1)[0] + "/"
+    return key in storage.list_keys(prefix)
+
+
+def _read_targeted_interval_events(
     storage: StorageConfig,
     *,
-    required_datasets: tuple[str, ...] = ("permits", "evictions", "incidents"),
+    data_interval_start: datetime,
+    data_interval_end: datetime,
+    required_datasets: tuple[str, ...],
+) -> dict[str, tuple[str, IngestRunEvent]]:
+    dataset_events: dict[str, tuple[str, IngestRunEvent]] = {}
+    for dataset_name in required_datasets:
+        key = ingest_run_current_event_key(
+            dataset_name=dataset_name,
+            data_interval_start=data_interval_start,
+            data_interval_end=data_interval_end,
+        )
+        if _key_exists(storage, key):
+            dataset_events[dataset_name] = (key, read_ingest_run_event(storage, key))
+    return dataset_events
+
+
+def _read_targeted_bronze_manifest_keys(
+    storage: StorageConfig,
+    *,
+    data_interval_start: datetime,
+    data_interval_end: datetime,
+    required_datasets: tuple[str, ...],
+) -> dict[str, str]:
+    """Read only receipt prefixes for one interval, never the global manifest set."""
+
+    by_table: dict[str, str] = {}
+    start_partition = format_interval_partition(data_interval_start)
+    end_partition = format_interval_partition(data_interval_end)
+    for dataset_name in required_datasets:
+        prefix = (
+            f"{METADATA_EVENTS_PREFIX}/file_manifest/layer=bronze/"
+            f"table_name={dataset_name}/"
+            f"data_interval_start={start_partition}/"
+            f"data_interval_end={end_partition}/"
+        )
+        for key in _iter_event_keys(storage, prefix):
+            event = read_file_manifest_event(storage, key)
+            if (
+                event.layer == "bronze"
+                and event.table_name == dataset_name
+                and event.data_interval_start == data_interval_start
+                and event.data_interval_end == data_interval_end
+            ):
+                by_table[dataset_name] = key
+    return by_table
+
+
+def resolve_lakehouse_interval(
+    storage: StorageConfig,
+    *,
+    data_interval_start: datetime,
+    data_interval_end: datetime,
+    required_datasets: tuple[str, ...] = _DEFAULT_REQUIRED_DATASETS,
+    mode: str = "pending",
+) -> LakehouseIntervalResolution:
+    """Freshly resolve one snapshot member without discovering new intervals.
+
+    Drain retries use this receipt-aware lookup before each original snapshot
+    member. It only reads deterministic current-event and manifest prefixes for
+    the supplied bounds, so new ingestion intervals cannot join the drain.
+    """
+
+    start = coerce_utc_datetime(data_interval_start)
+    end = coerce_utc_datetime(data_interval_end)
+    dataset_events = _read_targeted_interval_events(
+        storage,
+        data_interval_start=start,
+        data_interval_end=end,
+        required_datasets=required_datasets,
+    )
+    manifests = _read_targeted_bronze_manifest_keys(
+        storage,
+        data_interval_start=start,
+        data_interval_end=end,
+        required_datasets=required_datasets,
+    )
+    return _interval_resolution(
+        data_interval_start=start,
+        data_interval_end=end,
+        dataset_events=dataset_events,
+        existing_manifest_event_keys=manifests,
+        required_datasets=required_datasets,
+        mode=mode,
+    )
+
+
+def diagnose_lakehouse_intervals(
+    storage: StorageConfig,
+    *,
+    required_datasets: tuple[str, ...] = _DEFAULT_REQUIRED_DATASETS,
     mode: str = "pending",
     start: datetime | None = None,
     end: datetime | None = None,
-    limit: int = LAKEHOUSE_PLAN_LIMIT,
-) -> list[LakehouseIntervalPlan]:
-    """Select lakehouse intervals from current S3 JSON ingest metadata events."""
+) -> list[LakehouseIntervalResolution]:
+    """Return planner eligibility and per-dataset state for every observed interval."""
 
-    if mode not in {"pending", "refresh"}:
+    if mode not in _PLAN_MODES:
         raise LakehouseLoadError(f"unsupported lakehouse plan mode: {mode!r}")
-    limit = parse_lakehouse_plan_limit(limit)
-
     ingest_events = [
         read_ingest_run_event(storage, key)
         for key in _iter_event_keys(storage, f"{INGEST_RUNS_CURRENT_PREFIX}/")
@@ -355,8 +773,7 @@ def plan_lakehouse_intervals(
         interval = (event.data_interval_start, event.data_interval_end)
         grouped_manifests.setdefault(interval, []).append(event)
 
-    plans: list[LakehouseIntervalPlan] = []
-    required_dataset_set = set(required_datasets)
+    diagnoses: list[LakehouseIntervalResolution] = []
     for interval, dataset_events in sorted(
         grouped_ingest.items(), key=lambda item: item[0]
     ):
@@ -365,47 +782,89 @@ def plan_lakehouse_intervals(
             continue
         if end is not None and data_interval_end > end:
             continue
-        if not required_dataset_set.issubset(dataset_events):
+        diagnoses.append(
+            _interval_resolution(
+                data_interval_start=data_interval_start,
+                data_interval_end=data_interval_end,
+                dataset_events=dataset_events,
+                existing_manifest_event_keys=_bronze_manifests_for_interval(
+                    grouped_manifests.get(interval, [])
+                ),
+                required_datasets=required_datasets,
+                mode=mode,
+            )
+        )
+    return diagnoses
+
+
+def first_shared_daily_interval_start(
+    storage: StorageConfig,
+    *,
+    required_datasets: tuple[str, ...] = _DEFAULT_REQUIRED_DATASETS,
+) -> datetime | None:
+    """Find the first 24-hour interval shared by every dataset.
+
+    A failed earliest shared interval is an operational blocker, not permission
+    to move the genesis boundary forward across that source window.
+    """
+
+    for diagnosis in diagnose_lakehouse_intervals(
+        storage,
+        required_datasets=required_datasets,
+    ):
+        if diagnosis.data_interval_end - diagnosis.data_interval_start != timedelta(
+            days=1
+        ):
             continue
         if any(
-            dataset_events[dataset_name][1].status == "failed"
+            diagnosis.dataset_statuses.get(dataset_name) is None
             for dataset_name in required_datasets
         ):
             continue
-
-        ingest_event_keys = {
-            name: dataset_events[name][0] for name in required_datasets
-        }
-        existing_manifest_event_keys = _bronze_manifests_for_interval(
-            grouped_manifests.get(interval, [])
-        )
-        missing_manifests = [
+        failed_datasets = [
             dataset_name
             for dataset_name in required_datasets
-            if _interval_needs_bronze_manifest(dataset_events[dataset_name][1])
-            and dataset_name not in existing_manifest_event_keys
+            if diagnosis.dataset_statuses.get(dataset_name) == "failed"
         ]
-
-        if mode == "pending" and not missing_manifests:
-            continue
-
-        reason = (
-            f"missing bronze manifests for {', '.join(missing_manifests)}"
-            if missing_manifests
-            else "refresh requested for complete interval"
-        )
-        plans.append(
-            LakehouseIntervalPlan(
-                data_interval_start=data_interval_start,
-                data_interval_end=data_interval_end,
-                ingest_event_keys=ingest_event_keys,
-                existing_manifest_event_keys=existing_manifest_event_keys,
-                mode=mode,
-                reason=reason,
+        if failed_datasets:
+            raise LakehouseLoadError(
+                "earliest shared daily interval "
+                f"{format_interval_partition(diagnosis.data_interval_start)}.."
+                f"{format_interval_partition(diagnosis.data_interval_end)} has failed "
+                f"current events for {', '.join(failed_datasets)}; repair that "
+                "interval or supply --window-end explicitly (a later bound may "
+                "overlap daily bronze)"
             )
-        )
+        return diagnosis.data_interval_start
+    return None
 
-    return plans[:limit]
+
+def plan_lakehouse_intervals(
+    storage: StorageConfig,
+    *,
+    required_datasets: tuple[str, ...] = _DEFAULT_REQUIRED_DATASETS,
+    mode: str = "pending",
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int | None = None,
+) -> list[LakehouseIntervalPlan]:
+    """Select lakehouse intervals from current S3 JSON ingest metadata events."""
+
+    if mode not in _PLAN_MODES:
+        raise LakehouseLoadError(f"unsupported lakehouse plan mode: {mode!r}")
+    limit = parse_lakehouse_plan_max_intervals(limit)
+    plans = [
+        diagnosis.plan
+        for diagnosis in diagnose_lakehouse_intervals(
+            storage,
+            required_datasets=required_datasets,
+            mode=mode,
+            start=start,
+            end=end,
+        )
+        if diagnosis.eligible and diagnosis.plan is not None
+    ]
+    return plans if limit is None else plans[:limit]
 
 
 def load_ingest_run_event_for_interval(

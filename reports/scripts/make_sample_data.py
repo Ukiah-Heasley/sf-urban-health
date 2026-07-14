@@ -233,8 +233,25 @@ def data_trust() -> pl.DataFrame:
     ]
     out = []
     for dataset in datasets:
-        for check_name, severity, expected_rule in checks:
-            status = "pass" if rng.random() > 0.08 else "warn"
+        dataset_checks = [
+            *checks,
+            (
+                "interval_coverage",
+                "warning" if dataset == "evictions" else "critical",
+                "Daily metadata interval coverage is recorded after a 30-hour grace period.",
+            ),
+        ]
+        for check_name, severity, expected_rule in dataset_checks:
+            if check_name == "interval_coverage":
+                status = (
+                    "pass"
+                    if rng.random() > 0.08
+                    else ("warn" if dataset == "evictions" else "fail")
+                )
+                observed_value = "missing_daily_intervals=0"
+            else:
+                status = "pass" if rng.random() > 0.08 else "warn"
+                observed_value = "fallback sample"
             out.append(
                 {
                     "dataset_name": dataset,
@@ -247,7 +264,7 @@ def data_trust() -> pl.DataFrame:
                     "check_name": check_name,
                     "check_status": status,
                     "severity": severity,
-                    "observed_value": "fallback sample",
+                    "observed_value": observed_value,
                     "expected_rule": expected_rule,
                     "latest_completed_at": datetime.combine(today, datetime.min.time()),
                     "latest_bronze_written_at": datetime.combine(

@@ -136,7 +136,7 @@ models:
   - name: data_trust
     description: >
       Operational trust checks derived from the latest lakehouse metadata
-      interval for each dataset.
+      interval and historical daily interval coverage for each dataset.
     tests:
       - unique_combination_of_columns:
           combination_of_columns:

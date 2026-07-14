@@ -3485,7 +3485,7 @@
       "id": "orch_bronze_promotion",
       "label": "promote_raw_to_bronze",
       "type": "orchestrate",
-      "notes": "Asset-triggered Airflow DAG selects the oldest complete interval missing bronze promotion.",
+      "notes": "Asset-triggered Airflow DAG snapshots and drains complete bronze backlog intervals; any ingest asset is a wake-up.",
       "x": 1490,
       "y": 175,
       "width": 350,
@@ -3496,8 +3496,8 @@
         "objectKind": "dag",
         "dagId": "promote_raw_to_bronze",
         "maxActiveRuns": "1",
-        "planLimit": "LAKEHOUSE_PLAN_LIMIT=1",
-        "noOpBehavior": "no interval selected emits no bronze promotion asset"
+        "noOpBehavior": "empty or blocked drains compact metadata but emit no bronze promotion asset",
+        "planCap": "optional LAKEHOUSE_PLAN_MAX_INTERVALS"
       }
     },
     {
@@ -3805,7 +3805,7 @@
       "id": "table_data_trust",
       "label": "data_trust",
       "type": "table",
-      "notes": "Operational trust checks from latest metadata intervals.",
+      "notes": "Operational trust checks from latest metadata and historical daily interval coverage.",
       "x": 3080,
       "y": 430,
       "width": 160,
@@ -3920,7 +3920,7 @@
       "id": "metric_data_trust_check",
       "label": "data_trust Checks",
       "type": "metric",
-      "notes": "Latest metadata interval checks used for operational trust reporting.",
+      "notes": "Latest metadata and daily interval coverage checks used for operational trust reporting.",
       "x": 3835,
       "y": 335,
       "width": 230,
@@ -4094,7 +4094,7 @@
       "id": "e_assets_trigger_bronze",
       "from": "ingest_complete_assets",
       "to": "orch_bronze_promotion",
-      "label": "all three assets trigger",
+      "label": "any ingest asset wakes",
       "kind": "triggers",
       "labelPriority": "important"
     },
@@ -4159,7 +4159,7 @@
       "id": "e_bronze_asset",
       "from": "orch_bronze_promotion",
       "to": "bronze_promotion_asset",
-      "label": "emits on promoted interval",
+      "label": "emits after receipt-complete drain",
       "kind": "emits",
       "labelPriority": "important"
     },
@@ -4271,7 +4271,7 @@
       "id": "e_metadata_to_data_trust",
       "from": "table_metadata_parquet",
       "to": "table_data_trust",
-      "label": "latest interval trust",
+      "label": "latest + interval coverage",
       "kind": "materializes"
     },
     {
@@ -4540,76 +4540,62 @@
       ]
     },
     "orch_bronze_promotion": {
-      "title": "Bronze Promotion Planner and Branching",
+      "title": "Bronze Promotion Planner and Drain",
       "nodes": [
         {
-          "id": "select_bronze_interval",
-          "label": "select_bronze_interval",
+          "id": "plan_bronze_backlog",
+          "label": "plan_bronze_backlog",
           "type": "orchestrate",
-          "notes": "Selects the oldest complete interval missing bronze promotion from current S3 JSON metadata.",
+          "notes": "Selects eligible intervals once and writes an immutable S3 drain snapshot.",
           "x": 80,
           "y": 150,
-          "width": 270,
-          "height": 130,
+          "width": 285,
+          "height": 110,
           "details": {
             "platform": "airflow",
             "objectKind": "task",
-            "planLimit": "1"
+            "planCap": "optional"
           }
         },
         {
           "id": "branch_on_bronze_plan",
           "label": "branch_on_bronze_plan",
           "type": "orchestrate",
-          "notes": "No selected interval takes a no-op branch and emits no bronze promotion asset.",
-          "x": 410,
+          "notes": "Sends an empty snapshot to metadata compaction without promotion.",
+          "x": 405,
           "y": 150,
-          "width": 270,
-          "height": 130,
+          "width": 275,
+          "height": 110,
           "details": {
             "platform": "airflow",
-            "objectKind": "branch-task"
-          }
-        },
-        {
-          "id": "promote_permits",
-          "label": "promote_permits_to_bronze",
-          "type": "transform",
-          "notes": "Writes source-faithful permits bronze Parquet.",
-          "x": 760,
-          "y": 80,
-          "width": 250,
-          "height": 110,
-          "details": {
-            "platform": "spark",
             "objectKind": "task"
           }
         },
         {
-          "id": "promote_evictions",
-          "label": "promote_evictions_to_bronze",
+          "id": "drain_bronze_backlog",
+          "label": "drain_bronze_backlog",
           "type": "transform",
-          "notes": "Writes source-faithful evictions bronze Parquet.",
-          "x": 760,
-          "y": 230,
-          "width": 250,
+          "notes": "Drains only the snapshot, rechecking fresh current events and bronze receipts per interval.",
+          "x": 720,
+          "y": 150,
+          "width": 305,
           "height": 110,
           "details": {
-            "platform": "spark",
+            "platform": "airflow",
             "objectKind": "task"
           }
         },
         {
-          "id": "promote_incidents",
-          "label": "promote_incidents_to_bronze",
-          "type": "transform",
-          "notes": "Writes source-faithful incidents bronze Parquet.",
-          "x": 760,
-          "y": 380,
-          "width": 250,
-          "height": 110,
+          "id": "bronze_promotion_noop",
+          "label": "bronze_promotion_noop",
+          "type": "orchestrate",
+          "notes": "No eligible interval; metadata still compacts.",
+          "x": 720,
+          "y": 390,
+          "width": 305,
+          "height": 95,
           "details": {
-            "platform": "spark",
+            "platform": "airflow",
             "objectKind": "task"
           }
         },
@@ -4617,87 +4603,115 @@
           "id": "compact_lakehouse_metadata",
           "label": "compact_lakehouse_metadata",
           "type": "transform",
-          "notes": "Rebuilds compacted metadata Parquet from JSON events.",
-          "x": 1080,
-          "y": 230,
-          "width": 270,
-          "height": 120,
+          "notes": "Rebuilds compacted metadata Parquet once after the drain or no-op branch.",
+          "x": 1065,
+          "y": 225,
+          "width": 315,
+          "height": 110,
           "details": {
-            "platform": "spark",
+            "platform": "duckdb",
             "objectKind": "task"
           }
         },
         {
-          "id": "bronze_complete",
-          "label": "bronze_promotion_complete",
-          "type": "ingest",
-          "notes": "Emits promotion asset after real promotion work completes.",
+          "id": "branch_on_bronze_drain_result",
+          "label": "branch_on_bronze_drain_result",
+          "type": "orchestrate",
+          "notes": "Emits assets only when at least one snapshot interval has complete bronze receipts.",
           "x": 1420,
-          "y": 230,
-          "width": 250,
+          "y": 225,
+          "width": 325,
           "height": 110,
           "details": {
             "platform": "airflow",
-            "objectKind": "asset-task"
+            "objectKind": "task"
+          }
+        },
+        {
+          "id": "bronze_promotion_complete",
+          "label": "bronze_promotion_complete",
+          "type": "ingest",
+          "notes": "Emits bronze dataset and promotion-complete assets after real drain work.",
+          "x": 1785,
+          "y": 150,
+          "width": 285,
+          "height": 110,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "asset-emitter"
+          }
+        },
+        {
+          "id": "bronze_promotion_asset_noop",
+          "label": "bronze_promotion_asset_noop",
+          "type": "orchestrate",
+          "notes": "No complete receipt in the drain snapshot; no bronze promotion asset is emitted.",
+          "x": 1785,
+          "y": 390,
+          "width": 285,
+          "height": 95,
+          "details": {
+            "platform": "airflow",
+            "objectKind": "task"
           }
         }
       ],
       "edges": [
         {
           "id": "bronze_d1",
-          "from": "select_bronze_interval",
+          "from": "plan_bronze_backlog",
           "to": "branch_on_bronze_plan",
-          "label": "plan",
+          "label": "snapshot",
           "kind": "depends"
         },
         {
           "id": "bronze_d2",
           "from": "branch_on_bronze_plan",
-          "to": "promote_permits",
-          "label": "selected interval",
-          "kind": "triggers"
+          "to": "drain_bronze_backlog",
+          "label": "has plans",
+          "kind": "branches"
         },
         {
           "id": "bronze_d3",
           "from": "branch_on_bronze_plan",
-          "to": "promote_evictions",
-          "label": "selected interval",
-          "kind": "triggers"
+          "to": "bronze_promotion_noop",
+          "label": "empty",
+          "kind": "branches"
         },
         {
           "id": "bronze_d4",
-          "from": "branch_on_bronze_plan",
-          "to": "promote_incidents",
-          "label": "selected interval",
-          "kind": "triggers"
+          "from": "drain_bronze_backlog",
+          "to": "compact_lakehouse_metadata",
+          "label": "once",
+          "kind": "depends"
         },
         {
           "id": "bronze_d5",
-          "from": "promote_permits",
+          "from": "bronze_promotion_noop",
           "to": "compact_lakehouse_metadata",
-          "label": "after promotion",
+          "label": "compact",
           "kind": "depends"
         },
         {
           "id": "bronze_d6",
-          "from": "promote_evictions",
-          "to": "compact_lakehouse_metadata",
-          "label": "after promotion",
+          "from": "compact_lakehouse_metadata",
+          "to": "branch_on_bronze_drain_result",
+          "label": "then",
           "kind": "depends"
         },
         {
           "id": "bronze_d7",
-          "from": "promote_incidents",
-          "to": "compact_lakehouse_metadata",
-          "label": "after promotion",
-          "kind": "depends"
+          "from": "branch_on_bronze_drain_result",
+          "to": "bronze_promotion_complete",
+          "label": "receipts complete",
+          "kind": "emits"
         },
         {
           "id": "bronze_d8",
-          "from": "compact_lakehouse_metadata",
-          "to": "bronze_complete",
-          "label": "complete",
-          "kind": "emits"
+          "from": "branch_on_bronze_drain_result",
+          "to": "bronze_promotion_asset_noop",
+          "label": "no receipts",
+          "kind": "branches"
         }
       ]
     },
@@ -5228,7 +5242,7 @@
           "id": "ops_data_trust",
           "label": "data_trust",
           "type": "metric",
-          "notes": "Operational trust checks from latest metadata intervals.",
+          "notes": "Operational trust checks from latest metadata and historical daily interval coverage.",
           "x": 1070,
           "y": 130,
           "width": 260,

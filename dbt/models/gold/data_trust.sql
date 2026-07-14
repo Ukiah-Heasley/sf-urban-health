@@ -6,6 +6,10 @@ file_manifest as (
     select * from {{ ref('metadata_file_manifest') }}
 ),
 
+daily_interval_coverage as (
+    select * from {{ ref('metadata_daily_interval_coverage') }}
+),
+
 bronze_manifests as (
     select
         table_name as dataset_name,
@@ -155,6 +159,51 @@ checks as (
         completed_at as latest_completed_at,
         latest_bronze_written_at
     from latest
+
+    union all
+
+    select
+        latest.dataset_name,
+        latest.dag_id,
+        latest.data_interval_start,
+        latest.data_interval_end,
+        'interval_coverage' as check_name,
+        case
+            when daily_interval_coverage.first_daily_interval_start is null then 'warn'
+            when daily_interval_coverage.missing_daily_interval_count = 0 then 'pass'
+            when latest.dataset_name = 'evictions' then 'warn'
+            else 'fail'
+        end as check_status,
+        case
+            when daily_interval_coverage.first_daily_interval_start is null then 'warning'
+            when latest.dataset_name = 'evictions' then 'warning'
+            else 'critical'
+        end as severity,
+        case
+            when daily_interval_coverage.first_daily_interval_start is null
+                then 'daily interval baseline not established'
+            when daily_interval_coverage.missing_daily_interval_count = 0
+                then 'missing_daily_intervals=0'
+            else concat(
+                'missing_daily_intervals=',
+                cast(daily_interval_coverage.missing_daily_interval_count as string),
+                ', oldest_missing_interval_start=',
+                cast(daily_interval_coverage.oldest_missing_daily_interval_start as string)
+            )
+        end as observed_value,
+        case
+            when daily_interval_coverage.first_daily_interval_start is null then
+                'Coverage begins at the first observed daily interval; no daily baseline exists yet.'
+            when latest.dataset_name = 'evictions' then
+                'Every daily interval since the first observed daily interval is recorded after a 30-hour grace period; missing eviction intervals are warnings because later full snapshots restore current content.'
+            else
+                'Every daily interval since the first observed daily interval is recorded after a 30-hour grace period; wide genesis full-load intervals are excluded.'
+        end as expected_rule,
+        latest.completed_at as latest_completed_at,
+        latest.latest_bronze_written_at
+    from latest
+    left join daily_interval_coverage
+        on latest.dataset_name = daily_interval_coverage.dataset_name
 )
 
 select

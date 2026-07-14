@@ -28,8 +28,11 @@ from scripts.lakehouse_metadata import (
     INGEST_RUN_ATTEMPTS_PREFIX,
     METADATA_PARQUET_FILE_MANIFEST_PREFIX,
     METADATA_PARQUET_INGEST_RUNS_PREFIX,
+    PROMOTION_PLAN_SNAPSHOTS_PREFIX,
     compact_lakehouse_metadata,
     event_to_json,
+    find_lakehouse_plan_snapshot,
+    first_shared_daily_interval_start,
     ingest_run_attempt_event_key,
     ingest_run_current_event_key,
     ingest_run_event_from_extract,
@@ -40,8 +43,11 @@ from scripts.lakehouse_metadata import (
     read_ingest_run_event,
     record_extract_failed_metadata,
     record_extract_metadata,
-    parse_lakehouse_plan_limit,
+    parse_lakehouse_plan_max_intervals,
+    read_lakehouse_plan_snapshot,
+    resolve_lakehouse_plan_config,
     write_ingest_run_event,
+    write_lakehouse_plan_snapshot,
 )
 from scripts.soda_ingest import ExtractResult
 
@@ -66,6 +72,24 @@ def lake_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def storage(lake_root: Path) -> StorageConfig:
     return StorageConfig(bucket=None, local_root=lake_root, s3_client=None)
+
+
+class _XComRecorder:
+    """Tiny TaskInstance stand-in for direct promotion task-callable tests."""
+
+    def __init__(self, values: dict[str, object] | None = None) -> None:
+        self.values = {} if values is None else values
+
+    def xcom_push(self, key: str, value: object) -> None:
+        self.values[key] = value
+
+    def xcom_pull(
+        self,
+        task_ids: str | None = None,
+        key: str | None = None,
+    ) -> object:
+        del task_ids
+        return self.values.get(key) if key is not None else None
 
 
 def _extract_result(
@@ -845,6 +869,8 @@ def test_ingest_dag_task_order() -> None:
             tags=["test"],
         )
     )
+    assert dag.catchup is True
+    assert dag.max_active_runs == 1
     assert [task.task_id for task in dag.tasks] == [
         "extract_permits_to_raw",
         "record_permits_extract_metadata",
@@ -868,42 +894,64 @@ def test_ingest_dag_task_order() -> None:
 def test_promote_raw_to_bronze_dag_depends_on_ingest_assets() -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
     from promote.raw_to_bronze import dag
+    from _shared.pipeline_assets import (
+        BRONZE_PROMOTION_ASSET,
+        EVICTIONS_INGEST_ASSET,
+        INCIDENTS_INGEST_ASSET,
+        PERMITS_INGEST_ASSET,
+        bronze_asset_for,
+    )
 
     assert dag.dag_id == "promote_raw_to_bronze"
     assert [task.task_id for task in dag.tasks] == [
-        "select_bronze_interval",
+        "plan_bronze_backlog",
         "branch_on_bronze_plan",
-        "promote_permits_to_bronze",
-        "promote_evictions_to_bronze",
-        "promote_incidents_to_bronze",
+        "drain_bronze_backlog",
+        "bronze_promotion_noop",
         "compact_lakehouse_metadata",
+        "branch_on_bronze_drain_result",
         "bronze_promotion_complete",
-        "bronze_promotion_noop",
+        "bronze_promotion_asset_noop",
     ]
-    select = dag.get_task("select_bronze_interval")
+    expected_schedule = (
+        PERMITS_INGEST_ASSET | EVICTIONS_INGEST_ASSET | INCIDENTS_INGEST_ASSET
+    )
+    assert repr(dag.schedule) == repr(expected_schedule)
+
+    plan = dag.get_task("plan_bronze_backlog")
     branch = dag.get_task("branch_on_bronze_plan")
-    promote_permits = dag.get_task("promote_permits_to_bronze")
+    drain = dag.get_task("drain_bronze_backlog")
     compact = dag.get_task("compact_lakehouse_metadata")
-    noop = dag.get_task("bronze_promotion_noop")
+    plan_noop = dag.get_task("bronze_promotion_noop")
+    drain_branch = dag.get_task("branch_on_bronze_drain_result")
     complete = dag.get_task("bronze_promotion_complete")
-    assert select.downstream_task_ids == {"branch_on_bronze_plan"}
+    asset_noop = dag.get_task("bronze_promotion_asset_noop")
+
+    assert plan.downstream_task_ids == {"branch_on_bronze_plan"}
     assert branch.downstream_task_ids == {
-        "promote_permits_to_bronze",
+        "drain_bronze_backlog",
         "bronze_promotion_noop",
     }
-    assert promote_permits.upstream_task_ids == {"branch_on_bronze_plan"}
+    assert drain.upstream_task_ids == {"branch_on_bronze_plan"}
     assert compact.upstream_task_ids == {
-        "promote_incidents_to_bronze",
+        "drain_bronze_backlog",
         "bronze_promotion_noop",
     }
-    assert compact.downstream_task_ids == {"bronze_promotion_complete"}
+    assert compact.downstream_task_ids == {"branch_on_bronze_drain_result"}
     assert str(compact.trigger_rule) == "none_failed_min_one_success"
-    assert noop.outlets == []
-    assert complete.upstream_task_ids == {
-        "compact_lakehouse_metadata",
-        "promote_incidents_to_bronze",
+    assert plan_noop.outlets == []
+    assert drain_branch.downstream_task_ids == {
+        "bronze_promotion_complete",
+        "bronze_promotion_asset_noop",
     }
-    assert complete.outlets
+    assert complete.upstream_task_ids == {"branch_on_bronze_drain_result"}
+    assert complete.outlets == [
+        bronze_asset_for("permits"),
+        bronze_asset_for("evictions"),
+        bronze_asset_for("incidents"),
+        BRONZE_PROMOTION_ASSET,
+    ]
+    assert asset_noop.outlets == []
 
 
 def test_planner_requires_all_datasets_for_interval(storage: StorageConfig) -> None:
@@ -942,6 +990,46 @@ def test_planner_skips_intervals_with_failed_required_dataset(
 
     assert plan_lakehouse_intervals(storage, mode="pending") == []
     assert plan_lakehouse_intervals(storage, mode="refresh") == []
+
+
+def test_first_shared_daily_interval_allows_staggered_dataset_starts(
+    storage: StorageConfig,
+) -> None:
+    _write_ingest_event_for_interval(
+        storage,
+        dataset_name="permits",
+        interval_start=_INTERVAL_START,
+        interval_end=_INTERVAL_END,
+        records_fetched=0,
+    )
+    _seed_all_datasets(
+        storage,
+        interval_start=_INTERVAL_START_2,
+        interval_end=_INTERVAL_END_2,
+        ingest_run_suffix="first-shared",
+    )
+
+    assert first_shared_daily_interval_start(storage) == _INTERVAL_START_2
+
+
+def test_first_shared_daily_interval_does_not_skip_forward_past_failure(
+    storage: StorageConfig,
+) -> None:
+    _seed_all_datasets(storage, ingest_run_suffix="failed-boundary")
+    _write_failed_ingest_event(
+        storage,
+        dataset_name="permits",
+        ingest_run_id="run-failed-boundary",
+    )
+    _seed_all_datasets(
+        storage,
+        interval_start=_INTERVAL_START_2,
+        interval_end=_INTERVAL_END_2,
+        ingest_run_suffix="later-healthy",
+    )
+
+    with pytest.raises(LakehouseLoadError, match="earliest shared daily interval"):
+        first_shared_daily_interval_start(storage)
 
 
 def test_planner_pending_skips_complete_intervals(
@@ -993,7 +1081,7 @@ def test_planner_refresh_includes_complete_intervals(
     assert "permits" in plans[0].existing_manifest_event_keys
 
 
-def test_planner_applies_start_end_limit_and_oldest_first(
+def test_planner_drains_all_by_default_and_applies_optional_cap_and_bounds(
     storage: StorageConfig,
 ) -> None:
     _seed_all_datasets(
@@ -1008,18 +1096,142 @@ def test_planner_applies_start_end_limit_and_oldest_first(
         interval_end=_INTERVAL_END_2,
         ingest_run_suffix="b",
     )
-    plans = plan_lakehouse_intervals(
+    all_plans = plan_lakehouse_intervals(storage)
+    assert [plan.data_interval_start for plan in all_plans] == [
+        _INTERVAL_START,
+        _INTERVAL_START_2,
+    ]
+
+    capped_plans = plan_lakehouse_intervals(storage, limit=1)
+    assert len(capped_plans) == 1
+    assert capped_plans[0].data_interval_start == _INTERVAL_START
+
+    bounded_plans = plan_lakehouse_intervals(
         storage,
         start=_INTERVAL_START_2,
         end=_INTERVAL_END_2,
         limit=1,
     )
-    assert len(plans) == 1
-    assert plans[0].data_interval_start == _INTERVAL_START_2
+    assert len(bounded_plans) == 1
+    assert bounded_plans[0].data_interval_start == _INTERVAL_START_2
 
-    oldest_first = plan_lakehouse_intervals(storage, limit=1)
-    assert len(oldest_first) == 1
-    assert oldest_first[0].data_interval_start == _INTERVAL_START
+
+def test_plan_bronze_backlog_reuses_immutable_s3_snapshot(
+    storage: StorageConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("airflow.models", reason="airflow not installed")
+    from promote.raw_to_bronze import _plan_bronze_backlog
+
+    _seed_all_datasets(storage)
+    monkeypatch.setattr("promote.raw_to_bronze.storage_from_env", lambda: storage)
+    context = {"ti": _XComRecorder(), "run_id": "manual__snapshot-retry"}
+
+    first = _plan_bronze_backlog(**context)
+    snapshot_key = first["snapshot_key"]
+    assert isinstance(snapshot_key, str)
+    assert snapshot_key.startswith(f"{PROMOTION_PLAN_SNAPSHOTS_PREFIX}/")
+    assert first["plan_count"] == 1
+    assert (
+        find_lakehouse_plan_snapshot(storage, dag_run_id="manual__snapshot-retry")
+        == snapshot_key
+    )
+
+    _seed_all_datasets(
+        storage,
+        interval_start=_INTERVAL_START_2,
+        interval_end=_INTERVAL_END_2,
+        ingest_run_suffix="late-arrival",
+    )
+    # A retry is bound to the durable snapshot, not planner settings that an
+    # operator may have changed after the first task attempt.
+    monkeypatch.setenv("LAKEHOUSE_PLAN_LIMIT", "1")
+    retry = _plan_bronze_backlog(**context)
+
+    assert retry == first
+    snapshot_plans = read_lakehouse_plan_snapshot(storage, snapshot_key)
+    assert [plan.data_interval_start for plan in snapshot_plans] == [_INTERVAL_START]
+    assert len(plan_lakehouse_intervals(storage)) == 2
+
+
+def test_drain_bronze_backlog_skips_receipt_complete_snapshot_members(
+    storage: StorageConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("airflow.models", reason="airflow not installed")
+    from promote.raw_to_bronze import _drain_bronze_backlog
+
+    _seed_all_datasets(storage)
+    snapshot_key = write_lakehouse_plan_snapshot(
+        storage,
+        dag_run_id="manual__drain-retry",
+        plans=plan_lakehouse_intervals(storage),
+    )
+    monkeypatch.setattr("promote.raw_to_bronze.storage_from_env", lambda: storage)
+    ti = _XComRecorder({"bronze_backlog_snapshot_key": snapshot_key})
+    context = {"ti": ti}
+
+    first = _drain_bronze_backlog(**context)
+    assert first == {
+        "snapshot_plan_count": 1,
+        "receipt_complete_intervals": 1,
+        "promoted_intervals": 1,
+        "skipped_complete_intervals": 0,
+        "skipped_failed_intervals": 0,
+        "skipped_incomplete_intervals": 0,
+    }
+
+    promotion_calls = MagicMock()
+    monkeypatch.setattr("promote.raw_to_bronze.promote_raw_to_bronze", promotion_calls)
+    retry = _drain_bronze_backlog(**context)
+
+    assert retry == {
+        "snapshot_plan_count": 1,
+        "receipt_complete_intervals": 1,
+        "promoted_intervals": 0,
+        "skipped_complete_intervals": 1,
+        "skipped_failed_intervals": 0,
+        "skipped_incomplete_intervals": 0,
+    }
+    promotion_calls.assert_not_called()
+
+
+def test_drain_bronze_backlog_skips_snapshot_member_that_freshly_failed(
+    storage: StorageConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("airflow.models", reason="airflow not installed")
+    from promote.raw_to_bronze import _drain_bronze_backlog
+
+    _seed_all_datasets(storage)
+    snapshot_key = write_lakehouse_plan_snapshot(
+        storage,
+        dag_run_id="manual__fresh-failure",
+        plans=plan_lakehouse_intervals(storage),
+    )
+    _write_failed_ingest_event(
+        storage,
+        dataset_name="permits",
+        ingest_run_id="manual__permit-failed-after-snapshot",
+    )
+    monkeypatch.setattr("promote.raw_to_bronze.storage_from_env", lambda: storage)
+    promotion_calls = MagicMock()
+    monkeypatch.setattr("promote.raw_to_bronze.promote_raw_to_bronze", promotion_calls)
+    context = {
+        "ti": _XComRecorder({"bronze_backlog_snapshot_key": snapshot_key}),
+    }
+
+    result = _drain_bronze_backlog(**context)
+
+    assert result == {
+        "snapshot_plan_count": 1,
+        "receipt_complete_intervals": 0,
+        "promoted_intervals": 0,
+        "skipped_complete_intervals": 0,
+        "skipped_failed_intervals": 1,
+        "skipped_incomplete_intervals": 0,
+    }
+    promotion_calls.assert_not_called()
 
 
 def test_compaction_succeeds_with_ingest_events_only(
@@ -1103,16 +1315,18 @@ def test_hash_file_streams_without_loading_entire_file(tmp_path: Path) -> None:
 
 
 def test_promote_raw_to_bronze_noop_when_no_interval_selected(
+    storage: StorageConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("airflow.models", reason="airflow not installed")
     from promote.raw_to_bronze import (
+        BranchOnBronzeDrainResultOperator,
         BranchOnBronzePlanOperator,
         _compact_metadata,
-        _promote_dataset,
-        _select_bronze_interval,
+        _plan_bronze_backlog,
     )
 
+    monkeypatch.setattr("promote.raw_to_bronze.storage_from_env", lambda: storage)
     monkeypatch.setattr(
         "promote.raw_to_bronze.plan_lakehouse_intervals",
         lambda *args, **kwargs: [],
@@ -1123,23 +1337,19 @@ def test_promote_raw_to_bronze_noop_when_no_interval_selected(
         lambda: compact_calls.append("compacted"),
     )
 
-    class _Ti:
-        def __init__(self) -> None:
-            self.values: dict[str, object] = {}
-
-        def xcom_push(self, key: str, value: object) -> None:
-            self.values[key] = value
-
-        def xcom_pull(self, task_ids: str, key: str) -> object:
-            return self.values.get(key)
-
-    context = {"ti": _Ti()}
-    assert _select_bronze_interval(**context) is None
-    assert _promote_dataset("permits", **context) is None
+    context = {"ti": _XComRecorder(), "run_id": "manual__empty-drain"}
+    assert _plan_bronze_backlog(**context) == {
+        "snapshot_key": None,
+        "plan_count": 0,
+    }
     _compact_metadata(**context)
     assert compact_calls == ["compacted"]
     branch = BranchOnBronzePlanOperator(task_id="branch_on_bronze_plan")
     assert branch.choose_branch(context) == "bronze_promotion_noop"
+    drain_branch = BranchOnBronzeDrainResultOperator(
+        task_id="branch_on_bronze_drain_result"
+    )
+    assert drain_branch.choose_branch(context) == "bronze_promotion_asset_noop"
 
 
 def test_ingest_runs_contract_grain_matches_current_state(contract_root: Path) -> None:
@@ -1151,12 +1361,53 @@ def test_ingest_runs_contract_grain_matches_current_state(contract_root: Path) -
     )
 
 
-def test_lakehouse_plan_limit_must_be_one() -> None:
-    assert parse_lakehouse_plan_limit(1) == 1
-    with pytest.raises(LakehouseLoadError, match="LAKEHOUSE_PLAN_LIMIT must be 1"):
-        parse_lakehouse_plan_limit(2)
-    with pytest.raises(LakehouseLoadError, match="LAKEHOUSE_PLAN_LIMIT must be 1"):
-        plan_lakehouse_intervals(MagicMock(), limit=2)
+def test_lakehouse_plan_max_intervals_is_optional_positive_cap() -> None:
+    assert parse_lakehouse_plan_max_intervals() is None
+    assert parse_lakehouse_plan_max_intervals("") is None
+    assert parse_lakehouse_plan_max_intervals(2) == 2
+    assert parse_lakehouse_plan_max_intervals("3") == 3
+
+    for raw in (0, -1, "not-an-integer", True):
+        with pytest.raises(LakehouseLoadError, match="positive integer"):
+            parse_lakehouse_plan_max_intervals(raw)
+
+
+def test_resolve_lakehouse_plan_config_rejects_legacy_limit_env() -> None:
+    with pytest.raises(LakehouseLoadError, match="LAKEHOUSE_PLAN_LIMIT is retired"):
+        resolve_lakehouse_plan_config(environ={"LAKEHOUSE_PLAN_LIMIT": "1"})
+
+
+def test_resolve_lakehouse_plan_config_uses_conf_as_complete_override() -> None:
+    config = resolve_lakehouse_plan_config(
+        dag_run_conf={
+            "plan_mode": "pending",
+            "plan_start": "2024-03-15T06:00:00Z",
+            "plan_end": "2024-03-16T06:00:00Z",
+            "plan_max_intervals": "2",
+        },
+        environ={
+            "LAKEHOUSE_PLAN_MODE": "refresh",
+            "LAKEHOUSE_PLAN_START": "1997-01-01T00:00:00Z",
+            "LAKEHOUSE_PLAN_END": "2026-01-01T00:00:00Z",
+            "LAKEHOUSE_PLAN_MAX_INTERVALS": "99",
+        },
+    )
+
+    assert config.mode == "pending"
+    assert config.start == _INTERVAL_START
+    assert config.end == _INTERVAL_END
+    assert config.max_intervals == 2
+
+
+def test_resolve_lakehouse_plan_config_requires_mode_for_manual_plan_fields() -> None:
+    with pytest.raises(LakehouseLoadError, match="plan_mode is required"):
+        resolve_lakehouse_plan_config(
+            dag_run_conf={
+                "plan_start": "2024-03-15T06:00:00Z",
+                "plan_end": "2024-03-16T06:00:00Z",
+            },
+            environ={},
+        )
 
 
 def test_promotion_uses_selected_ingest_event_key(

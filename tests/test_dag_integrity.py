@@ -51,9 +51,54 @@ def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
     assert dag_bag.dags, "DagBag is empty — no DAGs were discovered"
     assert set(dag_bag.dags) == _EXPECTED_DAG_IDS
 
+    from _shared.pipeline_assets import (
+        BRONZE_PROMOTION_ASSET,
+        GOLD_TRANSFORM_ASSET,
+        INGEST_FAILURE_METADATA_ASSET,
+        EVICTIONS_INGEST_ASSET,
+        INCIDENTS_INGEST_ASSET,
+        PERMITS_INGEST_ASSET,
+    )
+
+    for ingest_dag_id in (
+        "ingest_permits",
+        "ingest_evictions",
+        "ingest_incidents",
+    ):
+        ingest = dag_bag.dags[ingest_dag_id]
+        assert ingest.catchup is True
+        assert ingest.max_active_runs == 1
+
     bronze = dag_bag.dags["promote_raw_to_bronze"]
     assert bronze.max_active_runs == 1
-    assert "select_bronze_interval" in {task.task_id for task in bronze.tasks}
+    assert {task.task_id for task in bronze.tasks} == {
+        "plan_bronze_backlog",
+        "branch_on_bronze_plan",
+        "drain_bronze_backlog",
+        "bronze_promotion_noop",
+        "compact_lakehouse_metadata",
+        "branch_on_bronze_drain_result",
+        "bronze_promotion_complete",
+        "bronze_promotion_asset_noop",
+    }
+    expected_bronze_schedule = (
+        PERMITS_INGEST_ASSET | EVICTIONS_INGEST_ASSET | INCIDENTS_INGEST_ASSET
+    )
+    assert repr(bronze.schedule) == repr(expected_bronze_schedule)
+    assert bronze.get_task("plan_bronze_backlog").downstream_task_ids == {
+        "branch_on_bronze_plan"
+    }
+    assert bronze.get_task("branch_on_bronze_plan").downstream_task_ids == {
+        "drain_bronze_backlog",
+        "bronze_promotion_noop",
+    }
+    assert bronze.get_task("compact_lakehouse_metadata").downstream_task_ids == {
+        "branch_on_bronze_drain_result"
+    }
+    assert bronze.get_task("branch_on_bronze_drain_result").downstream_task_ids == {
+        "bronze_promotion_complete",
+        "bronze_promotion_asset_noop",
+    }
 
     gold = dag_bag.dags["build_lakehouse_gold"]
     assert gold.max_active_runs == 1
@@ -83,12 +128,6 @@ def test_all_dags_import_cleanly(monkeypatch: pytest.MonkeyPatch):
         "dbt_build_observability_gold"
     }
     assert failure.get_task("dbt_build_observability_gold").do_xcom_push is False
-
-    from _shared.pipeline_assets import (
-        BRONZE_PROMOTION_ASSET,
-        GOLD_TRANSFORM_ASSET,
-        INGEST_FAILURE_METADATA_ASSET,
-    )
 
     assert gold.schedule == [BRONZE_PROMOTION_ASSET]
     assert failure.schedule == [INGEST_FAILURE_METADATA_ASSET]

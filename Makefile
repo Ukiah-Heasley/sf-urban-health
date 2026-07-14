@@ -18,6 +18,9 @@ help:
 	@echo "  make dbt-lakehouse-permits  Build and test permits_current silver Iceberg model (requires spark-up + fixture prep)"
 	@echo "  make dbt-lakehouse-gold     Build and test all lakehouse bronze/silver/gold Iceberg models (requires spark-up + fixture prep)"
 	@echo "  make export-evidence-snapshots  Export Evidence Parquet snapshots from selected lakehouse gold (requires Spark + dbt-lakehouse-gold)"
+	@echo "  make lakehouse-status   Show lakehouse interval diagnostics from S3 metadata"
+	@echo "  make lakehouse-promote  Trigger drain-mode promotion (set LAKEHOUSE_CLI_ARGS for flags)"
+	@echo "  make lakehouse-genesis  Trigger matching full loads (set LAKEHOUSE_CLI_ARGS for flags)"
 	@echo "  make lint           Ruff lint"
 	@echo "  make docs-check     Validate current-state documentation"
 	@echo "  make test           Run pytest"
@@ -39,11 +42,19 @@ LAKEHOUSE_ENV_AWS := lakehouse/.env.aws
 LAKEHOUSE_ENV_LOCAL_EXAMPLE := lakehouse/.env.local.example
 LAKEHOUSE_ENV_AWS_EXAMPLE := lakehouse/.env.aws.example
 LAKEHOUSE_ENV_FILE ?= $(LAKEHOUSE_ENV_LOCAL)
+LAKEHOUSE_CLI_ARGS ?=
 
 .DEFAULT_GOAL := help
 
 define require_env_file
-@test -f $(1) || (echo "Missing $(1) — copy from $(2) and fill in credentials." && exit 1)
+	@test -f $(1) || (echo "Missing $(1) — copy from $(2) and fill in credentials." && exit 1)
+endef
+
+define reject_legacy_lakehouse_plan_limit
+	@if grep -Eq '^[[:space:]]*(export[[:space:]]+)?LAKEHOUSE_PLAN_LIMIT=' $(1); then \
+		echo "$(1) contains retired LAKEHOUSE_PLAN_LIMIT; remove it before starting or using Airflow."; \
+		exit 1; \
+	fi
 endef
 
 define source_airflow_env
@@ -57,11 +68,30 @@ endef
 .PHONY: check-env
 check-env:
 	$(call require_env_file,$(ENV_FILE),$(AIRFLOW_ENV_LOCAL_EXAMPLE))
+	$(call reject_legacy_lakehouse_plan_limit,$(ENV_FILE))
 	@echo "Using active Airflow env at $(ENV_FILE)"
 
 .PHONY: ingest
 ingest: check-env
 	$(call source_airflow_env) && uv run python airflow/include/scripts/permits.py
+
+.PHONY: lakehouse-status
+lakehouse-status: check-env
+	$(call source_airflow_env) && \
+		AWS_ENDPOINT_URL="$${LAKEHOUSE_CLI_AWS_ENDPOINT_URL:-$${AWS_ENDPOINT_URL:-}}" \
+		PYTHONPATH=airflow/include uv run python airflow/include/scripts/lakehouse_cli.py status $(LAKEHOUSE_CLI_ARGS)
+
+.PHONY: lakehouse-promote
+lakehouse-promote: check-env
+	$(call source_airflow_env) && \
+		AWS_ENDPOINT_URL="$${LAKEHOUSE_CLI_AWS_ENDPOINT_URL:-$${AWS_ENDPOINT_URL:-}}" \
+		PYTHONPATH=airflow/include uv run python airflow/include/scripts/lakehouse_cli.py promote $(LAKEHOUSE_CLI_ARGS)
+
+.PHONY: lakehouse-genesis
+lakehouse-genesis: check-env
+	$(call source_airflow_env) && \
+		AWS_ENDPOINT_URL="$${LAKEHOUSE_CLI_AWS_ENDPOINT_URL:-$${AWS_ENDPOINT_URL:-}}" \
+		PYTHONPATH=airflow/include uv run python airflow/include/scripts/lakehouse_cli.py genesis $(LAKEHOUSE_CLI_ARGS)
 
 # Mirror repo assets into airflow/include/ so Astro can bake them into the image.
 # Excludes runtime artifacts; airflow/include/dbt/ is gitignored.
@@ -86,12 +116,14 @@ sync-dbt:
 .PHONY: airflow-up-local
 airflow-up-local: sync-dbt
 	$(call require_env_file,$(AIRFLOW_ENV_LOCAL),$(AIRFLOW_ENV_LOCAL_EXAMPLE))
+	$(call reject_legacy_lakehouse_plan_limit,$(AIRFLOW_ENV_LOCAL))
 	cp $(AIRFLOW_ENV_LOCAL) $(ENV_FILE)
 	cd airflow && astro dev start
 
 .PHONY: airflow-up-aws
 airflow-up-aws: sync-dbt
 	$(call require_env_file,$(AIRFLOW_ENV_AWS),$(AIRFLOW_ENV_AWS_EXAMPLE))
+	$(call reject_legacy_lakehouse_plan_limit,$(AIRFLOW_ENV_AWS))
 	cp $(AIRFLOW_ENV_AWS) $(ENV_FILE)
 	cd airflow && astro dev start
 
@@ -148,7 +180,11 @@ dbt-lakehouse-permits: $(LAKEHOUSE_ENV_FILE)
 
 .PHONY: dbt-lakehouse-gold
 dbt-lakehouse-gold: $(LAKEHOUSE_ENV_FILE)
-	$(call source_lakehouse_env) && cd $(DBT_DIR) && uv run --group lakehouse dbt build --select tag:lakehouse --profiles-dir .
+	$(call source_lakehouse_env) && \
+	if [ "$${LAKEHOUSE_CATALOG:-hadoop}" = "hadoop" ] && [ -z "$${DBT_INTERVAL_COVERAGE_CUTOFF_EPOCH:-}" ]; then \
+		export DBT_INTERVAL_COVERAGE_CUTOFF_EPOCH=1710568800; \
+	fi && \
+	cd $(DBT_DIR) && uv run --group lakehouse dbt build --select tag:lakehouse --profiles-dir .
 
 .PHONY: export-evidence-snapshots
 export-evidence-snapshots: $(LAKEHOUSE_ENV_FILE)

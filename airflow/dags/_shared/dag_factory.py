@@ -40,8 +40,8 @@ _MANUAL_WINDOW_CONF_KEYS = frozenset({"window_start", "window_end", "lookback_ho
 
 def resolve_extract_window(
     *,
-    data_interval_start: datetime,
-    data_interval_end: datetime,
+    data_interval_start: datetime | None,
+    data_interval_end: datetime | None,
     dag_run_conf: dict | None = None,
 ) -> ExtractWindow:
     """Build an ``ExtractWindow`` from the Airflow interval or manual trigger conf.
@@ -58,6 +58,11 @@ def resolve_extract_window(
             raise ValueError(
                 "load_mode is required when manual window conf is supplied; "
                 f"got keys {supplied_manual_keys!r}"
+            )
+        if data_interval_start is None or data_interval_end is None:
+            raise ValueError(
+                "scheduled runs require Airflow data_interval_start and "
+                "data_interval_end"
             )
         return ExtractWindow(
             data_interval_start=data_interval_start,
@@ -117,8 +122,8 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         dag_run = context.get("dag_run")
         dag_run_conf = dag_run.conf if dag_run is not None else None
         return resolve_extract_window(
-            data_interval_start=context["data_interval_start"],
-            data_interval_end=context["data_interval_end"],
+            data_interval_start=context.get("data_interval_start"),
+            data_interval_end=context.get("data_interval_end"),
             dag_run_conf=dag_run_conf,
         )
 
@@ -226,7 +231,8 @@ def make_ingest_dag(cfg: DagConfig) -> DAG:
         description=f"Daily {cfg.dataset.name}: DataSF interval -> S3 raw + metadata event",
         schedule=CronDataIntervalTimetable(cfg.schedule, timezone="UTC"),
         start_date=cfg.start_date,
-        catchup=False,
+        catchup=True,
+        max_active_runs=1,
         default_args={
             "owner": "data-eng",
             "retries": 3,

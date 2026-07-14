@@ -53,6 +53,9 @@ source of truth for promotion control flow:
 - `ingest_run_attempts/` records per-run audit events and does not drive
   promotion.
 - `file_manifest/` records every emitted bronze Parquet object.
+- `promotion_plans/` holds immutable per-DAG-run drain snapshots. It is an
+  execution aid outside the metadata event families and does not drive planning
+  or compaction.
 
 The compacted `ingest_runs` metadata table grain is
 `(dataset_name, data_interval_start, data_interval_end)` with `ingest_run_id` as
@@ -61,9 +64,12 @@ descriptive lineage for the latest extract.
 `plan_lakehouse_intervals` groups current ingest events by
 `(data_interval_start, data_interval_end)`, requires all configured datasets as
 a subset of the interval event set, ignores extra dataset events, skips failed
-required events, and selects at most one interval per DAG run. Compacted
-metadata Parquet is a query/reporting layer only and is fully rebuilt from JSON
-on each compaction.
+required events, and selects pending or refreshable intervals oldest first.
+Promotion persists that selected set as an S3 snapshot, rechecks each exact
+interval against current receipts while draining, and emits the bronze promotion
+asset only when at least one interval has complete receipts. Compacted metadata
+Parquet is a query/reporting layer only and is fully rebuilt from JSON on each
+compaction.
 
 `compact_lakehouse_metadata` deletes the full metadata Parquet output prefixes
 under `lake/parquet/metadata/ingest_runs/` and
@@ -107,9 +113,13 @@ Gold models aggregate silver for monthly housing production, in-flight permit
 pipeline snapshots, monthly eviction counts, and monthly public-safety incident
 counts. They also aggregate compacted metadata into `pipeline_health` and
 `data_trust`, which describe operational pipeline health and metadata trust,
-not independent source-system quality. `make spark-up` uses a local Hadoop
-catalog and deterministic MinIO fixtures only to exercise the same model path
-without AWS credentials.
+not independent source-system quality. `data_trust` includes an
+`interval_coverage` check that compares observed daily metadata intervals with
+an expected UTC daily spine after a 30-hour grace period. Wide genesis intervals
+are excluded; missing permits or incidents intervals fail the dbt build, while
+missing eviction intervals warn because later full snapshots restore current
+content. `make spark-up` uses a local Hadoop catalog and deterministic MinIO
+fixtures only to exercise the same model path without AWS credentials.
 
 ## Consumer snapshot shapes
 

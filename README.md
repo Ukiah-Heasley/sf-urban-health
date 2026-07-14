@@ -34,8 +34,8 @@ DataSF APIs
 ```
 
 Ingest runs daily, keeps raw records source-faithful, and records both current
-and attempt-level metadata. Promotion selects complete intervals, and failed
-extracts still refresh operational health reporting. See the
+and attempt-level metadata. Promotion snapshots and drains complete intervals,
+and failed extracts still refresh operational health reporting. See the
 [architecture guide](docs/ARCHITECTURE.md) for the full runtime and trigger
 details.
 
@@ -67,6 +67,9 @@ Airflow, manual backfills, local smoke testing, and the full command reference.
 | Start Spark Thrift with the Glue catalog | `make spark-up-aws` |
 | Build lakehouse models | `make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` |
 | Export Evidence snapshots | `make export-evidence-snapshots` |
+| Inspect interval state | `make lakehouse-status` |
+| Trigger a bounded promotion drain | `make lakehouse-promote LAKEHOUSE_CLI_ARGS='--plan-start … --plan-end …'` |
+| Trigger the common genesis load | `make lakehouse-genesis` |
 
 ## Repository map
 

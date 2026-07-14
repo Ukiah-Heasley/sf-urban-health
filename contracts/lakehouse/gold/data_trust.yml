@@ -4,7 +4,7 @@ name: data_trust
 owner: analytics-engineering
 description: >-
   Operational trust checks derived from the latest lakehouse metadata interval
-  for each dataset.
+  and historical daily interval coverage for each dataset.
 table_format: iceberg
 catalog_schema: sf_urban_health
 catalog_name: data_trust

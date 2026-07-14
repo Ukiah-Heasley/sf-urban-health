@@ -38,7 +38,10 @@ The three generated ingest DAGs are:
 | `ingest_incidents` | `0 6 * * *` | `extract_incidents_to_raw -> record_incidents_extract_metadata -> ingest_complete`; failed metadata also routes to `mark_incidents_extract_failure_metadata` |
 
 `_shared/dag_factory.py` builds all three from `DatasetConfig` and `DagConfig` values.
-Scheduled runs derive the extraction window from Airflow data intervals. Manual
+They use `catchup=True` and `max_active_runs=1`, so a scheduler outage creates
+the missing scheduled intervals from each DAG's configured start date while
+keeping each dataset's raw writes serialized. Scheduled runs derive the
+extraction window from Airflow data intervals. Manual
 full/backfill triggers pass JSON conf (`load_mode`, `window_start`, `window_end`,
 optional `lookback_hours`); `resolve_extract_window` maps those bounds onto the
 same `ExtractWindow` shape and raw key layout as scheduled runs. Each extract task
@@ -58,30 +61,40 @@ promotion or dbt transforms does not block raw capture.
 ## Bronze promotion path
 
 ```text
-permits ingest asset   ─┐
-evictions ingest asset ─┼─> promote_raw_to_bronze
-incidents ingest asset ─┘      │
-                               ├─> select_bronze_interval
-                               ├─> branch_on_bronze_plan
-                               ├─> promote_permits_to_bronze
-                               ├─> promote_evictions_to_bronze
-                               ├─> promote_incidents_to_bronze
-                               ├─> compact_lakehouse_metadata
-                               ├─> bronze_promotion_complete
-                               └─> bronze_promotion_noop
+any ingest-complete asset ─> promote_raw_to_bronze
+                                  │
+                                  ├─> plan_bronze_backlog
+                                  ├─> branch_on_bronze_plan
+                                  ├─> drain_bronze_backlog
+                                  ├─> compact_lakehouse_metadata
+                                  ├─> bronze_promotion_complete (when receipts exist)
+                                  └─> bronze_promotion_noop
 ```
 
-`select_bronze_interval` reads current JSON ingest events and file-manifest
-events from S3 and selects the oldest complete interval missing bronze promotion
-(default `pending` mode). Each DAG run promotes at most one interval
-(`LAKEHOUSE_PLAN_LIMIT` must be `1`). `promote_raw_to_bronze` sets
-`max_active_runs=1` so concurrent runs cannot select the same global interval.
-When no interval is selected,
-`branch_on_bronze_plan` skips promotion and bronze promotion asset emission via
-`bronze_promotion_noop`, but still runs metadata compaction. Promotion tasks
-load the selected current ingest event for each dataset, stream raw NDJSON into
-typed bronze Parquet under
-`lake/parquet/bronze/`, and write file-manifest metadata events under
+The promotion schedule is an OR expression over the three ingest assets: an
+asset event is a wake-up, not an interval assignment. `plan_bronze_backlog`
+reads current JSON ingest events and file-manifest events from S3, then writes
+the eligible complete intervals into one immutable S3 snapshot for that DAG run.
+The snapshot avoids the Airflow XCom size limit during a long catchup and fixes
+the work set for all task retries. `drain_bronze_backlog` processes that snapshot
+oldest first, revalidating each exact interval against current ingest state and
+bronze manifest receipts before it promotes. A retry skips receipts already
+complete and never discovers a newer interval.
+
+`LAKEHOUSE_PLAN_MAX_INTERVALS` is an optional per-run cap; when omitted, a
+pending run drains the full snapshot. `LAKEHOUSE_PLAN_LIMIT` is retired and its
+presence fails the task. Manual promotion runs can pass `plan_mode`, matching
+`plan_start` / `plan_end`, and `plan_max_intervals` in `dag_run.conf`; otherwise
+the active environment supplies the defaults. `promote_raw_to_bronze` sets
+`max_active_runs=1` so concurrent runs cannot select the same global backlog.
+The cap does not self-trigger a follow-up run, so a capped backlog needs another
+manual promotion or a later ingest asset wake-up.
+When no eligible interval exists, or all snapshot intervals became failed or
+complete before draining, the no-op path skips bronze promotion asset emission
+but still runs metadata compaction. The global bronze-promotion asset emits only
+after at least one interval has complete bronze receipts. The drain loads each
+fresh current ingest event, streams raw NDJSON into typed bronze Parquet under
+`lake/parquet/bronze/`, and writes file-manifest metadata events under
 `lake/metadata/events/file_manifest/`. Bronze Parquet is written to a local temp
 file, row counts are validated against the ingest event, and only then uploaded
 to the final bronze key. `compact_lakehouse_metadata` is the only task that may
@@ -95,9 +108,11 @@ S3 JSON metadata events are the durable source of truth for promotion control
 flow. Current ingest events under `ingest_runs_current/` drive the planner;
 attempt audit events do not. The planner requires the configured datasets as a
 subset of the current event set, ignores extra dataset events, and skips any
-interval where a required dataset has `status="failed"`. Compacted metadata
-Parquet reflects the current ingest interval grain, is fully rebuilt from JSON
-on each compaction, and is a queryable export, not a planner input.
+interval where a required dataset has `status="failed"`. The separate
+`promotion_plans/` prefix contains execution snapshots only; it is neither a
+planner input nor compacted metadata. Compacted metadata Parquet reflects the
+current ingest interval grain, is fully rebuilt from JSON on each compaction,
+and is a queryable export, not a planner input.
 
 ## Failure metadata path
 
@@ -134,6 +149,27 @@ Thrift using `dbt/profiles.yml` and `DBT_SPARK_*` environment variables. The
 final task emits `GOLD_TRANSFORM_ASSET`. Evidence Parquet export is not part of
 this DAG. This asset-triggered path does not orchestrate the AWS Glue transform
 proof described below.
+
+## Host-side operational CLI
+
+`airflow/include/scripts/lakehouse_cli.py` provides `status`, `promote`, and
+`genesis` commands through the Airflow 3 REST API. `status` reads S3 metadata
+directly, summarizes all interval states, and hides receipt-complete intervals
+unless `--all` is supplied. `promote` submits a manually configured drain and
+polls its DAG run. `genesis` finds the first 24-hour interval shared by permits,
+evictions, and incidents, triggers all three full extracts with the same wide
+bounds, waits for their success, then explicitly submits promotion for those
+bounds. A failed earliest shared interval blocks automatic boundary selection
+rather than moving genesis across that interval. It uses deterministic
+per-dataset manual run IDs and no scheduled logical date, so a repeat of the same
+window reuses queued, running, or successful full extracts without colliding
+with the daily run at the boundary. Reusing a failed run requires the explicit
+`--retry-failed` option, which clears every task in that dataset run before
+requeueing it. The explicit final promotion makes the command deterministic even
+when an OR-triggered promotion wake-up is already queued. Root Make targets
+source the active Airflow environment before invoking the CLI and reject the
+retired `LAKEHOUSE_PLAN_LIMIT`; the local target substitutes its host-reachable
+MinIO endpoint for the Astro-container endpoint.
 
 ## dbt and Spark catalogs
 

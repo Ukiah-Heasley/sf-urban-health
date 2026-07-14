@@ -35,11 +35,27 @@ you are using and add credentials outside version control.
 `make airflow-up-aws` whenever the Airflow containers should use AWS S3.
 `make spark-up-aws` starts Spark Thrift with the Glue catalog and no MinIO.
 
-`promote_raw_to_bronze` reads `LAKEHOUSE_PLAN_MODE`,
-`LAKEHOUSE_PLAN_LIMIT` (must be `1`), and optional
-`LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END` from the active Airflow
-environment. Set matching bounds when promoting a manual full or backfill
-window.
+Asset-triggered promotion uses the active Airflow environment as its default
+planner configuration: `LAKEHOUSE_PLAN_MODE`, optional
+`LAKEHOUSE_PLAN_MAX_INTERVALS`, and optional matching
+`LAKEHOUSE_PLAN_START` / `LAKEHOUSE_PLAN_END`. A manual promotion DAG run can
+instead supply `plan_mode`, `plan_max_intervals`, and matching `plan_start` /
+`plan_end` in its JSON configuration. `LAKEHOUSE_PLAN_LIMIT` is retired; its
+presence makes promotion fail so a stale one-interval setting cannot silently
+throttle a drain. The root Make targets also reject an active or selected
+Airflow environment file containing the retired variable before starting or
+using Airflow.
+
+The host-side lakehouse commands authenticate to Airflow with
+`AIRFLOW_API_BASE_URL`, `AIRFLOW_API_USER`, and `AIRFLOW_API_PASSWORD`. Local
+Astro defaults are `http://localhost:8080` and `admin` / `admin`; the command
+refuses those default credentials against a non-local host.
+
+The local Airflow environment uses `host.docker.internal` for MinIO because it
+is consumed inside Astro containers. The host-side Make targets instead honor
+`LAKEHOUSE_CLI_AWS_ENDPOINT_URL`; keep its local template value of
+`http://localhost:9000` so `lakehouse-status` and `lakehouse-genesis` can reach
+the same host-published MinIO service. Leave it unset for normal AWS S3 use.
 
 ## AWS S3 + Glue workflow
 
@@ -84,8 +100,62 @@ trigger an ingest DAG with JSON configuration:
 
 `load_mode` accepts `"full"` or `"backfill"`; both require the two window
 bounds. `lookback_hours` is optional and affects only the lower query boundary.
-To select that same window for bronze promotion, set matching
-`LAKEHOUSE_PLAN_START` and `LAKEHOUSE_PLAN_END` in the Airflow environment.
+Trigger `promote_raw_to_bronze` with matching `plan_start` and `plan_end` to
+drain that same window. The `lakehouse-promote` command supplies that promotion
+configuration without changing the shared Airflow environment.
+
+### Genesis full load and promotion control
+
+The host-side CLI wraps the Airflow REST API for common operational actions:
+
+```bash
+make lakehouse-status
+make lakehouse-promote LAKEHOUSE_CLI_ARGS='--mode pending --max-intervals 50'
+make lakehouse-genesis
+```
+
+`make lakehouse-status` reads current S3 metadata directly, prints a state-count
+summary, and reports pending, incomplete, and failed interval state. Pass
+`LAKEHOUSE_CLI_ARGS='--all'` to include receipt-complete intervals.
+`make lakehouse-promote` triggers one promotion DAG run and waits for it unless
+`--no-wait` is supplied.
+An omitted max-intervals value drains the whole discovered backlog. A positive
+cap intentionally bounds only that one run; trigger promotion again (or wait
+for a later ingest asset) to drain the remaining intervals.
+
+`make lakehouse-genesis` triggers a full load with the same bounds for permits,
+evictions, and incidents. Its default lower bound is `1997-01-01T00:00:00Z`.
+With the default `--window-end auto`, it selects the first 24-hour interval
+represented by all three datasets, which keeps the common genesis interval
+separate from promotable daily history even when the DAG start dates differ. If
+that earliest shared interval has a failed current event, the command stops
+instead of moving the boundary forward across the failed source window. Repair
+the interval first or supply an explicit `--window-end`; a later explicit bound
+can overlap daily bronze and relies on silver natural-key deduplication.
+After the three ingest runs succeed, the command explicitly triggers bounded
+promotion for those same bounds. Its per-dataset Airflow run IDs are
+deterministic from the selected window, so rerunning the same genesis command
+reuses an existing queued, running, or successful ingest run instead of
+submitting a duplicate full extract. A reused failed or canceled run stops the
+command unless `--retry-failed` is supplied. That flag clears every task in the
+failed dataset run and requeues the same deterministic run so extract metadata
+and asset-emitting tasks rerun consistently.
+Use an explicit end when needed:
+
+```bash
+make lakehouse-genesis \
+  LAKEHOUSE_CLI_ARGS='--window-end 2026-05-01T06:00:00Z'
+```
+
+Retry a deterministic genesis run that previously failed:
+
+```bash
+make lakehouse-genesis LAKEHOUSE_CLI_ARGS='--retry-failed'
+```
+
+`--no-wait` submits only the three ingest runs; their emitted assets wake
+promotion when the interval becomes complete. It still rejects a reused failed
+run unless `--retry-failed` is also supplied.
 
 ## Common tasks
 
@@ -99,6 +169,9 @@ To select that same window for bronze promotion, set matching
 | AWS | Verify the dbt connection | `make dbt-lakehouse-debug LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` |
 | AWS | Build and test lakehouse models | `make dbt-lakehouse-gold LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` |
 | AWS | Export Evidence snapshots | `make export-evidence-snapshots LAKEHOUSE_ENV_FILE=lakehouse/.env.aws` |
+| Airflow | Inspect promotion backlog and blockers | `make lakehouse-status` |
+| Airflow | Trigger a configurable promotion drain | `make lakehouse-promote LAKEHOUSE_CLI_ARGS='--mode pending'` |
+| Airflow | Trigger the matching three-DAG genesis full load | `make lakehouse-genesis` |
 | Local only | Start MinIO + Spark Thrift | `make spark-up` |
 | Local only | Reset and seed fixtures (destructive) | `make lakehouse-prepare-fixtures` |
 | Local only | Start Airflow against MinIO | `make airflow-up-local` |
@@ -119,6 +192,13 @@ make spark-up
 make lakehouse-prepare-fixtures  # deletes objects in the local MinIO bucket
 make dbt-lakehouse-gold
 ```
+
+The fixed fixture interval ends at `2024-03-16T06:00:00Z`. For this local
+Hadoop-catalog command only, `make dbt-lakehouse-gold` supplies that timestamp
+as the interval-coverage cutoff so the historical fixture remains deterministic.
+AWS/Glue builds leave the cutoff unset and use the production rolling 30-hour
+grace period. Set `DBT_INTERVAL_COVERAGE_CUTOFF_EPOCH` explicitly only when
+evaluating a deliberately bounded historical fixture.
 
 For an Airflow smoke, start `make airflow-up-local`, trigger all three ingest
 DAGs for the same logical date, and let `promote_raw_to_bronze` select the

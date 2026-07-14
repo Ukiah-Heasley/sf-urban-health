@@ -46,6 +46,50 @@ normalization.
 Raw keys are deterministic from dataset and interval bounds. A retry of the same
 interval uploads to the same key rather than producing a duplicate raw object.
 
+Promotion snapshots its selected backlog in S3 before it begins draining. On a
+task retry, each snapshot interval is resolved again from its current ingest
+events and deterministic bronze manifest receipts. Intervals with complete
+receipts are skipped, newly failed intervals are left blocked, and no interval
+outside the original snapshot is introduced. Airflow task retries provide the
+automatic recovery path; a terminally failed promotion DAG run still needs an
+operator retry or another promotion wake-up.
+
+Promotion plan snapshots remain under `lake/metadata/promotion_plans/` after a
+run finishes so clearing or retrying that DAG run retains fixed-snapshot
+semantics. They are not compacted with metadata events. Long-term retention is
+an object-storage lifecycle concern; the application does not delete them.
+
+## Genesis retries and boundaries
+
+Genesis uses deterministic per-dataset Airflow run IDs. Existing queued,
+running, and successful runs are reused. A failed or canceled run is rejected by
+default because replaying a wide full extract can be expensive. Supplying
+`--retry-failed` clears every task in that one dataset run and requeues it; this
+also reruns successful failure-metadata tasks so the current event and emitted
+assets reflect the new attempt.
+
+Automatic genesis end selection stops at the first daily interval represented
+by every dataset. If that interval contains a failed current event, genesis
+fails closed rather than extending across it. An operator can repair the daily
+interval or supply an explicit later end. The explicit later end may duplicate
+source rows across genesis and daily bronze files; silver models deduplicate by
+dataset natural key before gold aggregation.
+
+## Daily interval coverage
+
+`data_trust` generates expected UTC daily intervals only from each dataset's
+first observed daily metadata event through a 30-hour grace cutoff. A wide
+genesis full-load interval is intentionally not a daily baseline. Missing
+permits or incidents intervals make the actionable gap dbt test fail; missing
+eviction intervals remain warnings because the source restamps a later full
+snapshot. Failed current events count as observed for this check so that failed
+extract handling remains separate from absent-schedule detection.
+
+The actionable interval-gap singular test is selected by both the full
+lakehouse build and the failure-metadata observability build. A standing permits
+or incidents gap can therefore keep both DAGs red even though the observability
+models materialize before the test fails.
+
 ## Half-open windows
 
 Queries use `timestamp >= effective_start AND timestamp < data_interval_end`.

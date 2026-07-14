@@ -40,6 +40,8 @@ def test_make_ingest_dag_extracts_raw_and_emits_asset():
 
     assert dag.dag_id == "ingest_permits"
     assert isinstance(dag.timetable, CronDataIntervalTimetable)
+    assert dag.catchup is True
+    assert dag.max_active_runs == 1
     task_ids = [t.task_id for t in dag.tasks]
     assert task_ids == [
         "extract_permits_to_raw",
@@ -171,14 +173,12 @@ def test_resolve_extract_window_uses_scheduled_interval_by_default():
 def test_resolve_extract_window_manual_modes(load_mode: str):
     from _shared.dag_factory import resolve_extract_window
 
-    scheduled_start = datetime(2024, 3, 15, 6, tzinfo=timezone.utc)
-    scheduled_end = datetime(2024, 3, 16, 6, tzinfo=timezone.utc)
     window_start = datetime(2018, 1, 1, tzinfo=timezone.utc)
     window_end = datetime(2026, 6, 29, tzinfo=timezone.utc)
 
     window = resolve_extract_window(
-        data_interval_start=scheduled_start,
-        data_interval_end=scheduled_end,
+        data_interval_start=None,
+        data_interval_end=None,
         dag_run_conf={
             "load_mode": load_mode,
             "window_start": "2018-01-01T00:00:00Z",
@@ -190,6 +190,17 @@ def test_resolve_extract_window_manual_modes(load_mode: str):
     assert window.data_interval_start == window_start
     assert window.data_interval_end == window_end
     assert window.effective_start == window_start - timedelta(hours=2)
+
+
+def test_resolve_extract_window_requires_intervals_only_for_scheduled_runs():
+    from _shared.dag_factory import resolve_extract_window
+
+    with pytest.raises(ValueError, match="scheduled runs require"):
+        resolve_extract_window(
+            data_interval_start=None,
+            data_interval_end=None,
+            dag_run_conf={},
+        )
 
 
 def test_resolve_extract_window_requires_both_bounds():
